@@ -199,7 +199,7 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
 
   useEffect(() => {
     const channel = supabase
-      .channel('conversations-changes')
+      .channel(`conversations-changes-${Math.random().toString(36).slice(2)}`)
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
