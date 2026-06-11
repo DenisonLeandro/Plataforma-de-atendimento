@@ -1,60 +1,57 @@
-
 ## Diagnóstico
 
-A conexão com a Evolution API está **funcionando normalmente**. Verifiquei o banco e a função `evolution-webhook`:
+A instância **sao lourenco** está marcada como `disconnected` e os testes de conexão estão falhando silenciosamente.
 
-- A instância `Advocacia` (`advocacia-denison`) está com `status = 'connected'` no banco (atualizada às 13:42:36).
-- O webhook da Evolution está recebendo eventos normalmente (`messages.upsert`, `messages.update`, etc.) e gravando mensagens/conversas com sucesso.
-- Existe **1 conversa** real no banco (contato "Claudio Miguel", última mensagem às 13:43:11), mas a UI mostra "Nenhuma conversa ainda".
-- O perfil logado (Denison) é `admin` e aprovado, então as policies de RLS liberam tudo.
+Olhando os segredos cadastrados:
 
-### Causa raiz
+- `api_url` salva hoje:
+  `https://evolution-api-hbbv.srv1746890.hstgr.cloud/manager/instance/b8e7788d-4d4a-4765-9ca4-01355a2150d2/dashboard`
+- `instance_name`: `sao-lourenco`
+- `provider_type`: `self_hosted`
+- `instance_id_external`: vazio
 
-A **publicação `supabase_realtime` está vazia** — nenhuma tabela foi adicionada a ela:
+O valor colado em "URL da API" é o link do **painel Manager** (a tela web do Evolution), não o endpoint da API. A edge function monta a chamada como:
 
 ```
-select tablename from pg_publication_tables where pubname='supabase_realtime';
--- (0 rows)
+{api_url}/instance/connectionState/sao-lourenco
 ```
 
-Consequência:
+Resultando em uma URL que cai no HTML do dashboard e nunca retorna `state: open`, então o status fica eternamente `disconnected`. A instância "Advocacia" funciona porque a URL dela aponta para a raiz da API.
 
-1. **Banner "Instância Desconectada" travado** — `useInstanceStatusMonitor` faz um `SELECT` inicial das instâncias `disconnected` e depois depende de eventos Realtime de `UPDATE` em `whatsapp_instances` para limpar. Como não chega nenhum evento, quando a instância reconecta **o banner nunca some** até dar refresh manual na página.
-2. **Lista "Nenhuma conversa ainda"** — quando a página foi aberta ainda não havia conversa. O `useWhatsAppConversations` assina `postgres_changes` em `whatsapp_conversations`, mas como a tabela não está na publicação Realtime, o `INSERT` da nova conversa criada pelo webhook **não dispara invalidação** da query. Só refrescando a página é que a conversa aparece.
+Comparação:
 
-Ou seja: os dados estão certos no backend, mas o frontend não está sendo notificado das mudanças.
+| Instância          | api_url atual                                                                                          | Status        |
+| ------------------ | ------------------------------------------------------------------------------------------------------ | ------------- |
+| Advocacia          | (URL raiz da API — correta)                                                                            | connected     |
+| sao lourenco       | `.../manager/instance/<uuid>/dashboard` (URL do painel)                                                | disconnected  |
 
-## Plano
+Além disso, a UUID `b8e7788d-4d4a-4765-9ca4-01355a2150d2` que aparece no link é o `instance_id_external` real dessa instância no Evolution — útil caso ela seja Cloud em vez de self-hosted.
 
-Criar uma migration que adiciona as tabelas relevantes à publicação `supabase_realtime` e garante `REPLICA IDENTITY FULL` (para os hooks receberem `old` + `new` em updates, usado por `useInstanceStatusMonitor` para detectar transição `disconnected → connected`).
+## O que fazer
 
-### Tabelas a adicionar
+Não é um bug do código — é configuração. Duas opções:
 
-- `whatsapp_instances` — corrige o banner travado e o monitor de status.
-- `whatsapp_conversations` — corrige a lista de conversas e contadores em tempo real.
-- `whatsapp_messages` — para o `ChatArea` receber mensagens novas em tempo real sem precisar refrescar.
-- `whatsapp_contacts` — para atualizações de nome/foto refletirem na UI.
+### Opção A — Correção rápida pela UI (recomendada)
 
-### Detalhes técnicos
+1. Ir em **Configurações → Instâncias → sao lourenco → Editar**.
+2. No campo **URL da API**, trocar para apenas a raiz:
+   `https://evolution-api-hbbv.srv1746890.hstgr.cloud`
+3. Manter `Instance Name = sao-lourenco` e provider `Self-Hosted`.
+4. Salvar e clicar em **Testar conexão**.
 
-```sql
-ALTER TABLE public.whatsapp_instances     REPLICA IDENTITY FULL;
-ALTER TABLE public.whatsapp_conversations REPLICA IDENTITY FULL;
-ALTER TABLE public.whatsapp_messages      REPLICA IDENTITY FULL;
-ALTER TABLE public.whatsapp_contacts      REPLICA IDENTITY FULL;
+Se mesmo assim a Evolution responder 404 para `sao-lourenco`, significa que esse servidor é a versão Cloud/Manager (que indexa por UUID). Nesse caso:
 
-ALTER PUBLICATION supabase_realtime ADD TABLE
-  public.whatsapp_instances,
-  public.whatsapp_conversations,
-  public.whatsapp_messages,
-  public.whatsapp_contacts;
-```
+- Trocar provider para **Cloud**.
+- Preencher **Instance ID (UUID)** com `b8e7788d-4d4a-4765-9ca4-01355a2150d2`.
+- Testar de novo.
 
-Não é preciso mexer em código de hook nem em RLS — as policies atuais já filtram corretamente o que cada usuário pode ver via Realtime.
+### Opção B — Eu corrijo direto no banco
 
-### Validação após aplicar
+Posso aplicar uma migration/UPDATE em `whatsapp_instance_secrets` para sobrescrever a `api_url` da instância `29284c4b-...` com a URL raiz, sem precisar mexer na UI. Só preciso da sua confirmação de qual valor usar (raiz pura, ou raiz + provider Cloud + UUID).
 
-1. Recarregar a página `/whatsapp`. O banner "Instância Desconectada" deve sumir (a instância está `connected` no banco).
-2. A conversa do Claudio Miguel deve aparecer na lista.
-3. Enviar uma nova mensagem pelo WhatsApp e confirmar que ela aparece sem precisar refrescar.
-4. Desconectar/reconectar a instância e confirmar que o banner reage em tempo real.
+## Pergunta antes de implementar
+
+Qual opção prefere?
+
+1. Você mesmo edita pela tela (Opção A).
+2. Eu corrijo no banco (Opção B) — me diga se é **self-hosted com URL raiz** ou **Cloud com UUID `b8e7788d-4d4a-4765-9ca4-01355a2150d2`**.
