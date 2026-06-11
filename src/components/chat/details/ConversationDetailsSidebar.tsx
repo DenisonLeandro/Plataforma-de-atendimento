@@ -51,9 +51,9 @@ export function ConversationDetailsSidebar({
   }
 
   return (
-    <div className="w-full h-full border-l border-subtle bg-bg-surface flex flex-col">
+    <div className="w-full h-full border-l border-subtle bg-bg-surface flex flex-col min-h-0 overflow-hidden">
       {/* Header */}
-      <div className="px-6 py-5 border-b border-hairline flex items-center justify-between">
+      <div className="px-6 py-5 border-b border-hairline flex items-center justify-between shrink-0">
         <div>
           <h3 className="font-semibold">Detalhes da Conversa</h3>
           {contactName && (
@@ -66,8 +66,8 @@ export function ConversationDetailsSidebar({
       </div>
 
       {/* Conteúdo */}
-      <ScrollArea className="flex-1">
-        <div className="p-4 space-y-6">
+      <ScrollArea className="flex-1 min-h-0 details-scroll">
+        <div className="p-4 pb-6 space-y-6">
           {/* Sentimento */}
           <ConversationSentiment conversationId={conversationId} />
 
