@@ -30,10 +30,8 @@ Deno.serve(async (req) => {
     const authHeader = req.headers.get('Authorization');
     console.log('authHeader present:', !!authHeader, 'len:', authHeader?.length);
     if (authHeader?.startsWith('Bearer ')) {
-      const userClient = createClient(SUPABASE_URL, ANON, {
-        global: { headers: { Authorization: authHeader } },
-      });
-      const { data: userInfo, error: getUserErr } = await userClient.auth.getUser();
+      const token = authHeader.replace('Bearer ', '');
+      const { data: userInfo, error: getUserErr } = await admin.auth.getUser(token);
       console.log('getUser err:', getUserErr?.message, 'user:', userInfo?.user?.email);
       if (userInfo?.user) {
         const { data: isAdmin } = await admin.rpc('has_role', {
