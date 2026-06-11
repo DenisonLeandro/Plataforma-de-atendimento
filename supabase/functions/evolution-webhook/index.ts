@@ -834,15 +834,39 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
       last_message_preview: content.substring(0, 100),
     };
 
-    // Increment unread count only if message is not from me
-    if (!key.fromMe) {
-      const { data: currentConv } = await supabase
-        .from('whatsapp_conversations')
-        .select('unread_count')
-        .eq('id', conversationId)
-        .single();
+    // Fetch current state for unread + status + metadata
+    const { data: currentConv } = await supabase
+      .from('whatsapp_conversations')
+      .select('unread_count, status, metadata, assigned_to')
+      .eq('id', conversationId)
+      .single();
 
+    const currentMetadata = (currentConv?.metadata as any) || {};
+    const currentStatus = currentConv?.status || 'active';
+
+    if (!key.fromMe) {
       updateData.unread_count = (currentConv?.unread_count || 0) + 1;
+
+      // Auto-reopen closed conversations when client sends a new message
+      if (currentStatus === 'closed') {
+        updateData.status = 'reopened';
+        updateData.metadata = {
+          ...currentMetadata,
+          reopened_at: timestamp,
+          reopened_by: 'system_auto',
+          reopen_banner_dismissed: false,
+          timeline: [
+            ...(Array.isArray(currentMetadata.timeline) ? currentMetadata.timeline : []),
+            { type: 'reabertura_automatica', at: timestamp, trigger_message_id: key.id },
+          ],
+        };
+        console.log('[evolution-webhook] Conversation auto-reopened:', conversationId);
+      }
+    } else if (currentStatus === 'reopened') {
+      // Agent replied → conversation returns to active
+      const { reopened_at, reopened_by, reopen_banner_dismissed, ...rest } = currentMetadata;
+      updateData.status = 'active';
+      updateData.metadata = rest;
     }
 
     const { error: updateError } = await supabase
