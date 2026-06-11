@@ -251,7 +251,7 @@
 /* ----- Visible thin scrollbars on conversation sidebar ----- */
 .sidebar-filters,
 .sidebar-conversation-list [data-radix-scroll-area-viewport],
-.details-scroll [data-radix-scroll-area-viewport] {
+.details-scroll {
   scrollbar-width: thin;
   scrollbar-color: hsl(var(--brand-primary) / 0.18) transparent;
   -webkit-overflow-scrolling: touch;
@@ -259,18 +259,18 @@
 }
 .sidebar-filters::-webkit-scrollbar,
 .sidebar-conversation-list [data-radix-scroll-area-viewport]::-webkit-scrollbar,
-.details-scroll [data-radix-scroll-area-viewport]::-webkit-scrollbar {
+.details-scroll::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 .sidebar-filters::-webkit-scrollbar-track,
 .sidebar-conversation-list [data-radix-scroll-area-viewport]::-webkit-scrollbar-track,
-.details-scroll [data-radix-scroll-area-viewport]::-webkit-scrollbar-track {
+.details-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
 .sidebar-filters::-webkit-scrollbar-thumb,
 .sidebar-conversation-list [data-radix-scroll-area-viewport]::-webkit-scrollbar-thumb,
-.details-scroll [data-radix-scroll-area-viewport]::-webkit-scrollbar-thumb {
+.details-scroll::-webkit-scrollbar-thumb {
   background: hsl(var(--brand-primary) / 0.18);
   border-radius: var(--radius-pill);
   border: 2px solid transparent;
@@ -279,7 +279,7 @@
 }
 .sidebar-filters::-webkit-scrollbar-thumb:hover,
 .sidebar-conversation-list [data-radix-scroll-area-viewport]::-webkit-scrollbar-thumb:hover,
-.details-scroll [data-radix-scroll-area-viewport]::-webkit-scrollbar-thumb:hover {
+.details-scroll::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--brand-primary) / 0.32);
   background-clip: padding-box;
 }

@@ -1,11 +1,14 @@
-## Fix scroll vertical no painel "Detalhes da Conversa"
+## Causa
+
+O `ScrollArea` do Radix sobrescreve `scrollbar-width: none` no viewport interno e só mostra scrollbar se um `<ScrollBar />` filho for renderizado — por isso o conteúdo rola mas a barra não aparece.
+
+## Correção
 
 **`src/components/chat/details/ConversationDetailsSidebar.tsx`**
-- Root container: adicionar `min-h-0 overflow-hidden` ao `flex flex-col` (linha 54).
-- Header (linha 56): adicionar `shrink-0`.
-- `ScrollArea` (linha 69): adicionar `min-h-0` e classe `details-scroll` para CSS dirigir o viewport.
-- Adicionar `pb-6` ao container interno para respiro inferior.
+- Remover `ScrollArea` do Radix e usar um `<div>` nativo com `overflow-y-auto` + classe `details-scroll`.
+- Remover import não usado.
 
-**`src/index.css`** — adicionar regras para o viewport do Radix ScrollArea dentro de `.details-scroll`, espelhando o estilo já usado na sidebar de conversas (thumb `--brand-primary / 0.18`, 8px, hover 0.32, scrollbar-width thin, overscroll-behavior contain, touch momentum).
+**`src/index.css`**
+- Trocar os seletores `.details-scroll [data-radix-scroll-area-viewport]` para mirar `.details-scroll` diretamente (que agora é o próprio elemento rolável).
 
-Nenhuma alteração visual fora do scroll/scrollbar; estrutura, ordem das seções, cores e tipografia permanecem.
+Nenhum outro componente afetado (sidebar de conversas continua usando ScrollArea Radix com sua própria regra).

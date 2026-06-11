@@ -1,5 +1,4 @@
 import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { ChevronLeft, ChevronRight, MessageSquare } from 'lucide-react';
 import { ConversationSentiment } from './ConversationSentiment';
@@ -66,7 +65,7 @@ export function ConversationDetailsSidebar({
       </div>
 
       {/* Conteúdo */}
-      <ScrollArea className="flex-1 min-h-0 details-scroll">
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden details-scroll">
         <div className="p-4 pb-6 space-y-6">
           {/* Sentimento */}
           <ConversationSentiment conversationId={conversationId} />
@@ -86,7 +85,7 @@ export function ConversationDetailsSidebar({
           {/* Observações */}
           <ConversationNotes conversationId={conversationId} />
         </div>
-      </ScrollArea>
+      </div>
     </div>
   );
 }
