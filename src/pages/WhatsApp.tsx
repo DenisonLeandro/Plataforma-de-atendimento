@@ -110,7 +110,7 @@ const WhatsApp = () => {
           <div className="text-center space-y-4">
             <p className="text-muted-foreground">Nenhuma instância configurada</p>
             <Link to="/whatsapp/settings">
-              <Button>
+              <Button variant="accent">
                 <Settings className="mr-2 h-4 w-4" />
                 Configurar Instância
               </Button>
