@@ -4,7 +4,6 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Brain, ChevronDown, ChevronUp, Sparkles, Loader2, Trash2, CheckCircle2 } from 'lucide-react';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -89,7 +88,7 @@ export function ConversationSummaries({ conversationId }: ConversationSummariesP
           </p>
         </Card>
       ) : (
-        <ScrollArea className="max-h-[400px] pr-2">
+        <div className="max-h-[400px] overflow-y-auto pr-2">
           <div className="space-y-2">
             {summaries.map((summary) => {
               const isExpanded = expandedId === summary.id;
@@ -190,7 +189,7 @@ export function ConversationSummaries({ conversationId }: ConversationSummariesP
               );
             })}
           </div>
-        </ScrollArea>
+        </div>
       )}
     </div>
   );
