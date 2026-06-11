@@ -79,19 +79,14 @@ export const ChatArea = ({ conversationId }: ChatAreaProps) => {
 
   if (!conversationId) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-bg-app">
-        <div className="text-center space-y-3 max-w-[280px] px-6">
-          <div className="animate-float inline-block drop-shadow-[var(--shadow-xs)]">
-            <MessageCircle
-              className="w-16 h-16 mx-auto text-[hsl(var(--brand-primary)/0.18)]"
-              strokeWidth={1.5}
-            />
-          </div>
-          <h3 className="text-[17px] font-semibold text-text-primary tracking-tight">
+      <div className="flex-1 flex items-center justify-center bg-muted/20">
+        <div className="text-center space-y-3">
+          <MessageCircle className="w-24 h-24 mx-auto text-muted-foreground/40" />
+          <h3 className="text-lg font-semibold text-foreground">
             Selecione uma conversa
           </h3>
-          <p className="text-[13px] text-text-secondary leading-5">
-            Escolha uma conversa na lista ao lado para começar o atendimento.
+          <p className="text-sm text-muted-foreground">
+            Escolha uma conversa na lista para começar
           </p>
         </div>
       </div>
@@ -99,7 +94,7 @@ export const ChatArea = ({ conversationId }: ChatAreaProps) => {
   }
 
   return (
-    <div className="flex-1 flex flex-col h-full min-h-0 overflow-hidden bg-bg-app">
+    <div className="flex-1 flex flex-col h-screen">
       <ChatHeader
         contact={conversation?.contact}
         sentiment={sentiment}
@@ -109,7 +104,7 @@ export const ChatArea = ({ conversationId }: ChatAreaProps) => {
         conversation={conversation}
         onRefresh={handleRefresh}
       />
-
+      
       <MessagesContainer 
         messages={messages} 
         isLoading={messagesLoading}

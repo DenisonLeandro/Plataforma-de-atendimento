@@ -10,13 +10,14 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { LogOut, User as UserIcon } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { LogOut, User as UserIcon, Circle } from 'lucide-react';
 import { ProfileModal } from './ProfileModal';
 
 const statusColors = {
-  online: 'bg-emerald-500',
-  offline: 'bg-gray-400',
-  away: 'bg-amber-400',
+  online: 'bg-green-500',
+  offline: 'bg-gray-500',
+  away: 'bg-yellow-500',
   busy: 'bg-red-500',
 };
 
@@ -50,23 +51,24 @@ export function UserMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="flex items-center gap-3 w-full bg-bg-nav-deep hover:bg-bg-nav-elevated rounded-md p-2.5 text-left transition-colors">
+        <button className="flex items-center gap-3 hover:bg-accent/50 rounded-lg p-2 transition-colors">
           <div className="relative">
-            <Avatar className="h-10 w-10 ring-2 ring-bg-nav-deep">
+            <Avatar className="h-10 w-10 border-2 border-border">
               <AvatarImage src={profile.avatar_url || undefined} alt={profile.full_name} />
-              <AvatarFallback className="bg-accent text-white font-semibold">
+              <AvatarFallback className="bg-primary text-primary-foreground font-semibold">
                 {initials}
               </AvatarFallback>
             </Avatar>
-            <span
-              className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 ${statusColors[profile.status]} rounded-full ring-2 ring-bg-nav-deep`}
+            <Circle 
+              className={`absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 ${statusColors[profile.status]} border-2 border-background rounded-full`}
+              fill="currentColor"
             />
           </div>
-          <div className="flex flex-col items-start text-left min-w-0 flex-1">
-            <span className="text-[14px] font-medium text-text-on-dark truncate w-full">{profile.full_name}</span>
-            <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-text-on-dark-soft">
+          <div className="flex flex-col items-start text-left">
+            <span className="text-sm font-medium text-foreground">{profile.full_name}</span>
+            <Badge variant="secondary" className="text-xs px-1.5 py-0">
               {roleLabels[role]}
-            </span>
+            </Badge>
           </div>
         </button>
       </DropdownMenuTrigger>

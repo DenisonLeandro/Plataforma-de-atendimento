@@ -19,12 +19,7 @@ serve(async (req) => {
   }
 
   try {
-    let { api_url, api_key, instance_name, instance_id_external, provider_type } = await req.json();
-
-    // Sanitize api_url: remove trailing slash and common UI suffixes like /manager
-    if (typeof api_url === 'string') {
-      api_url = api_url.trim().replace(/\/+$/, '').replace(/\/manager$/i, '');
-    }
+    const { api_url, api_key, instance_name, instance_id_external, provider_type } = await req.json();
 
     console.log('🔍 Testing Evolution connection:', {
       provider_type,
@@ -69,20 +64,6 @@ serve(async (req) => {
       statusText: response.statusText,
       body: responseText.substring(0, 500)
     });
-
-    // Detect HTML response — usually means api_url points to the web UI, not the API
-    const looksLikeHtml = /^\s*<(?:!doctype|html)/i.test(responseText);
-    if (looksLikeHtml) {
-      console.error('❌ API URL returned HTML — likely pointing to the web interface, not the API');
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: 'A URL informada está apontando para a interface web do Evolution, não para a API. Remova sufixos como "/manager" e mantenha apenas o domínio base (ex: https://meu-servidor.com).',
-          status: response.status,
-        }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
 
     let responseData;
     try {

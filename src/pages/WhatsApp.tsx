@@ -45,27 +45,14 @@ const WhatsApp = () => {
   const showChat = !isMobile || selectedConversation;
 
   return (
-    <div className="flex flex-col h-full w-full overflow-hidden bg-background">
+    <div className="flex flex-col h-screen w-full overflow-hidden bg-background">
       {/* Disconnected Instances Banner */}
       <DisconnectedInstancesBanner instances={disconnectedInstances} />
       
-      <div
-        className={`flex-1 overflow-hidden ${isMobile ? 'flex' : 'app-grid'}`}
-        style={
-          !isMobile
-            ? {
-                gridTemplateColumns: `${
-                  isConversationsSidebarCollapsed ? '56px' : 'minmax(0, var(--col-sidebar, 400px))'
-                } minmax(0, 1fr) ${
-                  isDetailsSidebarCollapsed ? '56px' : 'minmax(0, var(--col-details, 300px))'
-                }`,
-              }
-            : undefined
-        }
-      >
+      <div className="flex flex-1 overflow-hidden">
       {/* Sidebar */}
       {showSidebar && (
-        <div className={`${isMobile ? "w-full" : isConversationsSidebarCollapsed ? "w-14" : "w-full"} border-r border-subtle min-w-0 h-full flex flex-col min-h-0 overflow-hidden`}>
+        <div className={`${isMobile ? "w-full" : isConversationsSidebarCollapsed ? "w-14" : "w-[350px]"} border-r border-border`}>
           <ConversationsSidebar
             selectedId={selectedConversation}
             onSelect={handleSelectConversation}
@@ -78,7 +65,7 @@ const WhatsApp = () => {
 
       {/* Chat Area */}
       {showChat && (
-        <div className="flex flex-col min-w-0 bg-bg-app">
+        <div className="flex-1 flex flex-col">
           {/* Mobile back button */}
           {isMobile && selectedConversation && (
             <div className="border-b border-border p-2">
@@ -94,14 +81,12 @@ const WhatsApp = () => {
 
       {/* Details Sidebar - hidden on mobile */}
       {!isMobile && (
-        <div className="app-grid__details min-w-0 h-full">
-          <ConversationDetailsSidebar
-            conversationId={selectedConversation}
-            contactName={selectedConv?.contact?.name}
-            isCollapsed={isDetailsSidebarCollapsed}
-            onToggleCollapse={() => setIsDetailsSidebarCollapsed(!isDetailsSidebarCollapsed)}
-          />
-        </div>
+        <ConversationDetailsSidebar
+          conversationId={selectedConversation}
+          contactName={selectedConv?.contact?.name}
+          isCollapsed={isDetailsSidebarCollapsed}
+          onToggleCollapse={() => setIsDetailsSidebarCollapsed(!isDetailsSidebarCollapsed)}
+        />
       )}
 
       {/* No instance state */}
@@ -110,7 +95,7 @@ const WhatsApp = () => {
           <div className="text-center space-y-4">
             <p className="text-muted-foreground">Nenhuma instância configurada</p>
             <Link to="/whatsapp/settings">
-              <Button variant="accent">
+              <Button>
                 <Settings className="mr-2 h-4 w-4" />
                 Configurar Instância
               </Button>

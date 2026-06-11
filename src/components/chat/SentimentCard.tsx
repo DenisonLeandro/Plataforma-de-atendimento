@@ -13,7 +13,11 @@ interface SentimentCardProps {
 
 export const SentimentCard = ({ sentiment }: SentimentCardProps) => {
   if (!sentiment) {
-    return <Badge variant="neutral">Sem análise</Badge>;
+    return (
+      <Badge variant="outline" className="text-xs">
+        Sem análise
+      </Badge>
+    );
   }
 
   const getEmoji = () => {
@@ -38,11 +42,14 @@ export const SentimentCard = ({ sentiment }: SentimentCardProps) => {
     }
   };
 
-  const variantFor = (): 'success' | 'danger' | 'info' => {
+  const getColorClasses = () => {
     switch (sentiment.sentiment) {
-      case 'positive': return 'success';
-      case 'negative': return 'danger';
-      default: return 'info';
+      case 'positive':
+        return 'bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20';
+      case 'negative':
+        return 'bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20';
+      default:
+        return 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20';
     }
   };
 
@@ -55,8 +62,14 @@ export const SentimentCard = ({ sentiment }: SentimentCardProps) => {
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <Badge variant={variantFor()} className="px-2.5">
-            <span className="text-[13px] leading-none">{getEmoji()}</span>
+          <Badge
+            variant="outline"
+            className={cn(
+              'flex items-center gap-1.5 px-3 py-1 text-xs font-medium',
+              getColorClasses()
+            )}
+          >
+            <span className="text-base">{getEmoji()}</span>
             <span>{getLabel()}</span>
           </Badge>
         </TooltipTrigger>

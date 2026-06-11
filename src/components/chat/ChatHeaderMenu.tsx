@@ -84,53 +84,33 @@ export function ChatHeaderMenu({ conversation, onRefresh }: ChatHeaderMenuProps)
             <MoreVertical className="h-4 w-4" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent
-          align="end"
-          className="min-w-[200px] p-1 bg-bg-surface border border-subtle rounded-[10px] shadow-[0_12px_32px_hsl(var(--brand-primary)/0.10),0_4px_8px_hsl(var(--brand-primary)/0.04)] z-50"
-        >
-          <DropdownMenuItem
-            onClick={() => setIsEditModalOpen(true)}
-            className="h-[34px] px-3 text-[13px] gap-2.5 rounded-md text-text-primary focus:bg-bg-surface-2 [&_svg]:text-text-secondary"
-          >
-            <Edit className="h-[15px] w-[15px]" />
+        <DropdownMenuContent align="end" className="w-48 bg-background z-50">
+          <DropdownMenuItem onClick={() => setIsEditModalOpen(true)}>
+            <Edit className="mr-2 h-4 w-4" />
             Editar contato
           </DropdownMenuItem>
 
           {conversation.status === 'closed' ? (
-            <DropdownMenuItem
-              onClick={handleReopen}
-              disabled={isReopening}
-              className="h-[34px] px-3 text-[13px] gap-2.5 rounded-md text-text-primary focus:bg-bg-surface-2 [&_svg]:text-[hsl(var(--accent-h))]"
-            >
-              <RotateCcw className="h-[15px] w-[15px]" />
+            <DropdownMenuItem onClick={handleReopen} disabled={isReopening}>
+              <RotateCcw className="mr-2 h-4 w-4" />
               Reabrir conversa
             </DropdownMenuItem>
           ) : (
-            <DropdownMenuItem
-              onClick={() => setShowCloseDialog(true)}
-              className="h-[34px] px-3 text-[13px] gap-2.5 rounded-md text-text-primary focus:bg-bg-surface-2 [&_svg]:text-text-secondary"
-            >
-              <CheckCircle className="h-[15px] w-[15px]" />
+            <DropdownMenuItem onClick={() => setShowCloseDialog(true)}>
+              <CheckCircle className="mr-2 h-4 w-4" />
               Encerrar conversa
             </DropdownMenuItem>
           )}
 
-          <DropdownMenuItem
-            onClick={handleArchive}
-            disabled={isArchiving}
-            className="h-[34px] px-3 text-[13px] gap-2.5 rounded-md text-[hsl(var(--danger-fg))] focus:bg-[hsl(var(--danger-fg)/0.06)] [&_svg]:text-[hsl(var(--danger-fg))]"
-          >
-            <Archive className="h-[15px] w-[15px]" />
+          <DropdownMenuItem onClick={handleArchive} disabled={isArchiving}>
+            <Archive className="mr-2 h-4 w-4" />
             Arquivar conversa
           </DropdownMenuItem>
 
           <DropdownMenuSeparator />
 
-          <DropdownMenuItem
-            onClick={handleExport}
-            className="h-[34px] px-3 text-[13px] gap-2.5 rounded-md text-text-primary focus:bg-bg-surface-2 [&_svg]:text-text-secondary"
-          >
-            <Download className="h-[15px] w-[15px]" />
+          <DropdownMenuItem onClick={handleExport}>
+            <Download className="mr-2 h-4 w-4" />
             Exportar conversa
           </DropdownMenuItem>
         </DropdownMenuContent>

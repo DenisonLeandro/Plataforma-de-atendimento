@@ -3,7 +3,7 @@ import { ptBR } from "date-fns/locale";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Search, Pencil, CheckCircle2, Archive } from "lucide-react";
+import { Search, Pencil } from "lucide-react";
 import { Tables } from "@/integrations/supabase/types";
 import { ResponseStatusIndicator } from "./ResponseStatusIndicator";
 import { TopicBadges } from "@/components/chat/topics/TopicBadges";
@@ -100,29 +100,25 @@ const ConversationItem = ({
   // Get topics from metadata
   const topics = (conversation.metadata as any)?.topics || [];
   
-  // Determine status badge (closed/archived)
+  // Determine if conversation is closed or archived
   const status = conversation.status;
-  const showClosedBadge = status === "closed";
-  const showArchivedBadge = status === "archived";
+  const showStatusBadge = status === "closed" || status === "archived";
 
   return (
     <>
       <ConversationItemMenu conversation={conversation}>
         <div
           onClick={onClick}
-          className={cn(
-            "relative flex items-center gap-3 px-4 py-[14px] cursor-pointer",
-            "hover:bg-bg-surface-2",
-            isSelected && "bg-bg-surface-2 before:absolute before:left-0 before:top-0 before:bottom-0 before:w-[3px] before:bg-accent"
-          )}
+          className={`
+            flex items-center gap-3 p-3 cursor-pointer transition-colors
+            hover:bg-sidebar-accent
+            ${isSelected ? "bg-sidebar-accent" : ""}
+          `}
         >
           {/* Avatar */}
-          <Avatar className={cn(
-            "h-10 w-10 shrink-0 ring-2 ring-transparent",
-            isSelected && "ring-[hsl(var(--accent-h)/0.24)]"
-          )}>
+          <Avatar className="h-10 w-10 shrink-0">
             <AvatarImage src={profilePicture || undefined} alt={contactName} />
-            <AvatarFallback className="bg-bg-surface-2 text-text-secondary text-xs font-semibold">
+            <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
               {getInitials(contactName)}
             </AvatarFallback>
           </Avatar>
@@ -133,9 +129,8 @@ const ConversationItem = ({
             <div className="flex items-center justify-between gap-2 mb-1">
               <div className="flex items-center gap-1.5 min-w-0 flex-1">
                 <span className={cn(
-                  "text-[15px] truncate",
-                  isSelected ? "font-semibold text-text-primary" : "font-medium text-text-primary",
-                  nameIsMissing && "text-text-tertiary italic font-normal"
+                  "font-medium text-sm truncate",
+                  nameIsMissing && "text-muted-foreground italic"
                 )}>
                   {contactName}
                 </span>
@@ -153,7 +148,7 @@ const ConversationItem = ({
                   <span className="text-sm shrink-0">{sentimentEmoji}</span>
                 )}
               </div>
-              <span className="text-[11px] text-text-tertiary shrink-0 tabular">
+              <span className="text-xs text-muted-foreground shrink-0">
                 {formatTimestamp(lastMessageTime)}
               </span>
             </div>
@@ -161,11 +156,11 @@ const ConversationItem = ({
             {/* Preview and indicators row */}
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                <p className="text-[13px] text-text-secondary truncate leading-5">
+                <p className="text-sm text-muted-foreground truncate">
                   {lastMessage || "Sem mensagens"}
                 </p>
                 {foundByContent && (
-                  <Search className="h-3 w-3 text-text-tertiary shrink-0" />
+                  <Search className="h-3 w-3 text-muted-foreground shrink-0" />
                 )}
               </div>
               <div className="flex items-center gap-2 shrink-0">
@@ -176,7 +171,7 @@ const ConversationItem = ({
                 {unreadCount > 0 && (
                   <Badge
                     variant="default"
-                    className="h-5 min-w-5 px-1.5 rounded-full bg-accent text-white text-[11px] font-semibold tabular flex items-center justify-center border-0"
+                    className="h-5 min-w-5 px-1.5 rounded-full bg-primary text-primary-foreground text-xs font-medium flex items-center justify-center"
                   >
                     {unreadCount > 99 ? "99+" : unreadCount}
                   </Badge>
@@ -198,16 +193,9 @@ const ConversationItem = ({
                 assignedToName={conversation.assigned_profile?.full_name}
                 size="sm"
               />
-              {showClosedBadge && (
-                <Badge variant="success">
-                  <CheckCircle2 className="h-[11px] w-[11px]" />
-                  Encerrada
-                </Badge>
-              )}
-              {showArchivedBadge && (
-                <Badge variant="neutral">
-                  <Archive className="h-[11px] w-[11px]" />
-                  Arquivada
+              {showStatusBadge && (
+                <Badge variant="secondary" className="text-xs px-2 py-0 h-5">
+                  {status === "closed" ? "Encerrada" : "Arquivada"}
                 </Badge>
               )}
             </div>

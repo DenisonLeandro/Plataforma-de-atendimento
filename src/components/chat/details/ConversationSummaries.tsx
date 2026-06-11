@@ -62,13 +62,23 @@ export function ConversationSummaries({ conversationId }: ConversationSummariesP
           Resumos AI ({summaries.length})
         </h3>
         <Button 
-          onClick={generateSummary}
-          loading={isGenerating}
+          onClick={generateSummary} 
+          disabled={isGenerating}
           size="sm"
-          variant="accent"
+          variant="outline"
+          className="h-7 text-xs"
         >
-          <Sparkles />
-          Gerar Resumo
+          {isGenerating ? (
+            <>
+              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+              Gerando...
+            </>
+          ) : (
+            <>
+              <Sparkles className="mr-1 h-3 w-3" />
+              Gerar Resumo
+            </>
+          )}
         </Button>
       </div>
 

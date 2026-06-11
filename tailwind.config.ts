@@ -14,8 +14,7 @@ export default {
     },
     extend: {
       fontFamily: {
-        sans: ['Geist', '"Plus Jakarta Sans"', 'system-ui', 'sans-serif', '"Apple Color Emoji"', '"Segoe UI Emoji"', '"Noto Color Emoji"'],
-        mono: ['"Geist Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+        sans: ['"DM Sans"', 'system-ui', 'sans-serif', '"Apple Color Emoji"', '"Segoe UI Emoji"', '"Noto Color Emoji"'],
       },
       colors: {
         border: "hsl(var(--border))",
@@ -23,22 +22,6 @@ export default {
         ring: "hsl(var(--ring))",
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
-        "bg-app": "hsl(var(--bg-app))",
-        "bg-surface": "hsl(var(--bg-surface))",
-        "bg-surface-2": "hsl(var(--bg-surface-2))",
-        "bg-nav": "hsl(var(--bg-nav))",
-        "bg-nav-deep": "hsl(var(--bg-nav-deep))",
-        "bg-nav-elevated": "hsl(var(--bg-nav-elevated))",
-        "text-primary": "hsl(var(--text-primary))",
-        "text-secondary": "hsl(var(--text-secondary))",
-        "text-tertiary": "hsl(var(--text-tertiary))",
-        "text-on-dark": "hsl(var(--text-on-dark))",
-        "text-on-dark-soft": "hsl(var(--text-on-dark) / 0.62)",
-        brand: {
-          DEFAULT: "hsl(var(--brand-primary))",
-          hover: "hsl(var(--brand-primary-hover))",
-          active: "hsl(var(--brand-primary-active))",
-        },
         primary: {
           DEFAULT: "hsl(var(--primary))",
           foreground: "hsl(var(--primary-foreground))",
@@ -91,14 +74,6 @@ export default {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
-        pill: "var(--radius-pill)",
-      },
-      boxShadow: {
-        xs: "var(--shadow-xs)",
-        sm: "var(--shadow-sm)",
-        md: "var(--shadow-md)",
-        lg: "var(--shadow-lg)",
-        focus: "var(--shadow-focus)",
       },
       keyframes: {
         "accordion-down": {
@@ -117,15 +92,10 @@ export default {
             height: "0",
           },
         },
-        float: {
-          "0%, 100%": { transform: "translateY(-4px)" },
-          "50%": { transform: "translateY(4px)" },
-        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
-        float: "float 4s ease-in-out infinite",
       },
     },
   },

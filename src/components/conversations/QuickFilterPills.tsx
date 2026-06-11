@@ -1,3 +1,5 @@
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Clock, Inbox, User } from "lucide-react";
 
 type FilterType = "all" | "unread" | "waiting" | "queue" | "mine";
@@ -28,33 +30,35 @@ const QuickFilterPills = ({
   ];
 
   return (
-    <div className="sidebar-filters flex gap-1.5 overflow-x-auto overflow-y-hidden flex-nowrap pb-1.5 min-w-0">
+    <div className="flex gap-2 overflow-x-auto flex-nowrap pb-2 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
       {filters.map((filter) => {
         const isActive = activeFilter === filter.value;
 
         return (
-          <button
+          <Button
             key={filter.value}
-            type="button"
+            variant={isActive ? "default" : "outline"}
+            size="sm"
             onClick={() => onFilterChange(filter.value)}
             className={`
-              inline-flex items-center gap-1.5 h-[30px] px-3 text-[12.5px] font-medium rounded-pill
-              whitespace-nowrap flex-shrink-0 border
-              ${isActive
-                ? "bg-accent text-white border-accent"
-                : "bg-transparent text-text-secondary border-subtle hover:bg-[hsl(var(--accent-soft))] hover:text-[hsl(var(--accent-h))] hover:border-[hsl(var(--accent-h)/0.2)]"}
+              h-8 px-2 text-xs font-medium rounded-full transition-colors whitespace-nowrap flex-shrink-0
+              ${
+                isActive
+                  ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                  : "bg-sidebar-accent text-sidebar-foreground border-sidebar-border hover:bg-sidebar-accent/80"
+              }
             `}
           >
             {filter.label}
             {filter.count !== undefined && filter.count > 0 && (
-              <span
-                className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10.5px] font-semibold tabular
-                  ${isActive ? "bg-white/15 text-text-on-dark" : "bg-accent text-white"}`}
+              <Badge
+                variant={isActive ? "secondary" : "default"}
+                className="ml-1.5 h-4 px-1 text-xs"
               >
                 {filter.count}
-              </span>
+              </Badge>
             )}
-          </button>
+          </Button>
         );
       })}
     </div>

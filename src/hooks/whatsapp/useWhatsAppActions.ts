@@ -56,22 +56,9 @@ export const useWhatsAppActions = () => {
         }
       }
 
-      const { data: current } = await supabase
-        .from('whatsapp_conversations')
-        .select('metadata')
-        .eq('id', conversationId)
-        .single();
-      const meta: any = current?.metadata || {};
-      const timeline = Array.isArray(meta.timeline) ? meta.timeline : [];
       const { error } = await supabase
         .from('whatsapp_conversations')
-        .update({
-          status: 'closed',
-          metadata: {
-            ...meta,
-            timeline: [...timeline, { type: 'conversa_encerrada', at: new Date().toISOString() }],
-          },
-        })
+        .update({ status: 'closed' })
         .eq('id', conversationId);
       if (error) throw error;
     },
@@ -88,22 +75,9 @@ export const useWhatsAppActions = () => {
   // Reopen conversation
   const reopenMutation = useMutation({
     mutationFn: async (conversationId: string) => {
-      const { data: current } = await supabase
-        .from('whatsapp_conversations')
-        .select('metadata')
-        .eq('id', conversationId)
-        .single();
-      const meta: any = current?.metadata || {};
-      const timeline = Array.isArray(meta.timeline) ? meta.timeline : [];
       const { error } = await supabase
         .from('whatsapp_conversations')
-        .update({
-          status: 'active',
-          metadata: {
-            ...meta,
-            timeline: [...timeline, { type: 'reabertura_manual', at: new Date().toISOString() }],
-          },
-        })
+        .update({ status: 'active' })
         .eq('id', conversationId);
       if (error) throw error;
     },

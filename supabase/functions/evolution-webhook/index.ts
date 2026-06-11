@@ -834,31 +834,15 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
       last_message_preview: content.substring(0, 100),
     };
 
-    // Fetch current state for unread + status + metadata
-    const { data: currentConv } = await supabase
-      .from('whatsapp_conversations')
-      .select('unread_count, status, metadata, assigned_to')
-      .eq('id', conversationId)
-      .single();
-
-    const currentMetadata = (currentConv?.metadata as any) || {};
-    const currentStatus = currentConv?.status || 'active';
-
+    // Increment unread count only if message is not from me
     if (!key.fromMe) {
-      updateData.unread_count = (currentConv?.unread_count || 0) + 1;
+      const { data: currentConv } = await supabase
+        .from('whatsapp_conversations')
+        .select('unread_count')
+        .eq('id', conversationId)
+        .single();
 
-      // Auto-reopen closed conversations when client sends a new message
-      if (currentStatus === 'closed') {
-        updateData.status = 'active';
-        updateData.metadata = {
-          ...currentMetadata,
-          timeline: [
-            ...(Array.isArray(currentMetadata.timeline) ? currentMetadata.timeline : []),
-            { type: 'reabertura_automatica', at: timestamp, trigger_message_id: key.id },
-          ],
-        };
-        console.log('[evolution-webhook] Conversation auto-reopened (closed → active):', conversationId);
-      }
+      updateData.unread_count = (currentConv?.unread_count || 0) + 1;
     }
 
     const { error: updateError } = await supabase

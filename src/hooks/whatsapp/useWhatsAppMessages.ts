@@ -27,12 +27,13 @@ export const useWhatsAppMessages = (conversationId: string | null) => {
 
   // Mark conversation as read when opened
   useEffect(() => {
-    if (!conversationId) return;
-    supabase
-      .from('whatsapp_conversations')
-      .update({ unread_count: 0 })
-      .eq('id', conversationId)
-      .then(() => {});
+    if (conversationId) {
+      supabase
+        .from('whatsapp_conversations')
+        .update({ unread_count: 0 })
+        .eq('id', conversationId)
+        .then();
+    }
   }, [conversationId]);
 
   // Realtime subscription for new and edited messages
