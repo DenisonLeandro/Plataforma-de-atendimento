@@ -65,7 +65,7 @@ const WhatsApp = () => {
       >
       {/* Sidebar */}
       {showSidebar && (
-        <div className={`${isMobile ? "w-full" : isConversationsSidebarCollapsed ? "w-14" : "w-full"} border-r border-subtle min-w-0`}>
+        <div className={`${isMobile ? "w-full" : isConversationsSidebarCollapsed ? "w-14" : "w-full"} border-r border-subtle min-w-0 h-full flex flex-col min-h-0 overflow-hidden`}>
           <ConversationsSidebar
             selectedId={selectedConversation}
             onSelect={handleSelectConversation}
@@ -94,7 +94,7 @@ const WhatsApp = () => {
 
       {/* Details Sidebar - hidden on mobile */}
       {!isMobile && (
-        <div className="app-grid__details min-w-0">
+        <div className="app-grid__details min-w-0 h-full">
           <ConversationDetailsSidebar
             conversationId={selectedConversation}
             contactName={selectedConv?.contact?.name}

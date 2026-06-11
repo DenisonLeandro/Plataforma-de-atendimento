@@ -191,7 +191,7 @@ const ConversationsSidebar = ({ selectedId, onSelect, instanceId, isCollapsed, o
   }
 
   return (
-    <div className="flex flex-col h-full w-full bg-bg-surface">
+    <div className="flex flex-col h-full w-full min-h-0 overflow-hidden bg-bg-surface">
       {/* Title Header */}
       <div className="p-3 border-b border-hairline space-y-3">
         <div className="flex items-center justify-between mb-3">
@@ -252,14 +252,16 @@ const ConversationsSidebar = ({ selectedId, onSelect, instanceId, isCollapsed, o
 
         {/* Pills de filtro rápido + Filtros avançados */}
         <div className="flex items-center justify-between gap-2">
-          <QuickFilterPills 
-            activeFilter={filter} 
-            onFilterChange={setFilter}
-            unreadCount={unreadCount}
-            waitingCount={waitingCount}
-            queueCount={queueCount}
-            myConversationsCount={myConversationsCount}
-          />
+          <div className="flex-1 min-w-0 relative">
+            <QuickFilterPills 
+              activeFilter={filter} 
+              onFilterChange={setFilter}
+              unreadCount={unreadCount}
+              waitingCount={waitingCount}
+              queueCount={queueCount}
+              myConversationsCount={myConversationsCount}
+            />
+          </div>
           <ConversationFiltersPopover
             statusFilter={statusFilter}
             onStatusChange={setStatusFilter}
@@ -285,7 +287,7 @@ const ConversationsSidebar = ({ selectedId, onSelect, instanceId, isCollapsed, o
       </div>
 
       {/* Conversations list */}
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1 min-h-0 sidebar-conversation-list">
         {isLoading ? (
           <div className="p-4 text-center text-muted-foreground">
             Carregando...

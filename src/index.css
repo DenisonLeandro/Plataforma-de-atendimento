@@ -236,3 +236,34 @@
 
 .scrollbar-hide::-webkit-scrollbar { display: none; }
 .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ----- Visible thin scrollbars on conversation sidebar ----- */
+.sidebar-filters,
+.sidebar-conversation-list [data-radix-scroll-area-viewport] {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--brand-primary) / 0.18) transparent;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+.sidebar-filters::-webkit-scrollbar,
+.sidebar-conversation-list [data-radix-scroll-area-viewport]::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.sidebar-filters::-webkit-scrollbar-track,
+.sidebar-conversation-list [data-radix-scroll-area-viewport]::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sidebar-filters::-webkit-scrollbar-thumb,
+.sidebar-conversation-list [data-radix-scroll-area-viewport]::-webkit-scrollbar-thumb {
+  background: hsl(var(--brand-primary) / 0.18);
+  border-radius: var(--radius-pill);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  transition: background-color var(--dur-base) var(--ease);
+}
+.sidebar-filters::-webkit-scrollbar-thumb:hover,
+.sidebar-conversation-list [data-radix-scroll-area-viewport]::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--brand-primary) / 0.32);
+  background-clip: padding-box;
+}
