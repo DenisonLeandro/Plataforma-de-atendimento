@@ -838,11 +838,17 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
     if (!key.fromMe) {
       const { data: currentConv } = await supabase
         .from('whatsapp_conversations')
-        .select('unread_count')
+        .select('unread_count, status')
         .eq('id', conversationId)
         .single();
 
       updateData.unread_count = (currentConv?.unread_count || 0) + 1;
+
+      // Auto-reopen closed conversation when client sends a new message
+      if (currentConv?.status === 'closed') {
+        updateData.status = 'open';
+        console.log(`[evolution-webhook] Auto-reopened closed conversation ${conversationId}`);
+      }
     }
 
     const { error: updateError } = await supabase
