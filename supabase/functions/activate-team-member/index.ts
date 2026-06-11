@@ -28,11 +28,13 @@ Deno.serve(async (req) => {
 
     // Verify caller is an admin (best effort). Skip if no auth header.
     const authHeader = req.headers.get('Authorization');
+    console.log('authHeader present:', !!authHeader, 'len:', authHeader?.length);
     if (authHeader?.startsWith('Bearer ')) {
       const userClient = createClient(SUPABASE_URL, ANON, {
         global: { headers: { Authorization: authHeader } },
       });
-      const { data: userInfo } = await userClient.auth.getUser();
+      const { data: userInfo, error: getUserErr } = await userClient.auth.getUser();
+      console.log('getUser err:', getUserErr?.message, 'user:', userInfo?.user?.email);
       if (userInfo?.user) {
         const { data: isAdmin } = await admin.rpc('has_role', {
           _user_id: userInfo.user.id,
