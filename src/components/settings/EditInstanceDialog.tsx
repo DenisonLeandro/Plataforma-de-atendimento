@@ -38,7 +38,10 @@ const formSchema = z.object({
     .min(1, "Nome da instância obrigatório")
     .regex(/^[a-zA-Z0-9_-]+$/, "Apenas letras, números, _ e -"),
   instance_id_external: z.string().optional(),
-  api_url: z.string().url("URL inválida"),
+  api_url: z
+    .string()
+    .url("URL inválida")
+    .transform((v) => v.trim().replace(/\/+$/, "").replace(/\/manager$/i, "")),
   api_key: z.string().min(1, "Token/API Key obrigatório"),
   provider_type: z.enum(["self_hosted", "cloud"]),
 });
