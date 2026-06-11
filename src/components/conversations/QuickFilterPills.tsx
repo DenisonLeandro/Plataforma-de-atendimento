@@ -1,5 +1,3 @@
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Clock, Inbox, User } from "lucide-react";
 
 type FilterType = "all" | "unread" | "waiting" | "queue" | "mine";
