@@ -244,7 +244,7 @@ const ConversationsSidebar = ({ selectedId, onSelect, instanceId, isCollapsed, o
           <Button
             size="icon"
             onClick={() => setIsNewConversationOpen(true)}
-            className="h-10 w-10 bg-brand hover:bg-bg-nav-elevated text-text-on-dark shadow-xs"
+            className="h-10 w-10 bg-accent hover:bg-[hsl(var(--accent-hover-h))] text-white shadow-xs"
           >
             <Plus className="h-4 w-4" />
           </Button>

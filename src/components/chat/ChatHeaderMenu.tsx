@@ -96,7 +96,7 @@ export function ChatHeaderMenu({ conversation, onRefresh }: ChatHeaderMenuProps)
             Editar contato
           </DropdownMenuItem>
 
-          {(conversation.status === 'closed' || conversation.status === 'archived') ? (
+          {conversation.status === 'closed' ? (
             <DropdownMenuItem
               onClick={handleReopen}
               disabled={isReopening}

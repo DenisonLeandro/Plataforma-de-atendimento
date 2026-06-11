@@ -101,8 +101,6 @@ export const useWhatsAppActions = () => {
           status: 'active',
           metadata: {
             ...meta,
-            reopened_by: 'manual',
-            reopened_at: new Date().toISOString(),
             timeline: [...timeline, { type: 'reabertura_manual', at: new Date().toISOString() }],
           },
         })

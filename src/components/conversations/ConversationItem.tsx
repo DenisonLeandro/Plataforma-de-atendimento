@@ -3,7 +3,7 @@ import { ptBR } from "date-fns/locale";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Search, Pencil, CheckCircle2, RefreshCw, Archive } from "lucide-react";
+import { Search, Pencil, CheckCircle2, Archive } from "lucide-react";
 import { Tables } from "@/integrations/supabase/types";
 import { ResponseStatusIndicator } from "./ResponseStatusIndicator";
 import { TopicBadges } from "@/components/chat/topics/TopicBadges";
@@ -100,18 +100,10 @@ const ConversationItem = ({
   // Get topics from metadata
   const topics = (conversation.metadata as any)?.topics || [];
   
-  // Determine status badge (closed/archived/reopened)
+  // Determine status badge (closed/archived)
   const status = conversation.status;
-  const meta = (conversation.metadata as any) || {};
-  const reopenedAt = meta.reopened_at ? new Date(meta.reopened_at).getTime() : 0;
-  const showReopenedBadge =
-    status === "reopened" &&
-    !meta.reopen_banner_dismissed &&
-    reopenedAt > 0 &&
-    Date.now() - reopenedAt < 24 * 60 * 60 * 1000;
   const showClosedBadge = status === "closed";
   const showArchivedBadge = status === "archived";
-  const showStatusBadge = showClosedBadge || showArchivedBadge || showReopenedBadge;
 
   return (
     <>
@@ -206,12 +198,6 @@ const ConversationItem = ({
                 assignedToName={conversation.assigned_profile?.full_name}
                 size="sm"
               />
-              {showReopenedBadge && (
-                <Badge variant="accent">
-                  <RefreshCw className="h-[11px] w-[11px]" />
-                  Reaberta
-                </Badge>
-              )}
               {showClosedBadge && (
                 <Badge variant="success">
                   <CheckCircle2 className="h-[11px] w-[11px]" />
