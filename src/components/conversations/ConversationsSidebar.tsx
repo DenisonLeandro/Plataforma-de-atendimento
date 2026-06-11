@@ -191,34 +191,35 @@ const ConversationsSidebar = ({ selectedId, onSelect, instanceId, isCollapsed, o
   }
 
   return (
-    <div className="flex flex-col h-full w-80 bg-sidebar">
+    <div className="flex flex-col h-full w-full bg-bg-surface">
       {/* Title Header */}
-      <div className="p-3 border-b border-sidebar-border">
+      <div className="p-3 border-b border-hairline space-y-3">
         <div className="flex items-center justify-between mb-3">
-          <h1 className="text-lg font-semibold">Conversas</h1>
-          <div className="flex items-center gap-1">
+          <h1 className="text-[17px] font-semibold tracking-tight text-text-primary">Conversas</h1>
+          <div className="flex items-center gap-0.5">
             <NotificationToggle />
             <Link to="/whatsapp/contatos">
-              <Button variant="ghost" size="icon" title="Contatos">
-                <Users className="h-5 w-5" />
+              <Button variant="ghost" size="icon" title="Contatos" className="text-text-secondary hover:text-brand h-9 w-9">
+                <Users className="h-[18px] w-[18px]" />
               </Button>
             </Link>
             <Link to="/whatsapp/relatorio">
-              <Button variant="ghost" size="icon" title="Relatórios">
-                <BarChart3 className="h-5 w-5" />
+              <Button variant="ghost" size="icon" title="Relatórios" className="text-text-secondary hover:text-brand h-9 w-9">
+                <BarChart3 className="h-[18px] w-[18px]" />
               </Button>
             </Link>
             <Link to="/whatsapp/settings">
-              <Button variant="ghost" size="icon" title="Configurações">
-                <Settings className="h-5 w-5" />
+              <Button variant="ghost" size="icon" title="Configurações" className="text-text-secondary hover:text-brand h-9 w-9">
+                <Settings className="h-[18px] w-[18px]" />
               </Button>
             </Link>
             {onToggleCollapse && (
-              <Button 
-                variant="ghost" 
-                size="icon" 
+              <Button
+                variant="ghost"
+                size="icon"
                 onClick={onToggleCollapse}
                 title="Recolher"
+                className="text-text-secondary hover:text-brand h-9 w-9"
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
@@ -229,21 +230,21 @@ const ConversationsSidebar = ({ selectedId, onSelect, instanceId, isCollapsed, o
       </div>
 
       {/* Search and new conversation */}
-      <div className="p-3 space-y-2 border-b border-sidebar-border">
+      <div className="p-3 space-y-2.5 border-b border-hairline">
         <div className="flex gap-2">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-tertiary" />
             <Input
               placeholder="Buscar conversas..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 h-9 bg-sidebar-accent border-sidebar-border"
+              className="pl-9 h-10 bg-bg-surface-2 border-transparent text-[14px] placeholder:text-text-tertiary focus-visible:ring-0 focus-visible:border-accent"
             />
           </div>
           <Button
             size="icon"
             onClick={() => setIsNewConversationOpen(true)}
-            className="bg-primary hover:bg-primary/90 text-primary-foreground"
+            className="h-10 w-10 bg-brand hover:bg-bg-nav-elevated text-text-on-dark shadow-xs"
           >
             <Plus className="h-4 w-4" />
           </Button>
@@ -294,7 +295,7 @@ const ConversationsSidebar = ({ selectedId, onSelect, instanceId, isCollapsed, o
             {search ? "Nenhuma conversa encontrada" : "Nenhuma conversa ainda"}
           </div>
         ) : (
-          <div className="divide-y divide-sidebar-border">
+          <div className="divide-hairline">
             {filteredConversations.map((conversation) => {
               // Calcular se foi encontrado no histórico
               const searchLower = search.toLowerCase();
@@ -323,27 +324,27 @@ const ConversationsSidebar = ({ selectedId, onSelect, instanceId, isCollapsed, o
       </ScrollArea>
 
       {/* Pagination Footer */}
-      <div className="p-3 border-t border-sidebar-border flex items-center justify-between">
-        <span className="text-xs text-muted-foreground">
+      <div className="p-3 border-t border-hairline flex items-center justify-between">
+        <span className="text-xs text-text-secondary tabular">
           {totalCount} conversa{totalCount !== 1 ? 's' : ''}
         </span>
         <div className="flex items-center gap-2">
           <Button 
             variant="outline" 
             size="icon"
-            className="h-7 w-7"
+            className="h-7 w-7 bg-bg-surface border-subtle"
             onClick={() => setCurrentPage(p => p - 1)}
             disabled={currentPage === 1 || isLoading}
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <span className="text-sm min-w-[60px] text-center">
+          <span className="text-sm min-w-[60px] text-center tabular text-text-secondary">
             {currentPage} / {totalPages || 1}
           </span>
           <Button 
             variant="outline" 
             size="icon"
-            className="h-7 w-7"
+            className="h-7 w-7 bg-bg-surface border-subtle"
             onClick={() => setCurrentPage(p => p + 1)}
             disabled={currentPage >= totalPages || isLoading}
           >

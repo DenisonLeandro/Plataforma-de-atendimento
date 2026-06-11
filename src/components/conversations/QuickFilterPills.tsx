@@ -30,35 +30,33 @@ const QuickFilterPills = ({
   ];
 
   return (
-    <div className="flex gap-2 overflow-x-auto flex-nowrap pb-2 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
+    <div className="flex gap-1.5 overflow-x-auto flex-nowrap pb-1.5 scrollbar-hide">
       {filters.map((filter) => {
         const isActive = activeFilter === filter.value;
 
         return (
-          <Button
+          <button
             key={filter.value}
-            variant={isActive ? "default" : "outline"}
-            size="sm"
+            type="button"
             onClick={() => onFilterChange(filter.value)}
             className={`
-              h-8 px-2 text-xs font-medium rounded-full transition-colors whitespace-nowrap flex-shrink-0
-              ${
-                isActive
-                  ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                  : "bg-sidebar-accent text-sidebar-foreground border-sidebar-border hover:bg-sidebar-accent/80"
-              }
+              inline-flex items-center gap-1.5 h-[30px] px-3 text-[12.5px] font-medium rounded-pill
+              whitespace-nowrap flex-shrink-0 border
+              ${isActive
+                ? "bg-brand text-text-on-dark border-brand"
+                : "bg-transparent text-text-secondary border-subtle hover:bg-bg-surface-2 hover:text-text-primary"}
             `}
           >
             {filter.label}
             {filter.count !== undefined && filter.count > 0 && (
-              <Badge
-                variant={isActive ? "secondary" : "default"}
-                className="ml-1.5 h-4 px-1 text-xs"
+              <span
+                className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10.5px] font-semibold tabular
+                  ${isActive ? "bg-white/15 text-text-on-dark" : "bg-accent text-white"}`}
               >
                 {filter.count}
-              </Badge>
+              </span>
             )}
-          </Button>
+          </button>
         );
       })}
     </div>

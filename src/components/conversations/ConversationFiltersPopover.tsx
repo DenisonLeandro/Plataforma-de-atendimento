@@ -32,16 +32,17 @@ export function ConversationFiltersPopover({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="relative">
-          <Settings2 className="h-4 w-4 mr-2" />
+        <Button
+          variant="outline"
+          size="sm"
+          className="relative h-[30px] px-3 bg-bg-surface border-subtle text-text-primary hover:bg-bg-surface-2 text-[12.5px] font-medium rounded-pill"
+        >
+          <Settings2 className="h-3.5 w-3.5 mr-1.5" />
           Filtros
           {activeFiltersCount > 0 && (
-            <Badge
-              variant="default"
-              className="ml-2 h-5 w-5 p-0 flex items-center justify-center rounded-full text-xs"
-            >
+            <span className="ml-2 inline-flex items-center justify-center h-[18px] min-w-[18px] px-1 rounded-full bg-accent text-white text-[10.5px] font-semibold tabular">
               {activeFiltersCount}
-            </Badge>
+            </span>
           )}
         </Button>
       </PopoverTrigger>

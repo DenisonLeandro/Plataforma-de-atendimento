@@ -109,16 +109,19 @@ const ConversationItem = ({
       <ConversationItemMenu conversation={conversation}>
         <div
           onClick={onClick}
-          className={`
-            flex items-center gap-3 p-3 cursor-pointer transition-colors
-            hover:bg-sidebar-accent
-            ${isSelected ? "bg-sidebar-accent" : ""}
-          `}
+          className={cn(
+            "relative flex items-center gap-3 px-4 py-[14px] cursor-pointer",
+            "hover:bg-bg-surface-2",
+            isSelected && "bg-bg-surface-2 before:absolute before:left-0 before:top-0 before:bottom-0 before:w-[3px] before:bg-accent"
+          )}
         >
           {/* Avatar */}
-          <Avatar className="h-10 w-10 shrink-0">
+          <Avatar className={cn(
+            "h-10 w-10 shrink-0 ring-2 ring-transparent",
+            isSelected && "ring-[hsl(var(--accent-h)/0.24)]"
+          )}>
             <AvatarImage src={profilePicture || undefined} alt={contactName} />
-            <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
+            <AvatarFallback className="bg-bg-surface-2 text-text-secondary text-xs font-semibold">
               {getInitials(contactName)}
             </AvatarFallback>
           </Avatar>
@@ -129,8 +132,9 @@ const ConversationItem = ({
             <div className="flex items-center justify-between gap-2 mb-1">
               <div className="flex items-center gap-1.5 min-w-0 flex-1">
                 <span className={cn(
-                  "font-medium text-sm truncate",
-                  nameIsMissing && "text-muted-foreground italic"
+                  "text-[15px] truncate",
+                  isSelected ? "font-semibold text-text-primary" : "font-medium text-text-primary",
+                  nameIsMissing && "text-text-tertiary italic font-normal"
                 )}>
                   {contactName}
                 </span>
@@ -148,7 +152,7 @@ const ConversationItem = ({
                   <span className="text-sm shrink-0">{sentimentEmoji}</span>
                 )}
               </div>
-              <span className="text-xs text-muted-foreground shrink-0">
+              <span className="text-[11px] text-text-tertiary shrink-0 tabular">
                 {formatTimestamp(lastMessageTime)}
               </span>
             </div>
@@ -156,11 +160,11 @@ const ConversationItem = ({
             {/* Preview and indicators row */}
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                <p className="text-sm text-muted-foreground truncate">
+                <p className="text-[13px] text-text-secondary truncate leading-5">
                   {lastMessage || "Sem mensagens"}
                 </p>
                 {foundByContent && (
-                  <Search className="h-3 w-3 text-muted-foreground shrink-0" />
+                  <Search className="h-3 w-3 text-text-tertiary shrink-0" />
                 )}
               </div>
               <div className="flex items-center gap-2 shrink-0">
@@ -171,7 +175,7 @@ const ConversationItem = ({
                 {unreadCount > 0 && (
                   <Badge
                     variant="default"
-                    className="h-5 min-w-5 px-1.5 rounded-full bg-primary text-primary-foreground text-xs font-medium flex items-center justify-center"
+                    className="h-5 min-w-5 px-1.5 rounded-full bg-accent text-white text-[11px] font-semibold tabular flex items-center justify-center border-0"
                   >
                     {unreadCount > 99 ? "99+" : unreadCount}
                   </Badge>
