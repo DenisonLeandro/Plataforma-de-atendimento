@@ -80,14 +80,13 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
               )}>
                 {displayName}
               </h2>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                className="h-6 w-6 p-0" 
+              <Button
+                variant="ghost"
+                size="icon-sm"
                 onClick={() => setIsEditContactModalOpen(true)}
                 title="Editar contato"
               >
-                <Pencil className="h-3 w-3 text-muted-foreground" />
+                <Pencil className="h-3.5 w-3.5" />
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
@@ -112,37 +111,24 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
         <div className="flex items-center gap-2">
           {/* Assignment buttons */}
           {conversation && isInQueue && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleAssumeFromQueue}
-            >
-              <UserPlus className="w-4 h-4 mr-2" />
+            <Button variant="secondary" size="sm" onClick={handleAssumeFromQueue}>
+              <UserPlus />
               Assumir
             </Button>
           )}
 
           {conversation && (canAssign || (!isInQueue && isAssignedToMe)) && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setIsAssignDialogOpen(true)}
-            >
-              <Repeat className="w-4 h-4 mr-2" />
+            <Button variant="secondary" size="sm" onClick={() => setIsAssignDialogOpen(true)}>
+              <Repeat />
               Transferir
             </Button>
           )}
 
           <SentimentCard sentiment={sentiment} />
-          
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onAnalyze}
-            disabled={isAnalyzing}
-          >
-            <RefreshCw className={`w-4 h-4 ${isAnalyzing ? 'animate-spin' : ''}`} />
-            <span className="ml-2">Analisar</span>
+
+          <Button variant="ghost" size="sm" onClick={onAnalyze} loading={isAnalyzing}>
+            <RefreshCw />
+            <span>Analisar</span>
           </Button>
 
           {conversation && (
@@ -151,7 +137,7 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
 
           <Link to="/whatsapp/settings">
             <Button variant="ghost" size="icon">
-              <Settings className="h-5 w-5" />
+              <Settings className="h-[18px] w-[18px]" />
             </Button>
           </Link>
         </div>
