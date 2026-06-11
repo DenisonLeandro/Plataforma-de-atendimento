@@ -1,31 +1,32 @@
-## Problema
+## Objetivo
 
-No `ChatHeader.tsx`, o botão **Transferir** só aparece quando `!isInQueue && canTransfer`. Ou seja, se a conversa está na fila (não atribuída), admin/supervisor só veem "Assumir" — não conseguem transferir direto para outro agente. E quando a conversa já está atribuída a outro agente, em alguns cenários a UI não está renderizando corretamente para o admin.
+Ativar a conta `rhl0508@gmail.com` com a senha `Renata0508` e corrigir o convite para não travar mais nesse cenário.
 
-## Solução
+## O que será feito
 
-Ajustar a lógica de renderização dos botões em `src/components/chat/ChatHeader.tsx`:
+### 1. Nova Edge Function: `activate-team-member`
+- Recebe `email`, `password`, `fullName?`, `role?` (default `agent`).
+- Valida que o chamador é `admin` (via JWT + `has_role`).
+- Localiza o usuário em `auth.users`; se não existir, retorna erro.
+- Atualiza via Admin API: `password`, `email_confirm=true`.
+- Faz upsert em `public.profiles` com `is_active=true`, `is_approved=true`.
+- Faz upsert em `public.user_roles` com a role escolhida.
 
-1. **Botão "Assumir"**: continua aparecendo quando a conversa está na fila (`isInQueue`), para qualquer usuário (admin, supervisor, agent).
-2. **Botão "Transferir"**: passa a aparecer sempre que o usuário for admin ou supervisor (`canAssign`), OU quando for o agente atribuído (`isAssignedToMe`) — independente de a conversa estar na fila ou não. Assim:
-   - Admin/Supervisor sempre veem "Transferir" (podem atribuir conversas da fila a um agente, ou redirecionar uma já atribuída).
-   - Agente vê "Transferir" apenas quando a conversa é dele.
+### 2. Ajuste em `invite-team-member`
+- Quando `createUser` falha com `email_exists`:
+  - Busca o usuário existente
+  - Se não tiver profile/role, cria-os (em vez de retornar 409)
+  - Confirma email automaticamente
+- Caso já esteja totalmente configurado, retorna 409 com mensagem clara.
 
-### Alteração técnica
+### 3. Execução
+- Após o deploy, chamo `activate-team-member` uma vez com:
+  - email: `rhl0508@gmail.com`
+  - password: `Renata0508`
+  - role: `agent`
 
-Em `ChatHeader.tsx`, substituir a condição do botão Transferir:
+A pessoa poderá então entrar em `https://chat-heartbeat-57.lovable.app` com essas credenciais. **Recomendado trocar a senha após o primeiro login.**
 
-```tsx
-// Antes
-{conversation && !isInQueue && canTransfer && ( ... )}
-
-// Depois
-{conversation && (canAssign || (!isInQueue && isAssignedToMe)) && ( ... )}
-```
-
-A `AssignAgentDialog` já aceita `isTransfer` e funciona tanto para atribuir da fila quanto para transferir entre agentes — nenhuma mudança necessária ali.
-
-### Escopo
-
-- Apenas frontend (`src/components/chat/ChatHeader.tsx`).
-- RLS e hooks de atribuição (`useConversationAssignment`) já permitem admin/supervisor executar a ação; não há mudança de backend.
+### Arquivos
+- Novo: `supabase/functions/activate-team-member/index.ts`
+- Editado: `supabase/functions/invite-team-member/index.ts`
