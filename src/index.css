@@ -41,8 +41,8 @@ All colors MUST be HSL.
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 230 14% 28% / 0.14;        /* fallback below */
-    --input: 48 14% 90%;
+    --border: 230 14% 88%;
+    --input: 230 14% 88%;
     --ring: 28 100% 52%;
 
     --success: 142 60% 38%;
@@ -58,7 +58,7 @@ All colors MUST be HSL.
     --sidebar-primary-foreground: 60 19% 97%;
     --sidebar-accent: 48 14% 95%;
     --sidebar-accent-foreground: 230 21% 15%;
-    --sidebar-border: 230 14% 28% / 0.08;
+    --sidebar-border: 230 14% 92%;
     --sidebar-ring: 28 100% 52%;
 
     /* Brand tokens (raw, for direct use) */
@@ -101,7 +101,7 @@ All colors MUST be HSL.
     --destructive: 0 62% 45%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 60 19% 97% / 0.1;
+    --border: 230 14% 22%;
     --input: 230 14% 22%;
     --ring: 28 100% 52%;
 
@@ -115,7 +115,7 @@ All colors MUST be HSL.
     --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 230 14% 33%;
     --sidebar-accent-foreground: 60 19% 97%;
-    --sidebar-border: 60 19% 97% / 0.1;
+    --sidebar-border: 230 14% 22%;
     --sidebar-ring: 28 100% 52%;
 
     --shadow-sm: 0 1px 2px hsl(0 0% 0% / 0.3);
