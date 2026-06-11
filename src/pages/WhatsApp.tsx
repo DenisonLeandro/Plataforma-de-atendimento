@@ -49,7 +49,20 @@ const WhatsApp = () => {
       {/* Disconnected Instances Banner */}
       <DisconnectedInstancesBanner instances={disconnectedInstances} />
       
-      <div className={`flex-1 overflow-hidden ${selectedConversation && isMobile ? 'flex' : 'app-grid'}`}>
+      <div
+        className={`flex-1 overflow-hidden ${isMobile ? 'flex' : 'app-grid'}`}
+        style={
+          !isMobile
+            ? {
+                gridTemplateColumns: `${
+                  isConversationsSidebarCollapsed ? '56px' : 'minmax(0, var(--col-sidebar, 400px))'
+                } minmax(0, 1fr) ${
+                  isDetailsSidebarCollapsed ? '56px' : 'minmax(0, var(--col-details, 300px))'
+                }`,
+              }
+            : undefined
+        }
+      >
       {/* Sidebar */}
       {showSidebar && (
         <div className={`${isMobile ? "w-full" : isConversationsSidebarCollapsed ? "w-14" : "w-full"} border-r border-subtle min-w-0`}>
