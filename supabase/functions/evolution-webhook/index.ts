@@ -849,24 +849,16 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
 
       // Auto-reopen closed conversations when client sends a new message
       if (currentStatus === 'closed') {
-        updateData.status = 'reopened';
+        updateData.status = 'active';
         updateData.metadata = {
           ...currentMetadata,
-          reopened_at: timestamp,
-          reopened_by: 'system_auto',
-          reopen_banner_dismissed: false,
           timeline: [
             ...(Array.isArray(currentMetadata.timeline) ? currentMetadata.timeline : []),
             { type: 'reabertura_automatica', at: timestamp, trigger_message_id: key.id },
           ],
         };
-        console.log('[evolution-webhook] Conversation auto-reopened:', conversationId);
+        console.log('[evolution-webhook] Conversation auto-reopened (closed → active):', conversationId);
       }
-    } else if (currentStatus === 'reopened') {
-      // Agent replied → conversation returns to active
-      const { reopened_at, reopened_by, reopen_banner_dismissed, ...rest } = currentMetadata;
-      updateData.status = 'active';
-      updateData.metadata = rest;
     }
 
     const { error: updateError } = await supabase

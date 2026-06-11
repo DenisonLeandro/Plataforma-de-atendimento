@@ -54,7 +54,7 @@ export function UserMenu() {
           <div className="relative">
             <Avatar className="h-10 w-10 ring-2 ring-bg-nav-deep">
               <AvatarImage src={profile.avatar_url || undefined} alt={profile.full_name} />
-              <AvatarFallback className="bg-brand text-text-on-dark font-semibold">
+              <AvatarFallback className="bg-accent text-white font-semibold">
                 {initials}
               </AvatarFallback>
             </Avatar>

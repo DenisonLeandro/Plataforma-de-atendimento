@@ -5,7 +5,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { ChatHeader } from "./ChatHeader";
 import { MessagesContainer } from "./MessagesContainer";
 import { MessageInputContainer, MediaSendParams } from "./input";
-import { ReopenBanner } from "./ReopenBanner";
 import { MessageCircle } from "lucide-react";
 import { Tables } from "@/integrations/supabase/types";
 
@@ -110,14 +109,6 @@ export const ChatArea = ({ conversationId }: ChatAreaProps) => {
         conversation={conversation}
         onRefresh={handleRefresh}
       />
-
-      {conversation && (
-        <ReopenBanner
-          conversationId={conversationId}
-          status={conversation.status}
-          metadata={conversation.metadata}
-        />
-      )}
 
       <MessagesContainer 
         messages={messages} 

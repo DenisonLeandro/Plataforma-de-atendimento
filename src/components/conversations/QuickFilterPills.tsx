@@ -41,8 +41,8 @@ const QuickFilterPills = ({
               inline-flex items-center gap-1.5 h-[30px] px-3 text-[12.5px] font-medium rounded-pill
               whitespace-nowrap flex-shrink-0 border
               ${isActive
-                ? "bg-brand text-text-on-dark border-brand"
-                : "bg-transparent text-text-secondary border-subtle hover:bg-bg-surface-2 hover:text-text-primary"}
+                ? "bg-accent text-white border-accent"
+                : "bg-transparent text-text-secondary border-subtle hover:bg-[hsl(var(--accent-soft))] hover:text-[hsl(var(--accent-h))] hover:border-[hsl(var(--accent-h)/0.2)]"}
             `}
           >
             {filter.label}
