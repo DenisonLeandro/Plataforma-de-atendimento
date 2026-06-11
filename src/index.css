@@ -71,6 +71,17 @@
     --warning: 38 92% 50%;
     --info: var(--brand-primary);
 
+    /* Semantic badge palette */
+    --accent-soft: 28 100% 95%;
+    --accent-soft-fg: 22 100% 36%;
+    --danger-fg: 0 64% 36%;
+    --success-bg: 152 67% 92%;
+    --success-fg: 158 80% 27%;
+    --warning-bg: 38 92% 92%;
+    --warning-fg: 32 82% 31%;
+    --info-bg: 217 90% 95%;
+    --info-fg: 224 76% 48%;
+
     --radius: 0.5rem;
 
     /* Sidebar — light surface (white panel on app bg) */
