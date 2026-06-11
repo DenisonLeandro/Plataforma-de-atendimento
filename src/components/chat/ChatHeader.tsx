@@ -122,7 +122,7 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
             </Button>
           )}
 
-          {conversation && !isInQueue && canTransfer && (
+          {conversation && (canAssign || (!isInQueue && isAssignedToMe)) && (
             <Button
               variant="outline"
               size="sm"
