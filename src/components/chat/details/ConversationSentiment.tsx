@@ -192,23 +192,14 @@ export function ConversationSentiment({ conversationId }: ConversationSentimentP
         )}
 
         <Button 
-          onClick={handleAnalyze} 
-          disabled={isAnalyzing}
-          variant="outline"
+          onClick={handleAnalyze}
+          loading={isAnalyzing}
+          variant="secondary"
           className="w-full"
           size="sm"
         >
-          {isAnalyzing ? (
-            <>
-              <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-              Analisando...
-            </>
-          ) : (
-            <>
-              <RefreshCw className="mr-2 h-3 w-3" />
-              Reanalisar
-            </>
-          )}
+          <RefreshCw />
+          Reanalisar
         </Button>
       </Card>
     </div>
