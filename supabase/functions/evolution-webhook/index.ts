@@ -846,7 +846,7 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
 
       // Auto-reopen closed conversation when client sends a new message
       if (currentConv?.status === 'closed') {
-        updateData.status = 'open';
+        updateData.status = 'active';
         console.log(`[evolution-webhook] Auto-reopened closed conversation ${conversationId}`);
       }
     }
