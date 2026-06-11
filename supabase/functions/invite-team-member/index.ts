@@ -115,7 +115,7 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         success: true, 
-        userId: userData.user.id,
+        userId: userId,
         message: 'Convite enviado com sucesso. O membro receberá um email para confirmar o cadastro.' 
       }),
       {
