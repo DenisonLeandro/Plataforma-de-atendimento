@@ -43,6 +43,14 @@ Deno.serve(async (req) => {
 
     if (createError) {
       console.error('Error creating user:', createError);
+      const code = (createError as any).code || (createError as any).status;
+      const msg = createError.message || '';
+      if (code === 'email_exists' || /already been registered|already registered|already exists/i.test(msg)) {
+        return new Response(
+          JSON.stringify({ error: 'Este email já está cadastrado na plataforma.' }),
+          { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
       throw createError;
     }
 
