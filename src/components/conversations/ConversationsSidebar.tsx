@@ -193,7 +193,7 @@ const ConversationsSidebar = ({ selectedId, onSelect, instanceId, isCollapsed, o
   return (
     <div className="flex flex-col h-full w-full min-h-0 overflow-hidden bg-bg-surface">
       {/* Title Header */}
-      <div className="p-3 border-b border-hairline space-y-3">
+      <div className="shrink-0 p-3 border-b border-hairline space-y-3">
         <div className="flex items-center justify-between mb-3">
           <h1 className="text-[17px] font-semibold tracking-tight text-text-primary">Conversas</h1>
           <div className="flex items-center gap-0.5">
@@ -230,7 +230,7 @@ const ConversationsSidebar = ({ selectedId, onSelect, instanceId, isCollapsed, o
       </div>
 
       {/* Search and new conversation */}
-      <div className="p-3 space-y-2.5 border-b border-hairline">
+      <div className="shrink-0 p-3 space-y-2.5 border-b border-hairline">
         <div className="flex gap-2">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-tertiary" />
@@ -326,7 +326,7 @@ const ConversationsSidebar = ({ selectedId, onSelect, instanceId, isCollapsed, o
       </ScrollArea>
 
       {/* Pagination Footer */}
-      <div className="p-3 border-t border-hairline flex items-center justify-between">
+      <div className="shrink-0 p-3 border-t border-hairline flex items-center justify-between">
         <span className="text-xs text-text-secondary tabular">
           {totalCount} conversa{totalCount !== 1 ? 's' : ''}
         </span>

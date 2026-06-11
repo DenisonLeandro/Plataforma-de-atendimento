@@ -144,6 +144,18 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     letter-spacing: 0;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  #root {
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
 
   body {
@@ -210,6 +222,7 @@
   grid-template-columns: var(--col-sidebar) minmax(0, 1fr) var(--col-details);
   height: 100%;
   min-height: 0;
+  overflow: hidden;
 }
 
 /* ----- Motion ----- */
@@ -251,6 +264,7 @@
 /* ----- Visible thin scrollbars on conversation sidebar ----- */
 .sidebar-filters,
 .sidebar-conversation-list [data-radix-scroll-area-viewport],
+.chat-messages-scroll [data-radix-scroll-area-viewport],
 .details-scroll {
   scrollbar-width: thin;
   scrollbar-color: hsl(var(--brand-primary) / 0.18) transparent;
@@ -259,17 +273,20 @@
 }
 .sidebar-filters::-webkit-scrollbar,
 .sidebar-conversation-list [data-radix-scroll-area-viewport]::-webkit-scrollbar,
+.chat-messages-scroll [data-radix-scroll-area-viewport]::-webkit-scrollbar,
 .details-scroll::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 .sidebar-filters::-webkit-scrollbar-track,
 .sidebar-conversation-list [data-radix-scroll-area-viewport]::-webkit-scrollbar-track,
+.chat-messages-scroll [data-radix-scroll-area-viewport]::-webkit-scrollbar-track,
 .details-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
 .sidebar-filters::-webkit-scrollbar-thumb,
 .sidebar-conversation-list [data-radix-scroll-area-viewport]::-webkit-scrollbar-thumb,
+.chat-messages-scroll [data-radix-scroll-area-viewport]::-webkit-scrollbar-thumb,
 .details-scroll::-webkit-scrollbar-thumb {
   background: hsl(var(--brand-primary) / 0.18);
   border-radius: var(--radius-pill);
@@ -279,6 +296,7 @@
 }
 .sidebar-filters::-webkit-scrollbar-thumb:hover,
 .sidebar-conversation-list [data-radix-scroll-area-viewport]::-webkit-scrollbar-thumb:hover,
+.chat-messages-scroll [data-radix-scroll-area-viewport]::-webkit-scrollbar-thumb:hover,
 .details-scroll::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--brand-primary) / 0.32);
   background-clip: padding-box;

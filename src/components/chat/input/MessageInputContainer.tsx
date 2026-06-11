@@ -120,7 +120,7 @@ export const MessageInputContainer = ({
 
   if (isRecording) {
     return (
-      <div className="p-4 border-t border-border bg-card">
+      <div className="shrink-0 p-4 border-t border-border bg-card">
         <AudioRecorder
           onSend={(params) => {
             onSendMedia(params);
@@ -133,7 +133,7 @@ export const MessageInputContainer = ({
   }
 
   return (
-    <div className="border-t border-border bg-card">
+    <div className="shrink-0 border-t border-border bg-card">
       {replyingTo && onCancelReply && (
         <ReplyPreview message={replyingTo} onCancel={onCancelReply} />
       )}
