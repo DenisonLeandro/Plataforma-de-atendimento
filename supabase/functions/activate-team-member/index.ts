@@ -22,32 +22,35 @@ Deno.serve(async (req) => {
     const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const ANON = Deno.env.get('SUPABASE_ANON_KEY')!;
 
-    // Verify caller is an admin
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader?.startsWith('Bearer ')) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-    const userClient = createClient(SUPABASE_URL, ANON, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const { data: userInfo, error: userErr } = await userClient.auth.getUser();
-    if (userErr || !userInfo?.user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
-    const { data: isAdmin } = await admin.rpc('has_role', {
-      _user_id: userInfo.user.id,
-      _role: 'admin',
-    });
-    if (!isAdmin) {
-      return new Response(JSON.stringify({ error: 'Apenas admins podem ativar contas.' }), {
-        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+
+    // Verify caller is an admin (best effort). Skip if no auth header.
+    const authHeader = req.headers.get('Authorization');
+    if (authHeader?.startsWith('Bearer ')) {
+      const userClient = createClient(SUPABASE_URL, ANON, {
+        global: { headers: { Authorization: authHeader } },
+      });
+      const { data: userInfo } = await userClient.auth.getUser();
+      if (userInfo?.user) {
+        const { data: isAdmin } = await admin.rpc('has_role', {
+          _user_id: userInfo.user.id,
+          _role: 'admin',
+        });
+        if (!isAdmin) {
+          return new Response(JSON.stringify({ error: 'Apenas admins podem ativar contas.' }), {
+            status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+      } else {
+        return new Response(JSON.stringify({ error: 'Sessão inválida.' }), {
+          status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    } else {
+      return new Response(JSON.stringify({ error: 'Auth header ausente.' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
