@@ -80,6 +80,7 @@ export function ConversationFiltersPopover({
               <SelectContent>
                 <SelectItem value="all">Todas</SelectItem>
                 <SelectItem value="active">Em Aberto</SelectItem>
+                <SelectItem value="reopened">Reabertas</SelectItem>
                 <SelectItem value="closed">Encerradas</SelectItem>
                 <SelectItem value="archived">Arquivadas</SelectItem>
               </SelectContent>

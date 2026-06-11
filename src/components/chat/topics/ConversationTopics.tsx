@@ -69,15 +69,13 @@ export function ConversationTopics({ conversationId }: ConversationTopicsProps) 
           </TooltipProvider>
         </div>
         <Button
-          variant="ghost"
+          variant="secondary"
           size="sm"
           onClick={handleRecategorize}
-          disabled={isPending}
+          loading={isPending}
         >
-          <RefreshCw className={`h-3 w-3 ${isPending ? 'animate-spin' : ''}`} />
-          <span className="ml-1.5 text-xs">
-            {hasTopic ? 'Recategorizar' : 'Categorizar'}
-          </span>
+          <RefreshCw />
+          {hasTopic ? 'Recategorizar' : 'Categorizar'}
         </Button>
       </div>
 

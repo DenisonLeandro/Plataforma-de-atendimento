@@ -25,15 +25,22 @@ export const useWhatsAppMessages = (conversationId: string | null) => {
     enabled: !!conversationId,
   });
 
-  // Mark conversation as read when opened
+  // Mark conversation as read when opened (also dismiss reopen banner if applicable)
   useEffect(() => {
-    if (conversationId) {
-      supabase
+    if (!conversationId) return;
+    (async () => {
+      const { data: conv } = await supabase
         .from('whatsapp_conversations')
-        .update({ unread_count: 0 })
+        .select('status, metadata')
         .eq('id', conversationId)
-        .then();
-    }
+        .maybeSingle();
+      const updates: any = { unread_count: 0 };
+      if (conv?.status === 'reopened') {
+        const meta: any = conv.metadata || {};
+        updates.metadata = { ...meta, reopen_banner_dismissed: true };
+      }
+      await supabase.from('whatsapp_conversations').update(updates).eq('id', conversationId);
+    })();
   }, [conversationId]);
 
   // Realtime subscription for new and edited messages
