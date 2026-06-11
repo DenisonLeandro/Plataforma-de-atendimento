@@ -46,7 +46,7 @@ export const useWhatsAppSentiment = (conversationId: string | null) => {
     if (!conversationId) return;
 
     const channel = supabase
-      .channel(`sentiment-updates-${conversationId}`)
+      .channel(`sentiment-updates-${conversationId}-${Math.random().toString(36).slice(2)}`)
       .on('postgres_changes', {
         event: '*',
         schema: 'public',

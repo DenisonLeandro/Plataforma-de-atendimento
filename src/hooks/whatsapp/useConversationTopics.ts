@@ -40,7 +40,7 @@ export const useConversationTopics = (conversationId: string | null) => {
     if (!conversationId) return;
 
     const channel = supabase
-      .channel(`topics-${conversationId}`)
+      .channel(`topics-${conversationId}-${Math.random().toString(36).slice(2)}`)
       .on('postgres_changes', {
         event: 'UPDATE',
         schema: 'public',
