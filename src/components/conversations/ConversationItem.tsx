@@ -13,6 +13,7 @@ import { EditContactModal } from "@/components/chat/EditContactModal";
 import { isContactNameMissing } from "@/utils/contactUtils";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { User } from "lucide-react";
 
 type Conversation = Tables<"whatsapp_conversations"> & {
   contact?: Tables<"whatsapp_contacts"> | null;
@@ -110,7 +111,7 @@ const ConversationItem = ({
         <div
           onClick={onClick}
           className={`
-            flex items-center gap-3 p-3 cursor-pointer transition-colors
+            grid grid-cols-[auto_minmax(0,1fr)_auto] gap-3 items-start p-3 cursor-pointer transition-colors
             hover:bg-sidebar-accent
             ${isSelected ? "bg-sidebar-accent" : ""}
           `}
@@ -124,33 +125,28 @@ const ConversationItem = ({
           </Avatar>
 
           {/* Content */}
-          <div className="flex-1 min-w-0">
-            {/* Name and timestamp row */}
-            <div className="flex items-center justify-between gap-2 mb-1">
-              <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                <span className={cn(
-                  "font-medium text-sm truncate",
-                  nameIsMissing && "text-muted-foreground italic"
-                )}>
-                  {contactName}
-                </span>
-                {nameIsMissing && (
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    className="h-5 w-5 p-0 flex-shrink-0" 
-                    onClick={handleEditClick}
-                  >
-                    <Pencil className="h-3 w-3 text-muted-foreground" />
-                  </Button>
-                )}
-                {sentimentEmoji && (
-                  <span className="text-sm shrink-0">{sentimentEmoji}</span>
-                )}
-              </div>
-              <span className="text-xs text-muted-foreground shrink-0">
-                {formatTimestamp(lastMessageTime)}
+          <div className="min-w-0 flex flex-col gap-1">
+            {/* Name row */}
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className={cn(
+                "font-medium text-sm truncate",
+                nameIsMissing && "text-muted-foreground italic"
+              )}>
+                {contactName}
               </span>
+              {nameIsMissing && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-5 w-5 p-0 flex-shrink-0"
+                  onClick={handleEditClick}
+                >
+                  <Pencil className="h-3 w-3 text-muted-foreground" />
+                </Button>
+              )}
+              {sentimentEmoji && (
+                <span className="text-sm shrink-0">{sentimentEmoji}</span>
+              )}
             </div>
 
             {/* Preview and indicators row */}
@@ -186,19 +182,37 @@ const ConversationItem = ({
               </div>
             )}
 
-            {/* Status and Assignment row */}
-            <div className="mt-1.5 flex items-center gap-2">
-              <QueueIndicator
-                assignedTo={conversation.assigned_to}
-                assignedToName={conversation.assigned_profile?.full_name}
-                size="sm"
-              />
-              {showStatusBadge && (
-                <Badge variant="secondary" className="text-xs px-2 py-0 h-5">
-                  {status === "closed" ? "Encerrada" : "Arquivada"}
-                </Badge>
-              )}
-            </div>
+            {/* Status row (no assignee here — moved to meta column) */}
+            {(!conversation.assigned_to || showStatusBadge) && (
+              <div className="mt-1.5 flex items-center gap-2">
+                {!conversation.assigned_to && (
+                  <QueueIndicator
+                    assignedTo={conversation.assigned_to}
+                    size="sm"
+                  />
+                )}
+                {showStatusBadge && (
+                  <Badge variant="secondary" className="text-xs px-2 py-0 h-5">
+                    {status === "closed" ? "Encerrada" : "Arquivada"}
+                  </Badge>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Meta column: timestamp + assignee */}
+          <div className="flex flex-col items-end gap-1.5 shrink-0 min-w-[56px]">
+            <span className="text-[11px] font-medium text-muted-foreground tabular-nums leading-none">
+              {formatTimestamp(lastMessageTime)}
+            </span>
+            {conversation.assigned_to && conversation.assigned_profile?.full_name && (
+              <span className="inline-flex items-center gap-1 h-5 px-2 rounded-full bg-muted text-muted-foreground text-[11px] font-medium max-w-[90px]">
+                <User className="h-2.5 w-2.5 shrink-0" />
+                <span className="truncate">
+                  {conversation.assigned_profile.full_name.split(" ")[0]}
+                </span>
+              </span>
+            )}
           </div>
         </div>
       </ConversationItemMenu>
