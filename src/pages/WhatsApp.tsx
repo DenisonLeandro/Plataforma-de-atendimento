@@ -49,10 +49,23 @@ const WhatsApp = () => {
       {/* Disconnected Instances Banner */}
       <DisconnectedInstancesBanner instances={disconnectedInstances} />
       
-      <div className="flex flex-1 overflow-hidden">
+      <div
+        className={`flex-1 overflow-hidden ${isMobile ? 'flex' : 'app-grid'}`}
+        style={
+          !isMobile
+            ? {
+                gridTemplateColumns: `${
+                  isConversationsSidebarCollapsed ? '56px' : 'minmax(0, var(--col-sidebar, 400px))'
+                } minmax(0, 1fr) ${
+                  isDetailsSidebarCollapsed ? '56px' : 'minmax(0, var(--col-details, 300px))'
+                }`,
+              }
+            : undefined
+        }
+      >
       {/* Sidebar */}
       {showSidebar && (
-        <div className={`${isMobile ? "w-full" : isConversationsSidebarCollapsed ? "w-14" : "w-[350px]"} border-r border-border`}>
+        <div className={`${isMobile ? "w-full" : isConversationsSidebarCollapsed ? "w-14" : "w-full"} border-r border-subtle min-w-0`}>
           <ConversationsSidebar
             selectedId={selectedConversation}
             onSelect={handleSelectConversation}
@@ -65,7 +78,7 @@ const WhatsApp = () => {
 
       {/* Chat Area */}
       {showChat && (
-        <div className="flex-1 flex flex-col">
+        <div className="flex flex-col min-w-0 bg-bg-app">
           {/* Mobile back button */}
           {isMobile && selectedConversation && (
             <div className="border-b border-border p-2">
@@ -81,12 +94,14 @@ const WhatsApp = () => {
 
       {/* Details Sidebar - hidden on mobile */}
       {!isMobile && (
-        <ConversationDetailsSidebar
-          conversationId={selectedConversation}
-          contactName={selectedConv?.contact?.name}
-          isCollapsed={isDetailsSidebarCollapsed}
-          onToggleCollapse={() => setIsDetailsSidebarCollapsed(!isDetailsSidebarCollapsed)}
-        />
+        <div className="app-grid__details min-w-0">
+          <ConversationDetailsSidebar
+            conversationId={selectedConversation}
+            contactName={selectedConv?.contact?.name}
+            isCollapsed={isDetailsSidebarCollapsed}
+            onToggleCollapse={() => setIsDetailsSidebarCollapsed(!isDetailsSidebarCollapsed)}
+          />
+        </div>
       )}
 
       {/* No instance state */}
