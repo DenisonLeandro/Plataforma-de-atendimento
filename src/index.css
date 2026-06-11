@@ -183,18 +183,22 @@
 }
 
 /* ----- App grid (única mudança estrutural) ----- */
-.app-grid {
-  display: grid;
-  grid-template-columns: 400px 1fr 300px;
-  height: 100%;
-  min-height: 0;
+:root {
+  --col-sidebar: 400px;
+  --col-details: 300px;
 }
 @media (max-width: 1440px) {
-  .app-grid { grid-template-columns: 360px 1fr 280px; }
+  :root { --col-sidebar: 360px; --col-details: 280px; }
 }
 @media (max-width: 1200px) {
-  .app-grid { grid-template-columns: 340px 1fr 0px; }
+  :root { --col-sidebar: 340px; --col-details: 0px; }
   .app-grid > .app-grid__details { display: none; }
+}
+.app-grid {
+  display: grid;
+  grid-template-columns: var(--col-sidebar) minmax(0, 1fr) var(--col-details);
+  height: 100%;
+  min-height: 0;
 }
 
 /* ----- Motion ----- */
