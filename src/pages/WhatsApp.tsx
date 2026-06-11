@@ -45,7 +45,7 @@ const WhatsApp = () => {
   const showChat = !isMobile || selectedConversation;
 
   return (
-    <div className="flex flex-col h-screen w-full overflow-hidden bg-background">
+    <div className="flex flex-col h-full w-full overflow-hidden bg-background">
       {/* Disconnected Instances Banner */}
       <DisconnectedInstancesBanner instances={disconnectedInstances} />
       
