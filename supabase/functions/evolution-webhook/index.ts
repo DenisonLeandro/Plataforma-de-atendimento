@@ -94,7 +94,7 @@ async function downloadAndUploadMedia(
   apiUrl: string,
   apiKey: string,
   instanceName: string,
-  messageKey: any,
+  messageData: { key: any; message: any },
   supabase: any,
   mimetype: string,
   providerType: string = 'self_hosted'
@@ -117,12 +117,19 @@ async function downloadAndUploadMedia(
       {
         method: 'POST',
         headers,
-        body: JSON.stringify({ message: { key: messageKey } }),
+        body: JSON.stringify({
+          message: {
+            key: messageData.key,
+            message: messageData.message,
+          },
+          convertToMp4: false,
+        }),
       }
     );
 
     if (!response.ok) {
-      console.error('[evolution-webhook] Failed to download media:', response.status);
+      const errText = await response.text().catch(() => '');
+      console.error('[evolution-webhook] Failed to download media:', response.status, errText);
       return null;
     }
 
@@ -146,7 +153,7 @@ async function downloadAndUploadMedia(
     // Generate unique filename
     // Extract extension correctly, removing codec info
     const extension = (mimetype.split('/')[1] || 'bin').split(';')[0].trim();
-    const filename = `${Date.now()}-${messageKey.id}.${extension}`;
+    const filename = `${Date.now()}-${messageData.key.id}.${extension}`;
     const filePath = `${instanceName}/${filename}`;
 
     console.log('[evolution-webhook] Uploading to Supabase Storage:', filePath);
@@ -753,7 +760,7 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
             secrets.api_url,
             secrets.api_key,
             evolutionInstanceId,
-            key,
+            { key, message },
             supabase,
             mediaMimetype,
             instanceData.provider_type || 'self_hosted'
