@@ -91,8 +91,8 @@ export function AssignAgentDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px] max-h-[90vh] flex flex-col overflow-hidden">
-        <DialogHeader className="shrink-0">
+      <DialogContent className="sm:max-w-[500px] max-h-[90vh]">
+        <DialogHeader>
           <DialogTitle>
             {isTransfer ? 'Transferir Conversa' : 'Atribuir Conversa'}
           </DialogTitle>
@@ -103,7 +103,7 @@ export function AssignAgentDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 min-h-0 pr-4">
+        <ScrollArea className="max-h-[40vh] pr-4">
           <div className="space-y-2">
             {isLoading ? (
               <div className="text-center py-4 text-muted-foreground">
@@ -159,7 +159,7 @@ export function AssignAgentDialog({
         </ScrollArea>
 
         {isTransfer && (
-          <div className="space-y-2 shrink-0">
+          <div className="space-y-2">
             <Label htmlFor="reason">Motivo da transferência (opcional)</Label>
             <Textarea
               id="reason"
@@ -171,7 +171,7 @@ export function AssignAgentDialog({
           </div>
         )}
 
-        <DialogFooter className="shrink-0">
+        <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
