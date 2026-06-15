@@ -215,7 +215,7 @@ async function findOrCreateConversationLite(
     .insert({
       instance_id: instanceId,
       contact_id: contactId,
-      status: 'active',
+      status: 'closed',
     })
     .select('id')
     .single();
@@ -224,6 +224,7 @@ async function findOrCreateConversationLite(
     console.error('[sync-whatsapp-history] Error creating conversation:', error);
     return null;
   }
+  console.log(`[sync-whatsapp-history] Conversation created as CLOSED: ${created.id}`);
   return created.id;
 }
 
