@@ -713,6 +713,23 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
             mediaMimetype,
             instanceData.provider_type || 'self_hosted'
           );
+          // Retry once after a short delay if first attempt failed (Evolution API can be flaky)
+          if (!mediaUrl) {
+            console.warn('[evolution-webhook] First media download failed, retrying in 800ms...', { messageId: key.id, messageType });
+            await new Promise((r) => setTimeout(r, 800));
+            mediaUrl = await downloadAndUploadMedia(
+              secrets.api_url,
+              secrets.api_key,
+              evolutionInstanceId,
+              { key, message },
+              supabase,
+              mediaMimetype,
+              instanceData.provider_type || 'self_hosted'
+            );
+            if (!mediaUrl) {
+              console.error('[evolution-webhook] Media download failed after retry. Message will be saved without media_url; user can fetch it via fetch-message-media.', { messageId: key.id, messageType });
+            }
+          }
         }
       }
     }

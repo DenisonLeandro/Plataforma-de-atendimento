@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Tables } from "@/integrations/supabase/types";
 import { format } from "date-fns";
-import { Check, CheckCheck, Clock, Reply, Pencil, User } from "lucide-react";
+import { Check, CheckCheck, Clock, Reply, Pencil, User, Download, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { QuotedMessagePreview } from "./QuotedMessagePreview";
 import { ImageViewerModal } from "./ImageViewerModal";
@@ -13,6 +13,9 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { EditHistoryPopover } from "./EditHistoryPopover";
 import { EditMessageModal } from "./EditMessageModal";
 import { useEditMessage } from "@/hooks/whatsapp/useEditMessage";
+import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
 
 type Message = Tables<'whatsapp_messages'>;
 type Reaction = Tables<'whatsapp_reactions'>;
@@ -27,10 +30,40 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
   const [viewerImage, setViewerImage] = useState<string | null>(null);
   const [isHovered, setIsHovered] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isFetchingMedia, setIsFetchingMedia] = useState(false);
   const isFromMe = message.is_from_me;
   const time = format(new Date(message.timestamp), 'HH:mm');
   const { sendReaction } = useMessageReaction();
   const editMessage = useEditMessage();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const mediaTypes = ['audio', 'image', 'video', 'document', 'sticker'];
+  const isMissingMedia =
+    mediaTypes.includes(message.message_type) && !message.media_url;
+
+  const handleFetchMedia = async () => {
+    setIsFetchingMedia(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('fetch-message-media', {
+        body: { messageId: message.id },
+      });
+      if (error || (data && (data as any).error)) {
+        throw new Error(error?.message || (data as any).error);
+      }
+      await queryClient.invalidateQueries({
+        queryKey: ['whatsapp', 'messages', message.conversation_id],
+      });
+    } catch (e: any) {
+      toast({
+        title: 'Não foi possível baixar a mídia',
+        description: e?.message || 'Tente novamente em alguns instantes.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsFetchingMedia(false);
+    }
+  };
 
   // Check if message can be edited (within 15 minutes and text only)
   const canEdit = isFromMe && 
@@ -101,6 +134,36 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
   };
 
   const renderContent = () => {
+    if (isMissingMedia) {
+      const labels: Record<string, string> = {
+        audio: 'Baixar áudio',
+        image: 'Baixar imagem',
+        video: 'Baixar vídeo',
+        document: 'Baixar documento',
+        sticker: 'Baixar figurinha',
+      };
+      return (
+        <div className="space-y-2">
+          <Button
+            size="sm"
+            variant={isFromMe ? 'secondary' : 'outline'}
+            onClick={handleFetchMedia}
+            disabled={isFetchingMedia}
+          >
+            {isFetchingMedia ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Download className="w-4 h-4 mr-2" />
+            )}
+            {labels[message.message_type] || 'Baixar mídia'}
+          </Button>
+          {message.content && message.content !== '🎵 Áudio' && (
+            <p className="text-xs opacity-80">{message.content}</p>
+          )}
+        </div>
+      );
+    }
+
     switch (message.message_type) {
       case 'image':
         return (
