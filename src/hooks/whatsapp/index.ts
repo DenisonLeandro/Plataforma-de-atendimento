@@ -23,6 +23,8 @@ export { useMessageReactions } from './useMessageReactions';
 export { useMessageReaction } from './useMessageReaction';
 export { useMessageEditHistory } from './useMessageEditHistory';
 export { useEditMessage } from './useEditMessage';
+export { useSyncWhatsAppHistory } from './useSyncWhatsAppHistory';
+export type { SyncHistoryResult } from './useSyncWhatsAppHistory';
 export type { AssignmentRule } from './useAssignmentRules';
 export type { SmartReplySuggestion, SmartReplyResponse } from './useSmartReply';
 export type { ContactSortOption, ContactWithMetrics, ContactsResult } from './useWhatsAppContacts';
