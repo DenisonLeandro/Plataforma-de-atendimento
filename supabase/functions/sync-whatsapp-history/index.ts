@@ -62,6 +62,48 @@ function extractList(payload: any): any[] {
   return [];
 }
 
+function parsePositiveInt(value: unknown, fallback: number): number {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+}
+
+function getTotalPages(payload: any, recordsLength: number): number {
+  const pages = payload?.messages?.pages ?? payload?.pages;
+  const total = payload?.messages?.total ?? payload?.total;
+  if (pages) return parsePositiveInt(pages, 1);
+  if (total) return Math.max(1, Math.ceil(parsePositiveInt(total, recordsLength) / PAGE_SIZE));
+  return recordsLength < PAGE_SIZE ? 1 : Number.MAX_SAFE_INTEGER;
+}
+
+function scheduleNextChunk(instanceId: string, cursor: SyncCursor) {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const anonKey = Deno.env.get('SUPABASE_ANON_KEY') || Deno.env.get('SUPABASE_PUBLISHABLE_KEY');
+  if (!supabaseUrl || !anonKey) {
+    console.warn('[sync-whatsapp-history] Missing env to schedule next chunk');
+    return;
+  }
+
+  const url = `${supabaseUrl}/functions/v1/sync-whatsapp-history`;
+  const promise = fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: anonKey,
+      Authorization: `Bearer ${anonKey}`,
+    },
+    body: JSON.stringify({ instance_id: instanceId, cursor }),
+  })
+    .then(async (res) => {
+      const raw = await res.text().catch(() => '');
+      console.log('[sync-whatsapp-history] next chunk response', res.status, raw.slice(0, 500));
+    })
+    .catch((error) => {
+      console.error('[sync-whatsapp-history] next chunk failed', error);
+    });
+
+  EdgeRuntime.waitUntil(promise);
+}
+
 async function fetchWithDiagnostics(
   step: string,
   url: string,
