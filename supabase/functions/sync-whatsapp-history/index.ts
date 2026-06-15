@@ -101,7 +101,7 @@ function scheduleNextChunk(instanceId: string, cursor: SyncCursor) {
       console.error('[sync-whatsapp-history] next chunk failed', error);
     });
 
-  EdgeRuntime.waitUntil(promise);
+  (globalThis as any).EdgeRuntime?.waitUntil(promise);
 }
 
 async function fetchWithDiagnostics(
