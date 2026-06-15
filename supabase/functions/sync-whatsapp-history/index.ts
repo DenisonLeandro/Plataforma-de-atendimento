@@ -13,9 +13,66 @@ const corsHeaders = {
 
 const PAGE_SIZE = 100;
 const UPSERT_BATCH = 50;
+const MAX_DIAGNOSTICS = 10;
 
 interface SyncRequest {
   instance_id: string;
+}
+
+interface Diagnostic {
+  step: string;
+  url: string;
+  status: number;
+  content_type: string;
+  raw_sample: string;
+  parsed_count: number;
+}
+
+function pushDiagnostic(arr: Diagnostic[], d: Diagnostic) {
+  if (arr.length < MAX_DIAGNOSTICS) {
+    arr.push(d);
+  } else {
+    // keep the first MAX_DIAGNOSTICS - 1 (anchors) and overwrite last slot
+    arr[MAX_DIAGNOSTICS - 1] = d;
+  }
+}
+
+function extractList(payload: any): any[] {
+  if (!payload) return [];
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload.records)) return payload.records;
+  if (Array.isArray(payload.data)) return payload.data;
+  if (payload.messages && Array.isArray(payload.messages.records)) return payload.messages.records;
+  if (Array.isArray(payload.contacts)) return payload.contacts;
+  if (Array.isArray(payload.chats)) return payload.chats;
+  if (Array.isArray(payload.items)) return payload.items;
+  return [];
+}
+
+async function fetchWithDiagnostics(
+  step: string,
+  url: string,
+  init: RequestInit,
+): Promise<{ status: number; contentType: string; rawSample: string; parsed: any; raw: string }> {
+  console.log('[sync] ->', step, url, init.body);
+  let res: Response;
+  try {
+    res = await fetch(url, init);
+  } catch (e) {
+    console.error('[sync] fetch threw', step, (e as Error).message);
+    return { status: 0, contentType: '', rawSample: `THROW: ${(e as Error).message}`, parsed: null, raw: '' };
+  }
+  const contentType = res.headers.get('content-type') || '';
+  const raw = await res.text().catch(() => '');
+  const rawSample = raw.slice(0, 800);
+  console.log(`[sync] <- ${step} status=${res.status} ct=${contentType} body[0..800]=${rawSample}`);
+  let parsed: any = null;
+  try {
+    parsed = raw ? JSON.parse(raw) : null;
+  } catch {
+    parsed = null;
+  }
+  return { status: res.status, contentType, rawSample, parsed, raw };
 }
 
 interface PendingMessage {
