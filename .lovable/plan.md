@@ -1,65 +1,91 @@
-## Sincronizar histórico do WhatsApp
+## Objetivo
 
-Adiciona um fluxo novo (sem tocar no que já funciona) para importar conversas, contatos e mensagens que já existem na Evolution API para dentro da nossa base.
+A edge function `sync-whatsapp-history` está rodando mas não importa nada. Sem logs detalhados e sem o body cru das respostas, não dá pra saber se a Evolution está devolvendo um formato inesperado, se o endpoint está errado, ou se o parsing falha silenciosamente. Vamos instrumentar a função, tornar o parsing tolerante a múltiplos formatos e devolver um diagnóstico completo pro cliente.
 
-### 1. Helpers compartilhados
+## Escopo (somente estes arquivos)
 
-Criar `supabase/functions/_shared/evolution-helpers.ts` com funções movidas do `evolution-webhook`:
+- `supabase/functions/sync-whatsapp-history/index.ts`
+- `src/hooks/whatsapp/useSyncWhatsAppHistory.ts`
+- `src/components/settings/InstanceCard.tsx`
 
-- `normalizePhoneNumber(remoteJid)`
-- `getMessageType(message)`
-- `getMessageContent(message, type)`
-- `isEditedMessage(message)`
+Nada mais será tocado (sem migrations, sem `evolution-webhook`, sem `send-whatsapp-message`, sem dependências novas).
 
-No `supabase/functions/evolution-webhook/index.ts`, remover essas 4 funções locais e passar a importar do arquivo compartilhado. Nada mais é alterado nesse webhook.
+## Mudança 1 — `sync-whatsapp-history/index.ts`
 
-### 2. Edge function `sync-whatsapp-history`
+**Voltar a execução para modo síncrono** (remover `EdgeRuntime.waitUntil`), porque o usuário precisa receber o array `diagnostics` na resposta. O cliente já vai ampliar o timeout para 5 min.
 
-Novo arquivo `supabase/functions/sync-whatsapp-history/index.ts`:
+**Helper `extractList(payload)`** que tenta, nessa ordem:
+1. `Array.isArray(payload)` → `payload`
+2. `payload.records`
+3. `payload.data`
+4. `payload.messages?.records`
+5. `payload.contacts` / `payload.chats`
+6. `payload.items`
+7. fallback `[]`
 
-- Body: `{ instance_id: string }`.
-- Cliente Supabase com `SUPABASE_SERVICE_ROLE_KEY` (mesmo padrão de `send-whatsapp-message`).
-- Carrega `whatsapp_instances` (para pegar `instance_name`, `provider_type`, `instance_id_external`) e `whatsapp_instance_secrets` (para `api_url`, `api_key`).
-- Define `instanceIdentifier = provider_type === 'cloud' && instance_id_external ? instance_id_external : instance_name` (mesmo padrão de `test-evolution-connection` / `check-instances-status`).
-- Header sempre `apikey: <api_key>` (mesmo padrão do projeto — registrado na memória).
-- Fluxo:
-  1. `POST {api_url}/chat/findChats/{instanceIdentifier}` → lista chats.
-  2. `POST {api_url}/chat/findContacts/{instanceIdentifier}` → lista contatos. Para cada um, reaproveitar a lógica de upsert de contato em `whatsapp_contacts` (find por `instance_id + phone_number` com as variantes BR de 12/13 dígitos, criar se não existir, atualizar `name` e `profile_picture_url` quando vier).
-  3. Para cada chat: paginar `POST {api_url}/chat/findMessages/{instanceIdentifier}` com body `{ where: { key: { remoteJid } }, limit: 100, offset: N }`. Ler `response.messages.records` (formato Evolution v2). Parar quando `currentPage >= pages` ou `records.length === 0`. 404 = chat vazio, segue adiante sem erro.
-  4. Para cada mensagem:
-     - `normalizePhoneNumber(remoteJid)` → resolve contato (`findOrCreateContact` simplificado, sem fetch de profile picture síncrono).
-     - Resolve/cria a conversa (`findOrCreateConversation` simplificado — sem `applyAutoAssignment`, já que é histórico antigo).
-     - Monta o registro para `whatsapp_messages` com `message_id = key.id`, `is_from_me = key.fromMe`, `timestamp` derivado de `messageTimestamp` (segundos → ISO), `content` via `getMessageContent`, `message_type` via `getMessageType`, `remote_jid`, `quoted_message_id` quando houver, `edited_at` quando `isEditedMessage`. Sem download de mídia (apenas guardar `media_url` se já vier na payload).
-  5. Idempotência: usar `upsert` em `whatsapp_messages` com `onConflict: 'conversation_id,message_id'` (a constraint UNIQUE já existe — passo 4 da tarefa pode ser ignorado, ver seção "Banco" abaixo). Acumular em lotes de 50 e dar flush.
-  6. `console.log` de progresso por lote: chat atual, total acumulado, erros.
-- Resposta final: `{ success, chats_synced, messages_synced, contacts_synced, errors: [{chat, error}] }`.
-- CORS padrão das outras functions; OPTIONS preflight.
+**Helper `fetchWithDiagnostics(step, url, init)`** que:
+- Loga `console.log('[sync] ->', step, url, init.body)`
+- Faz o fetch
+- Lê `await res.text()` UMA vez
+- Loga status, content-type, primeiros 800 chars
+- Tenta `JSON.parse`; se falhar, `parsed = null`
+- Retorna `{ status, contentType, rawSample, parsed }`
 
-### 3. Hook React
+**Array `diagnostics`** acumulado em todas as chamadas; cap em 10 entradas (FIFO — primeiras 4 fixas: findContacts, findChats, e duas amostras de findMessages; depois sobrescreve as últimas).
 
-Novo `src/hooks/whatsapp/useSyncWhatsAppHistory.ts`: `useMutation` que chama `supabase.functions.invoke('sync-whatsapp-history', { body: { instance_id } })` e devolve os totais. Exportar em `src/hooks/whatsapp/index.ts`.
+**findContacts** e **findChats**: chamar `fetchWithDiagnostics`, usar `extractList` para obter a lista, registrar `parsed_count` no diagnostic.
 
-### 4. Botão no `InstanceCard`
+**Contatos**:
+- Não pular se `pushName`/`name` faltar — usar o telefone como fallback (já está parcialmente assim).
+- Marcar `is_group = true` quando o JID termina em `@g.us`.
+- Chave de upsert continua sendo `(instance_id, phone_number)` via `buildBrazilianVariants` (já implementado).
 
-Editar apenas `src/components/settings/InstanceCard.tsx`:
+**findMessages com dois formatos**:
+1. Tentativa A: `{ where: { key: { remoteJid } }, limit: 100, offset }`
+2. Se `status === 200` E `extractList(parsed).length === 0` na primeira página, refazer com Tentativa B: `{ where: { remoteJid }, limit: 100, page: 1 }`
+3. Registrar nos diagnostics qual formato funcionou (`step: "findMessages:<jid>:bodyA"` ou `"...:bodyB"`).
+4. 404 continua tratado como vazio (sucesso).
+5. Manter paginação atual.
 
-- Importar `Download` (lucide) e `Loader2`, `AlertDialog*` já está.
-- Novo botão "Sincronizar histórico" no `CardFooter`, ao lado dos existentes. `disabled` quando `instance.status !== 'connected'` ou `syncMutation.isPending`. Mostra `Loader2` girando enquanto sincroniza.
-- Ao clicar abre `AlertDialog` separado com o texto:
-  > Isso vai importar todas as conversas e mensagens que a Evolution API tem em cache para esta instância. Pode demorar alguns minutos. Mensagens já importadas não serão duplicadas.
-- Confirmação → dispara a mutation. Sucesso: `toast.success(\`${chats_synced} conversas e ${messages_synced} mensagens sincronizadas\`)`. Erro: `toast.error(error.message)`.
+**Resposta final** (status 200, mesmo com erros parciais):
+```json
+{
+  "success": true,
+  "chats_synced": n,
+  "messages_synced": n,
+  "contacts_synced": n,
+  "diagnostics": [ { step, url, status, content_type, raw_sample, parsed_count }, ... ],
+  "errors": [...]
+}
+```
+Se a instância/secrets não forem encontrados, retornar `success: false` com `diagnostics` (vazio) e `error`.
 
-### 5. Banco — sem migration
+## Mudança 2 — `useSyncWhatsAppHistory.ts`
 
-Verifiquei `whatsapp_messages`: já existe a constraint UNIQUE `whatsapp_messages_conversation_id_message_id_key (conversation_id, message_id)`. Idempotência via `upsert(..., { onConflict: 'conversation_id,message_id' })` funciona direto. Passo 4 do pedido fica dispensado.
+- Em vez de `supabase.functions.invoke` (que não permite controlar timeout facilmente), montar a chamada com `fetch` direto para `${VITE_SUPABASE_URL}/functions/v1/sync-whatsapp-history`, passando o header `Authorization: Bearer <session.access_token>` e `apikey: VITE_SUPABASE_PUBLISHABLE_KEY`.
+- Usar `AbortController` com timeout de **5 minutos** (300000 ms).
+- No `onSuccess`, `console.log('[sync-whatsapp-history] result', data)` mostrando diagnostics completos.
+- Atualizar `SyncHistoryResult` para incluir `diagnostics?: Array<{ step, url, status, content_type, raw_sample, parsed_count }>`.
 
-### O que NÃO muda
+## Mudança 3 — `InstanceCard.tsx`
 
-`send-whatsapp-message`, `edit-whatsapp-message`, funções de IA, schema do banco, RLS, hooks existentes, layout das outras telas. O `evolution-webhook` muda só nos imports das 4 helpers extraídas — comportamento idêntico.
+No `handleSync`, após `mutateAsync` retornar `result`:
+- Se `result.errors?.length > 0`:
+  `toast.warning(\`\${chats} conversas, \${msgs} mensagens e \${contacts} contatos sincronizados (\${result.errors.length} avisos — veja console)\`)`
+- Caso contrário:
+  `toast.success(\`\${chats} conversas, \${msgs} mensagens e \${contacts} contatos sincronizados\`)`
 
-### Detalhes técnicos
+Importar `toast` já existe. Nada mais muda no card (botão, dialog, ícones permanecem).
 
-- Helpers compartilhados ficam em `supabase/functions/_shared/` (convenção Supabase para módulos reaproveitáveis entre functions).
-- `findOrCreateContact` e `findOrCreateConversation` do sync são versões enxutas (sem auto-assignment, sem fetch de foto, sem auto-sentiment) para evitar custo/efeitos colaterais em backfill.
-- Mensagens do tipo `reaction` / `protocolMessage` puros são ignoradas no insert (mesmo comportamento já existente para histórico).
-- Sem retries automáticos: erros por chat vão para o array `errors` e a sync segue. O usuário pode reexecutar — é idempotente.
+## Fora de escopo
+
+- Sem alterações em migrations, RLS, outras edge functions, ou componentes.
+- Sem novas dependências.
+- Sem mudança no esquema de upsert nem nas constraints existentes.
+
+## Como validar
+
+1. Clicar "Sincronizar histórico" numa instância conectada.
+2. Esperar (até 5 min). DevTools → Network: ver o JSON com `diagnostics`.
+3. Conferir nos logs da edge function as URLs exatas, status e amostra do body cru de `findContacts`, `findChats` e `findMessages`.
+4. Conferir se o toast mostra contagens > 0.

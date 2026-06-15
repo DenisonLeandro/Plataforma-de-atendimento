@@ -60,10 +60,17 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
   const handleSync = async () => {
     setShowSyncDialog(false);
     try {
-      await syncHistory.mutateAsync(instance.id);
-      toast.success(
-        "Sincronização iniciada em segundo plano. Pode levar alguns minutos — atualize a página para ver o progresso."
-      );
+      const result = await syncHistory.mutateAsync(instance.id);
+      const chats = result.chats_synced ?? 0;
+      const msgs = result.messages_synced ?? 0;
+      const contacts = result.contacts_synced ?? 0;
+      const warnCount = result.errors?.length ?? 0;
+      const base = `${chats} conversas, ${msgs} mensagens e ${contacts} contatos sincronizados`;
+      if (warnCount > 0) {
+        toast.warning(`${base} (${warnCount} avisos — veja console)`);
+      } else {
+        toast.success(base);
+      }
     } catch (error: any) {
       toast.error(error?.message || "Falha ao sincronizar histórico");
     }
