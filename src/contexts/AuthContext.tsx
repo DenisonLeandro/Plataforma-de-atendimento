@@ -67,8 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         },
         body: JSON.stringify({ user_id: userId }),
         signal: controller.signal,
-      });
-      window.clearTimeout(timeoutId);
+      }).finally(() => window.clearTimeout(timeoutId));
 
       const text = await response.text();
       const data = text ? JSON.parse(text) : null;
