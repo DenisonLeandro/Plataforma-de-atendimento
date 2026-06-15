@@ -14,8 +14,8 @@ const corsHeaders = {
 const PAGE_SIZE = 100;
 const UPSERT_BATCH = 50;
 const MAX_DIAGNOSTICS = 10;
-const CONTACTS_PER_INVOCATION = 200;
-const CHATS_PER_INVOCATION = 25;
+const CONTACTS_PER_INVOCATION = 75;
+const CHATS_PER_INVOCATION = 10;
 const MAX_INVOCATION_MS = 25_000;
 const EVOLUTION_FETCH_TIMEOUT_MS = 20_000;
 
@@ -382,6 +382,16 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
             pic,
           );
           if (id) contacts_synced++;
+
+          if (Date.now() - startedAt > MAX_INVOCATION_MS) {
+            const next_cursor = {
+              ...cursor,
+              contact_index: startIndex + contacts_synced,
+              contacts_done: false,
+            };
+            scheduleNextChunk(instanceId, next_cursor);
+            return { success: true, continued: true, next_cursor, chats_synced, messages_synced, contacts_synced, diagnostics, errors };
+          }
         }
 
         if (startIndex + CONTACTS_PER_INVOCATION < list.length) {
