@@ -355,13 +355,14 @@ async function applyAutoAssignment(
 async function findOrCreateConversation(
   supabase: any,
   instanceId: string,
-  contactId: string
+  contactId: string,
+  isFromMe: boolean
 ): Promise<string | null> {
   try {
     // Try to find existing conversation
     const { data: existingConversation, error: findError } = await supabase
       .from('whatsapp_conversations')
-      .select('id')
+      .select('id, status')
       .eq('instance_id', instanceId)
       .eq('contact_id', contactId)
       .maybeSingle();
@@ -372,6 +373,18 @@ async function findOrCreateConversation(
 
     if (existingConversation) {
       console.log('[evolution-webhook] Conversation found:', existingConversation.id);
+      if (existingConversation.status === 'closed' && !isFromMe) {
+        const { error: reopenError } = await supabase
+          .from('whatsapp_conversations')
+          .update({ status: 'active' })
+          .eq('id', existingConversation.id);
+        if (reopenError) {
+          console.error('[evolution-webhook] Error reopening conversation:', reopenError);
+        } else {
+          console.log(`[evolution-webhook] Conversation REOPENED (client replied): ${existingConversation.id}`);
+          await applyAutoAssignment(supabase, instanceId, existingConversation.id);
+        }
+      }
       return existingConversation.id;
     }
 
@@ -661,7 +674,8 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
     const conversationId = await findOrCreateConversation(
       supabase,
       instanceData.id,
-      contactId
+      contactId,
+      !!key.fromMe
     );
 
     if (!conversationId) {
