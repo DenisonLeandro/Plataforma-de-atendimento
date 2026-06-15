@@ -67,7 +67,7 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
       const warnCount = result.errors?.length ?? 0;
       const base = `${chats} conversas, ${msgs} mensagens e ${contacts} contatos sincronizados`;
       if (result.continued) {
-        toast.success(`${base}. Sincronização continuará em segundo plano.`);
+        toast.warning(result.message || `${base}. Sincronização pausada — execute novamente para continuar.`);
         return;
       }
       if (warnCount > 0) {

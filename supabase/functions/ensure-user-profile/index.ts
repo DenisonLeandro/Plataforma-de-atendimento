@@ -5,11 +5,32 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const FUNCTION_TIMEOUT_MS = 20_000;
+
+function jsonResponse(body: Record<string, unknown>, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+  });
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
+  return await Promise.race([
+    handleRequest(req),
+    new Promise<Response>((resolve) =>
+      setTimeout(() => {
+        console.error('❌ ensure-user-profile timed out before runtime idle limit');
+        resolve(jsonResponse({ error: 'Profile setup timed out. Please try again.' }, 503));
+      }, FUNCTION_TIMEOUT_MS),
+    ),
+  ]);
+});
+
+async function handleRequest(req: Request) {
   try {
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -20,10 +41,7 @@ Deno.serve(async (req) => {
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
       console.error('❌ Missing authorization header');
-      return new Response(JSON.stringify({ error: 'Missing authorization' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
+      return jsonResponse({ error: 'Missing authorization' }, 401);
     }
 
     const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(
@@ -32,10 +50,7 @@ Deno.serve(async (req) => {
 
     if (userError || !user) {
       console.error('❌ Invalid token:', userError);
-      return new Response(JSON.stringify({ error: 'Invalid token' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
+      return jsonResponse({ error: 'Invalid token' }, 401);
     }
 
     console.log('🔍 Checking profile/role for user:', user.id);
@@ -153,23 +168,18 @@ Deno.serve(async (req) => {
       }
     }
 
-    return new Response(JSON.stringify({
+    return jsonResponse({
       success: true,
       profileCreated,
       roleCreated,
       profileAutoApproved,
       existingProfile: !!existingProfile,
       existingRole: !!existingRole
-    }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
 
   } catch (error) {
     console.error('❌ Fatal error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    return new Response(JSON.stringify({ error: errorMessage }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
+    return jsonResponse({ error: errorMessage }, 500);
   }
-});
+}

@@ -55,15 +55,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const ensureUserProfile = async (userId: string, accessToken: string) => {
     try {
       console.log('🔧 [AuthContext] Attempting to auto-create profile/role...');
-      
-      const { data, error } = await supabase.functions.invoke('ensure-user-profile', {
-        headers: {
-          Authorization: `Bearer ${accessToken}`
-        }
-      });
 
-      if (error) {
-        console.error('❌ [AuthContext] Error calling ensure-user-profile:', error);
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 20_000);
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ensure-user-profile`, {
+        method: 'POST',
+        headers: {
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({ user_id: userId }),
+        signal: controller.signal,
+      }).finally(() => window.clearTimeout(timeoutId));
+
+      const text = await response.text();
+      const data = text ? JSON.parse(text) : null;
+
+      if (!response.ok) {
+        console.error('❌ [AuthContext] Error calling ensure-user-profile:', data || text);
         return false;
       }
 
@@ -115,8 +125,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.warn('⚠️ [AuthContext] No role found for user:', userId);
       }
 
-      // If profile OR role is missing, try to auto-create them
-      if (!profileData || !roleData) {
+      // If profile OR role is truly missing, try to auto-create them.
+      // Do not call the edge function after transient DB/API errors; that can create timeout loops.
+      if (!profileError && !roleError && (!profileData || !roleData)) {
         console.log('⚠️ [AuthContext] Profile or role missing, attempting auto-creation...');
         
         const { data: { session } } = await supabase.auth.getSession();
