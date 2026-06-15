@@ -152,33 +152,63 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  let body: SyncRequest;
   try {
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    body = (await req.json()) as SyncRequest;
+  } catch {
+    return new Response(
+      JSON.stringify({ success: false, error: 'Invalid JSON body' }),
+      { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
+  }
 
-    const body = (await req.json()) as SyncRequest;
-    if (!body?.instance_id) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'instance_id is required' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      );
-    }
+  if (!body?.instance_id) {
+    return new Response(
+      JSON.stringify({ success: false, error: 'instance_id is required' }),
+      { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    );
+  }
 
-    console.log('[sync-whatsapp-history] Starting sync for instance:', body.instance_id);
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+  );
+
+  // Run the long-running sync in the background to avoid the 150s edge timeout.
+  // The client receives an immediate acknowledgement and progress can be observed via logs.
+  const work = runSync(supabase, body.instance_id).catch((e) => {
+    console.error('[sync-whatsapp-history] background error:', e);
+  });
+  // @ts-ignore EdgeRuntime is provided by Supabase Edge Runtime
+  if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime?.waitUntil) {
+    // @ts-ignore
+    EdgeRuntime.waitUntil(work);
+  }
+
+  return new Response(
+    JSON.stringify({
+      success: true,
+      started: true,
+      message:
+        'Sincronização iniciada em segundo plano. Acompanhe o progresso nos logs e atualize a página em alguns minutos.',
+    }),
+    { status: 202, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+  );
+});
+
+async function runSync(supabase: any, instanceId: string): Promise<void> {
+  try {
+    console.log('[sync-whatsapp-history] Starting sync for instance:', instanceId);
 
     const { data: instance, error: instanceErr } = await supabase
       .from('whatsapp_instances')
       .select('id, instance_name, provider_type, instance_id_external')
-      .eq('id', body.instance_id)
+      .eq('id', instanceId)
       .single();
 
     if (instanceErr || !instance) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'Instance not found' }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      );
+      console.error('[sync-whatsapp-history] Instance not found:', instanceErr);
+      return;
     }
 
     const { data: secrets, error: secretsErr } = await supabase
@@ -188,10 +218,8 @@ Deno.serve(async (req) => {
       .single();
 
     if (secretsErr || !secrets) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'Instance secrets not found' }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      );
+      console.error('[sync-whatsapp-history] Secrets not found:', secretsErr);
+      return;
     }
 
     const apiUrl = trimApiUrl(secrets.api_url);
@@ -261,33 +289,15 @@ Deno.serve(async (req) => {
       });
       if (!res.ok) {
         const txt = await res.text().catch(() => '');
-        return new Response(
-          JSON.stringify({
-            success: false,
-            error: `findChats ${res.status}: ${txt.slice(0, 300)}`,
-            chats_synced,
-            messages_synced,
-            contacts_synced,
-            errors,
-          }),
-          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-        );
+        console.error(`[sync-whatsapp-history] findChats failed ${res.status}: ${txt.slice(0, 300)}`);
+        return;
       }
       const data = await res.json();
       chats = Array.isArray(data) ? data : data?.records || [];
       console.log(`[sync-whatsapp-history] Chats returned: ${chats.length}`);
     } catch (e) {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: `findChats: ${(e as Error).message}`,
-          chats_synced,
-          messages_synced,
-          contacts_synced,
-          errors,
-        }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      );
+      console.error('[sync-whatsapp-history] findChats error:', (e as Error).message);
+      return;
     }
 
     // ---- 3. Iterate chats and import messages ----
@@ -451,22 +461,7 @@ Deno.serve(async (req) => {
       contacts_synced,
       errors: errors.length,
     });
-
-    return new Response(
-      JSON.stringify({
-        success: true,
-        chats_synced,
-        messages_synced,
-        contacts_synced,
-        errors,
-      }),
-      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-    );
   } catch (error) {
     console.error('[sync-whatsapp-history] Unexpected error:', error);
-    return new Response(
-      JSON.stringify({ success: false, error: (error as Error).message }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-    );
   }
-});
+}

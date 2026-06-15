@@ -3,10 +3,12 @@ import { supabase } from '@/integrations/supabase/client';
 
 export interface SyncHistoryResult {
   success: boolean;
-  chats_synced: number;
-  messages_synced: number;
-  contacts_synced: number;
-  errors: { chat?: string; error: string }[];
+  started?: boolean;
+  message?: string;
+  chats_synced?: number;
+  messages_synced?: number;
+  contacts_synced?: number;
+  errors?: { chat?: string; error: string }[];
   error?: string;
 }
 
