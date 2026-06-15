@@ -54,8 +54,7 @@ export const useSyncWhatsAppHistory = () => {
           },
           body: JSON.stringify(cursor ? { instance_id, cursor } : { instance_id }),
           signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
+        }).finally(() => clearTimeout(timeoutId));
         const text = await res.text();
         let result: SyncHistoryResult;
         try {
