@@ -13,8 +13,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { useWhatsAppInstances } from "@/hooks/whatsapp";
-import { RefreshCw, Pencil, Trash2, Copy, Link } from "lucide-react";
+import { useWhatsAppInstances, useSyncWhatsAppHistory } from "@/hooks/whatsapp";
+import { RefreshCw, Pencil, Trash2, Copy, Link, Download, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { EditInstanceDialog } from "./EditInstanceDialog";
 
@@ -26,8 +26,10 @@ interface InstanceCardProps {
 
 export const InstanceCard = ({ instance }: InstanceCardProps) => {
   const { testConnection, deleteInstance } = useWhatsAppInstances();
+  const syncHistory = useSyncWhatsAppHistory();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showSyncDialog, setShowSyncDialog] = useState(false);
 
   const webhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/evolution-webhook`;
 
@@ -52,6 +54,18 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
       setShowDeleteDialog(false);
     } catch (error) {
       toast.error("Erro ao excluir instância");
+    }
+  };
+
+  const handleSync = async () => {
+    setShowSyncDialog(false);
+    try {
+      const result = await syncHistory.mutateAsync(instance.id);
+      const chats = result.chats_synced.toLocaleString("pt-BR");
+      const msgs = result.messages_synced.toLocaleString("pt-BR");
+      toast.success(`${chats} conversas e ${msgs} mensagens sincronizadas`);
+    } catch (error: any) {
+      toast.error(error?.message || "Falha ao sincronizar histórico");
     }
   };
 
@@ -136,6 +150,19 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
           <Button
             variant="outline"
             size="sm"
+            onClick={() => setShowSyncDialog(true)}
+            disabled={instance.status !== "connected" || syncHistory.isPending}
+            title="Sincronizar histórico"
+          >
+            {syncHistory.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => setShowEditDialog(true)}
           >
             <Pencil className="h-4 w-4" />
@@ -168,6 +195,21 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
             >
               Excluir
             </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showSyncDialog} onOpenChange={setShowSyncDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Sincronizar histórico?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Isso vai importar todas as conversas e mensagens que a Evolution API tem em cache para esta instância. Pode demorar alguns minutos. Mensagens já importadas não serão duplicadas.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleSync}>Sincronizar</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
