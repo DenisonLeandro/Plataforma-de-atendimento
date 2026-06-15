@@ -583,7 +583,61 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
         page += 1;
         offset += records.length;
         if (page > totalPages && totalPages > 0) break;
+
+        if (Date.now() - startedAt > MAX_INVOCATION_MS) {
+          if (batch.length > 0) {
+            const inserted = await flushBatch(supabase, batch);
+            messages_synced += inserted;
+            batch = [];
+          }
+          const next_cursor = {
+            contacts_done: true,
+            contact_index: cursor.contact_index,
+            chat_index: chatIndex,
+            message_page: page,
+            message_offset: offset,
+            message_body_format: bodyFormat,
+          };
+          scheduleNextChunk(instanceId, next_cursor);
+          return { success: true, continued: true, next_cursor, chats_synced, messages_synced, contacts_synced, diagnostics, errors };
+        }
       }
+
+      if (Date.now() - startedAt > MAX_INVOCATION_MS) {
+        if (batch.length > 0) {
+          const inserted = await flushBatch(supabase, batch);
+          messages_synced += inserted;
+          batch = [];
+        }
+        const next_cursor = {
+          contacts_done: true,
+          contact_index: cursor.contact_index,
+          chat_index: chatIndex + 1,
+          message_page: 1,
+          message_offset: 0,
+          message_body_format: 'A' as const,
+        };
+        scheduleNextChunk(instanceId, next_cursor);
+        return { success: true, continued: true, next_cursor, chats_synced, messages_synced, contacts_synced, diagnostics, errors };
+      }
+    }
+
+    if (maxChatIndex < chats.length) {
+      if (batch.length > 0) {
+        const inserted = await flushBatch(supabase, batch);
+        messages_synced += inserted;
+        batch = [];
+      }
+      const next_cursor = {
+        contacts_done: true,
+        contact_index: cursor.contact_index,
+        chat_index: maxChatIndex,
+        message_page: 1,
+        message_offset: 0,
+        message_body_format: 'A' as const,
+      };
+      scheduleNextChunk(instanceId, next_cursor);
+      return { success: true, continued: true, next_cursor, chats_synced, messages_synced, contacts_synced, diagnostics, errors };
     }
 
     // Final flush
