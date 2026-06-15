@@ -231,29 +231,20 @@ Deno.serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
 
-  // Run the long-running sync in the background to avoid the 150s edge timeout.
-  // The client receives an immediate acknowledgement and progress can be observed via logs.
-  const work = runSync(supabase, body.instance_id).catch((e) => {
-    console.error('[sync-whatsapp-history] background error:', e);
+  const result = await runSync(supabase, body.instance_id);
+  return new Response(JSON.stringify(result), {
+    status: 200,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
-  // @ts-ignore EdgeRuntime is provided by Supabase Edge Runtime
-  if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime?.waitUntil) {
-    // @ts-ignore
-    EdgeRuntime.waitUntil(work);
-  }
-
-  return new Response(
-    JSON.stringify({
-      success: true,
-      started: true,
-      message:
-        'Sincronização iniciada em segundo plano. Acompanhe o progresso nos logs e atualize a página em alguns minutos.',
-    }),
-    { status: 202, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-  );
 });
 
-async function runSync(supabase: any, instanceId: string): Promise<void> {
+async function runSync(supabase: any, instanceId: string): Promise<any> {
+  const diagnostics: Diagnostic[] = [];
+  const errors: { chat?: string; error: string }[] = [];
+  let chats_synced = 0;
+  let messages_synced = 0;
+  let contacts_synced = 0;
+
   try {
     console.log('[sync-whatsapp-history] Starting sync for instance:', instanceId);
 
@@ -265,7 +256,7 @@ async function runSync(supabase: any, instanceId: string): Promise<void> {
 
     if (instanceErr || !instance) {
       console.error('[sync-whatsapp-history] Instance not found:', instanceErr);
-      return;
+      return { success: false, error: 'Instance not found', diagnostics, errors, chats_synced, messages_synced, contacts_synced };
     }
 
     const { data: secrets, error: secretsErr } = await supabase
@@ -276,7 +267,7 @@ async function runSync(supabase: any, instanceId: string): Promise<void> {
 
     if (secretsErr || !secrets) {
       console.error('[sync-whatsapp-history] Secrets not found:', secretsErr);
-      return;
+      return { success: false, error: 'Secrets not found', diagnostics, errors, chats_synced, messages_synced, contacts_synced };
     }
 
     const apiUrl = trimApiUrl(secrets.api_url);
@@ -292,29 +283,31 @@ async function runSync(supabase: any, instanceId: string): Promise<void> {
       apikey: apiKey,
     };
 
-    const errors: { chat?: string; error: string }[] = [];
-    let chats_synced = 0;
-    let messages_synced = 0;
-    let contacts_synced = 0;
-
     // ---- 1. Sync contacts (best-effort) ----
-    try {
-      console.log('[sync-whatsapp-history] Fetching contacts...');
-      const res = await fetch(`${apiUrl}/chat/findContacts/${instanceIdentifier}`, {
+    {
+      const url = `${apiUrl}/chat/findContacts/${instanceIdentifier}`;
+      const d = await fetchWithDiagnostics('findContacts', url, {
         method: 'POST',
         headers,
-        body: JSON.stringify({}),
+        body: JSON.stringify({ where: {} }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        const list: any[] = Array.isArray(data) ? data : data?.records || [];
-        console.log(`[sync-whatsapp-history] Contacts returned: ${list.length}`);
+      const list = extractList(d.parsed);
+      pushDiagnostic(diagnostics, {
+        step: 'findContacts',
+        url,
+        status: d.status,
+        content_type: d.contentType,
+        raw_sample: d.rawSample,
+        parsed_count: list.length,
+      });
+      if (d.status >= 200 && d.status < 300) {
         for (const c of list) {
-          const remoteJid: string | undefined = c.remoteJid || c.id;
+          const remoteJid: string | undefined = c.remoteJid || c.id || c.jid;
           if (!remoteJid) continue;
-          const { phone, isGroup } = normalizePhoneNumber(remoteJid);
+          const { phone, isGroup: parsedGroup } = normalizePhoneNumber(remoteJid);
           if (!phone) continue;
-          const name = c.pushName || c.name || c.notify || phone;
+          const isGroup = parsedGroup || remoteJid.endsWith('@g.us');
+          const name = c.pushName || c.name || c.notify || c.verifiedName || phone;
           const pic = c.profilePicUrl || c.profilePictureUrl || null;
           const id = await findOrCreateContactLite(
             supabase,
@@ -328,44 +321,45 @@ async function runSync(supabase: any, instanceId: string): Promise<void> {
           if (id) contacts_synced++;
         }
       } else {
-        const txt = await res.text().catch(() => '');
-        errors.push({ error: `findContacts ${res.status}: ${txt.slice(0, 200)}` });
+        errors.push({ error: `findContacts ${d.status}: ${d.rawSample.slice(0, 200)}` });
       }
-    } catch (e) {
-      errors.push({ error: `findContacts: ${(e as Error).message}` });
     }
 
     // ---- 2. List chats ----
     let chats: any[] = [];
-    try {
-      console.log('[sync-whatsapp-history] Fetching chats...');
-      const res = await fetch(`${apiUrl}/chat/findChats/${instanceIdentifier}`, {
+    {
+      const url = `${apiUrl}/chat/findChats/${instanceIdentifier}`;
+      const d = await fetchWithDiagnostics('findChats', url, {
         method: 'POST',
         headers,
-        body: JSON.stringify({}),
+        body: JSON.stringify({ where: {} }),
       });
-      if (!res.ok) {
-        const txt = await res.text().catch(() => '');
-        console.error(`[sync-whatsapp-history] findChats failed ${res.status}: ${txt.slice(0, 300)}`);
-        return;
+      chats = extractList(d.parsed);
+      pushDiagnostic(diagnostics, {
+        step: 'findChats',
+        url,
+        status: d.status,
+        content_type: d.contentType,
+        raw_sample: d.rawSample,
+        parsed_count: chats.length,
+      });
+      if (d.status < 200 || d.status >= 300) {
+        errors.push({ error: `findChats ${d.status}: ${d.rawSample.slice(0, 200)}` });
+        return { success: false, error: 'findChats failed', diagnostics, errors, chats_synced, messages_synced, contacts_synced };
       }
-      const data = await res.json();
-      chats = Array.isArray(data) ? data : data?.records || [];
-      console.log(`[sync-whatsapp-history] Chats returned: ${chats.length}`);
-    } catch (e) {
-      console.error('[sync-whatsapp-history] findChats error:', (e as Error).message);
-      return;
     }
 
     // ---- 3. Iterate chats and import messages ----
     let batch: PendingMessage[] = [];
+    let msgDiagSamples = 0;
 
     for (const chat of chats) {
-      const remoteJid: string | undefined = chat.remoteJid || chat.id;
+      const remoteJid: string | undefined = chat.remoteJid || chat.id || chat.jid;
       if (!remoteJid) continue;
 
-      const { phone, isGroup } = normalizePhoneNumber(remoteJid);
+      const { phone, isGroup: parsedGroup } = normalizePhoneNumber(remoteJid);
       if (!phone) continue;
+      const isGroup = parsedGroup || remoteJid.endsWith('@g.us');
 
       const chatName = chat.pushName || chat.name || phone;
       const contactId = await findOrCreateContactLite(
@@ -394,51 +388,64 @@ async function runSync(supabase: any, instanceId: string): Promise<void> {
       let offset = 0;
       let page = 1;
       let totalPages = 1;
+      let bodyFormat: 'A' | 'B' = 'A';
+      let triedB = false;
 
       while (true) {
-        let res: Response;
-        try {
-          res = await fetch(`${apiUrl}/chat/findMessages/${instanceIdentifier}`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-              where: { key: { remoteJid } },
-              limit: PAGE_SIZE,
-              offset,
-              page,
-            }),
-          });
-        } catch (e) {
-          errors.push({ chat: remoteJid, error: `findMessages fetch: ${(e as Error).message}` });
-          break;
-        }
+        const url = `${apiUrl}/chat/findMessages/${instanceIdentifier}`;
+        const bodyA = { where: { key: { remoteJid } }, limit: PAGE_SIZE, offset, page };
+        const bodyB = { where: { remoteJid }, limit: PAGE_SIZE, page };
+        const reqBody = bodyFormat === 'A' ? bodyA : bodyB;
+        const d = await fetchWithDiagnostics(
+          `findMessages:${remoteJid}:body${bodyFormat}`,
+          url,
+          { method: 'POST', headers, body: JSON.stringify(reqBody) },
+        );
 
-        if (res.status === 404) {
+        if (d.status === 404) {
           break; // empty chat
         }
-        if (!res.ok) {
-          const txt = await res.text().catch(() => '');
+        if (d.status < 200 || d.status >= 300) {
           errors.push({
             chat: remoteJid,
-            error: `findMessages ${res.status}: ${txt.slice(0, 200)}`,
+            error: `findMessages ${d.status}: ${d.rawSample.slice(0, 200)}`,
           });
           break;
         }
 
-        const payload = await res.json().catch(() => null);
-        if (!payload) break;
+        const payload = d.parsed;
+        let records: any[] = extractList(payload);
+        if (payload?.messages?.pages) totalPages = payload.messages.pages;
+        else if (payload?.pages) totalPages = payload.pages;
 
-        // Evolution v2: { messages: { records, total, pages, currentPage } }
-        // Some versions: direct array
-        let records: any[] = [];
-        if (Array.isArray(payload)) {
-          records = payload;
-        } else if (payload.messages?.records) {
-          records = payload.messages.records;
-          totalPages = payload.messages.pages ?? totalPages;
-        } else if (Array.isArray(payload.records)) {
-          records = payload.records;
-          totalPages = payload.pages ?? totalPages;
+        // First-page fallback to body B
+        if (records.length === 0 && page === 1 && bodyFormat === 'A' && !triedB) {
+          triedB = true;
+          bodyFormat = 'B';
+          if (msgDiagSamples < 2) {
+            pushDiagnostic(diagnostics, {
+              step: `findMessages:${remoteJid}:bodyA`,
+              url,
+              status: d.status,
+              content_type: d.contentType,
+              raw_sample: d.rawSample,
+              parsed_count: 0,
+            });
+            msgDiagSamples++;
+          }
+          continue;
+        }
+
+        if (msgDiagSamples < 2) {
+          pushDiagnostic(diagnostics, {
+            step: `findMessages:${remoteJid}:body${bodyFormat}`,
+            url,
+            status: d.status,
+            content_type: d.contentType,
+            raw_sample: d.rawSample,
+            parsed_count: records.length,
+          });
+          msgDiagSamples++;
         }
 
         if (records.length === 0) break;
@@ -518,7 +525,25 @@ async function runSync(supabase: any, instanceId: string): Promise<void> {
       contacts_synced,
       errors: errors.length,
     });
+
+    return {
+      success: true,
+      chats_synced,
+      messages_synced,
+      contacts_synced,
+      diagnostics,
+      errors,
+    };
   } catch (error) {
     console.error('[sync-whatsapp-history] Unexpected error:', error);
+    return {
+      success: false,
+      error: (error as Error).message,
+      chats_synced,
+      messages_synced,
+      contacts_synced,
+      diagnostics,
+      errors,
+    };
   }
 }
