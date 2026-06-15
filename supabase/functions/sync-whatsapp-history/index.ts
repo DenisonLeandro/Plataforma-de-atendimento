@@ -424,7 +424,11 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
     let batch: PendingMessage[] = [];
     let msgDiagSamples = 0;
 
-    for (const chat of chats) {
+    const startChatIndex = cursor.chat_index || 0;
+    const maxChatIndex = Math.min(chats.length, startChatIndex + CHATS_PER_INVOCATION);
+
+    for (let chatIndex = startChatIndex; chatIndex < maxChatIndex; chatIndex++) {
+      const chat = chats[chatIndex];
       const remoteJid: string | undefined = chat.remoteJid || chat.id || chat.jid;
       if (!remoteJid) continue;
 
@@ -456,11 +460,11 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
       chats_synced++;
 
       // Paginate messages for this chat
-      let offset = 0;
-      let page = 1;
+      let offset = chatIndex === startChatIndex ? cursor.message_offset || 0 : 0;
+      let page = chatIndex === startChatIndex ? cursor.message_page || 1 : 1;
       let totalPages = 1;
-      let bodyFormat: 'A' | 'B' = 'A';
-      let triedB = false;
+      let bodyFormat: 'A' | 'B' = chatIndex === startChatIndex ? cursor.message_body_format || 'A' : 'A';
+      let triedB = bodyFormat === 'B';
 
       while (true) {
         const url = `${apiUrl}/chat/findMessages/${instanceIdentifier}`;
