@@ -34,20 +34,15 @@ const ConversationsSidebar = ({ selectedId, onSelect, instanceId, isCollapsed, o
   const [isNewConversationOpen, setIsNewConversationOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 20;
-  const { user, isAdmin } = useAuth();
+  const { user } = useAuth();
 
   // Debounce search for advanced message search
   const debouncedSearchQuery = useDebounce(search, 300);
   const { data: messageSearchResults, isLoading: isSearchingMessages } = useWhatsAppMessageSearch(debouncedSearchQuery);
 
-  // Admin viewing "Em Aberto" should see all active conversations OR anything in the queue,
-  // regardless of who took it. Other users/filters keep the default behavior.
-  const adminOpenView = isAdmin && statusFilter === "active";
-
   const conversationFilters = {
     instanceId: instanceFilter || instanceId,
-    status: adminOpenView ? undefined : statusFilter === "all" ? undefined : statusFilter,
-    statusOrUnassigned: adminOpenView ? "active" : undefined,
+    status: statusFilter === "all" ? undefined : statusFilter,
     page: currentPage,
     pageSize,
     assignedTo: filter === "mine" ? user?.id : undefined,
