@@ -364,7 +364,8 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
         parsed_count: contactsSlice.length,
       });
       if (d.status >= 200 && d.status < 300) {
-        for (const c of contactsSlice) {
+        for (let i = 0; i < contactsSlice.length; i++) {
+          const c = contactsSlice[i];
           const remoteJid: string | undefined = c.remoteJid || c.id || c.jid;
           if (!remoteJid) continue;
           const { phone, isGroup: parsedGroup } = normalizePhoneNumber(remoteJid);
@@ -386,7 +387,7 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
           if (Date.now() - startedAt > MAX_INVOCATION_MS) {
             const next_cursor = {
               ...cursor,
-              contact_index: startIndex + contacts_synced,
+              contact_index: startIndex + i + 1,
               contacts_done: false,
             };
             scheduleNextChunk(instanceId, next_cursor);
