@@ -286,19 +286,20 @@ Deno.serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
 
-  const result = await runSync(supabase, body.instance_id);
+  const result = await runSync(supabase, body.instance_id, body.cursor || {});
   return new Response(JSON.stringify(result), {
     status: 200,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
 });
 
-async function runSync(supabase: any, instanceId: string): Promise<any> {
+async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {}): Promise<any> {
   const diagnostics: Diagnostic[] = [];
   const errors: { chat?: string; error: string }[] = [];
   let chats_synced = 0;
   let messages_synced = 0;
   let contacts_synced = 0;
+  const startedAt = Date.now();
 
   try {
     console.log('[sync-whatsapp-history] Starting sync for instance:', instanceId);
