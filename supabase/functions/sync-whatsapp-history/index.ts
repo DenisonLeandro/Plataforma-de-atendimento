@@ -14,9 +14,22 @@ const corsHeaders = {
 const PAGE_SIZE = 100;
 const UPSERT_BATCH = 50;
 const MAX_DIAGNOSTICS = 10;
+const CONTACTS_PER_INVOCATION = 200;
+const CHATS_PER_INVOCATION = 25;
+const MAX_INVOCATION_MS = 25_000;
+
+interface SyncCursor {
+  contacts_done?: boolean;
+  contact_index?: number;
+  chat_index?: number;
+  message_page?: number;
+  message_offset?: number;
+  message_body_format?: 'A' | 'B';
+}
 
 interface SyncRequest {
   instance_id: string;
+  cursor?: SyncCursor;
 }
 
 interface Diagnostic {
