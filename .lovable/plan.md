@@ -1,16 +1,20 @@
-# Corrigir filtro "Em Aberto" do admin
+Diagnóstico:
+- A conversa “Denison Leandro” não aparece no filtro “Em Aberto” do admin porque no banco ela está com `status = reopened`.
+- Hoje o filtro “Em Aberto” envia apenas `status = active`, então conversas reabertas/em andamento ficam fora da lista.
+- Ela não está encerrada: está atribuída a uma agente e com status `reopened`, que representa uma conversa reaberta/em andamento após já ter passado por encerramento.
 
-## Problema
+Plano de correção, sem mexer em mais nada:
+1. Ajustar somente a lógica de consulta de conversas para aceitar uma lista de status quando necessário.
+   - Manter o comportamento atual para filtros normais.
+   - Adicionar suporte a buscar `status in (...)` sem alterar tabelas, políticas ou backend.
 
-A última alteração fez o admin ver, no filtro "Em Aberto", qualquer conversa com `status='active'` **OU** qualquer conversa sem responsável (fila) — inclusive conversas com `status='closed'` que ainda estavam sem atribuição (caso típico das importadas pelo sync de histórico). Resultado: encerradas aparecem onde não deveriam.
+2. Ajustar somente o filtro do admin em “Em Aberto”.
+   - Quando o usuário for admin e o status selecionado for `active`, buscar conversas com status `active` e `reopened`.
+   - Não incluir `closed`, `archived` ou conversas encerradas sem atribuição.
+   - Para agentes e supervisores, manter exatamente como está hoje.
 
-## Correção
-
-No filtro "Em Aberto" o critério correto é simples: **`status = 'active'`**, independente de quem está atendendo. Isso já cobre o que o admin quer ver (todas as conversas em andamento, atribuídas ou na fila), porque qualquer conversa em andamento tem `status='active'` — e quando o cliente responde uma conversa encerrada, o `evolution-webhook` já a reabre para `active` automaticamente.
-
-## Arquivos alterados
-
-- `src/components/conversations/ConversationsSidebar.tsx` — remover o ramo `adminOpenView` que injetava `statusOrUnassigned`. Voltar a passar apenas `status: statusFilter === "all" ? undefined : statusFilter`. Sem condicional por papel.
-- `src/hooks/whatsapp/useWhatsAppConversations.ts` — remover o parâmetro `statusOrUnassigned` e os quatro blocos `.or(...)` que foram adicionados (lista, total, não lidas, all). O hook volta ao formato anterior.
-
-Nada mais será tocado. Pill "Na Fila" continua mostrando todas as conversas sem responsável (incluindo encerradas), que é o comportamento correto dela.
+3. Não alterar mais nada.
+   - Sem migrations.
+   - Sem mudanças em RLS.
+   - Sem alterações visuais além do necessário na lógica do filtro.
+   - Sem mexer nos demais filtros.
