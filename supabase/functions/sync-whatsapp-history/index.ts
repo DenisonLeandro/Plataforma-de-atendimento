@@ -14,9 +14,23 @@ const corsHeaders = {
 const PAGE_SIZE = 100;
 const UPSERT_BATCH = 50;
 const MAX_DIAGNOSTICS = 10;
+const CONTACTS_PER_INVOCATION = 75;
+const CHATS_PER_INVOCATION = 10;
+const MAX_INVOCATION_MS = 25_000;
+const EVOLUTION_FETCH_TIMEOUT_MS = 20_000;
+
+interface SyncCursor {
+  contacts_done?: boolean;
+  contact_index?: number;
+  chat_index?: number;
+  message_page?: number;
+  message_offset?: number;
+  message_body_format?: 'A' | 'B';
+}
 
 interface SyncRequest {
   instance_id: string;
+  cursor?: SyncCursor;
 }
 
 interface Diagnostic {
@@ -49,18 +63,64 @@ function extractList(payload: any): any[] {
   return [];
 }
 
+function parsePositiveInt(value: unknown, fallback: number): number {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+}
+
+function getTotalPages(payload: any, recordsLength: number): number {
+  const pages = payload?.messages?.pages ?? payload?.pages;
+  const total = payload?.messages?.total ?? payload?.total;
+  if (pages) return parsePositiveInt(pages, 1);
+  if (total) return Math.max(1, Math.ceil(parsePositiveInt(total, recordsLength) / PAGE_SIZE));
+  return recordsLength < PAGE_SIZE ? 1 : Number.MAX_SAFE_INTEGER;
+}
+
+function scheduleNextChunk(instanceId: string, cursor: SyncCursor) {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const anonKey = Deno.env.get('SUPABASE_ANON_KEY') || Deno.env.get('SUPABASE_PUBLISHABLE_KEY');
+  if (!supabaseUrl || !anonKey) {
+    console.warn('[sync-whatsapp-history] Missing env to schedule next chunk');
+    return;
+  }
+
+  const url = `${supabaseUrl}/functions/v1/sync-whatsapp-history`;
+  const promise = fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: anonKey,
+      Authorization: `Bearer ${anonKey}`,
+    },
+    body: JSON.stringify({ instance_id: instanceId, cursor }),
+  })
+    .then(async (res) => {
+      const raw = await res.text().catch(() => '');
+      console.log('[sync-whatsapp-history] next chunk response', res.status, raw.slice(0, 500));
+    })
+    .catch((error) => {
+      console.error('[sync-whatsapp-history] next chunk failed', error);
+    });
+
+  (globalThis as any).EdgeRuntime?.waitUntil(promise);
+}
+
 async function fetchWithDiagnostics(
   step: string,
   url: string,
   init: RequestInit,
 ): Promise<{ status: number; contentType: string; rawSample: string; parsed: any; raw: string }> {
   console.log('[sync] ->', step, url, init.body);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), EVOLUTION_FETCH_TIMEOUT_MS);
   let res: Response;
   try {
-    res = await fetch(url, init);
+    res = await fetch(url, { ...init, signal: controller.signal });
   } catch (e) {
     console.error('[sync] fetch threw', step, (e as Error).message);
     return { status: 0, contentType: '', rawSample: `THROW: ${(e as Error).message}`, parsed: null, raw: '' };
+  } finally {
+    clearTimeout(timeoutId);
   }
   const contentType = res.headers.get('content-type') || '';
   const raw = await res.text().catch(() => '');
@@ -231,19 +291,20 @@ Deno.serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
 
-  const result = await runSync(supabase, body.instance_id);
+  const result = await runSync(supabase, body.instance_id, body.cursor || {});
   return new Response(JSON.stringify(result), {
     status: 200,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
 });
 
-async function runSync(supabase: any, instanceId: string): Promise<any> {
+async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {}): Promise<any> {
   const diagnostics: Diagnostic[] = [];
   const errors: { chat?: string; error: string }[] = [];
   let chats_synced = 0;
   let messages_synced = 0;
   let contacts_synced = 0;
+  const startedAt = Date.now();
 
   try {
     console.log('[sync-whatsapp-history] Starting sync for instance:', instanceId);
@@ -283,8 +344,8 @@ async function runSync(supabase: any, instanceId: string): Promise<any> {
       apikey: apiKey,
     };
 
-    // ---- 1. Sync contacts (best-effort) ----
-    {
+    // ---- 1. Sync contacts (best-effort, chunked) ----
+    if (!cursor.contacts_done) {
       const url = `${apiUrl}/chat/findContacts/${instanceIdentifier}`;
       const d = await fetchWithDiagnostics('findContacts', url, {
         method: 'POST',
@@ -292,16 +353,19 @@ async function runSync(supabase: any, instanceId: string): Promise<any> {
         body: JSON.stringify({ where: {} }),
       });
       const list = extractList(d.parsed);
+      const startIndex = cursor.contact_index || 0;
+      const contactsSlice = list.slice(startIndex, startIndex + CONTACTS_PER_INVOCATION);
       pushDiagnostic(diagnostics, {
         step: 'findContacts',
         url,
         status: d.status,
         content_type: d.contentType,
         raw_sample: d.rawSample,
-        parsed_count: list.length,
+        parsed_count: contactsSlice.length,
       });
       if (d.status >= 200 && d.status < 300) {
-        for (const c of list) {
+        for (let i = 0; i < contactsSlice.length; i++) {
+          const c = contactsSlice[i];
           const remoteJid: string | undefined = c.remoteJid || c.id || c.jid;
           if (!remoteJid) continue;
           const { phone, isGroup: parsedGroup } = normalizePhoneNumber(remoteJid);
@@ -319,9 +383,32 @@ async function runSync(supabase: any, instanceId: string): Promise<any> {
             pic,
           );
           if (id) contacts_synced++;
+
+          if (Date.now() - startedAt > MAX_INVOCATION_MS) {
+            const next_cursor = {
+              ...cursor,
+              contact_index: startIndex + i + 1,
+              contacts_done: false,
+            };
+            scheduleNextChunk(instanceId, next_cursor);
+            return { success: true, continued: true, next_cursor, chats_synced, messages_synced, contacts_synced, diagnostics, errors };
+          }
         }
+
+        if (startIndex + CONTACTS_PER_INVOCATION < list.length) {
+          const next_cursor = {
+            ...cursor,
+            contact_index: startIndex + CONTACTS_PER_INVOCATION,
+            contacts_done: false,
+          };
+          scheduleNextChunk(instanceId, next_cursor);
+          return { success: true, continued: true, next_cursor, chats_synced, messages_synced, contacts_synced, diagnostics, errors };
+        }
+
+        cursor = { ...cursor, contacts_done: true, contact_index: list.length, chat_index: cursor.chat_index || 0 };
       } else {
         errors.push({ error: `findContacts ${d.status}: ${d.rawSample.slice(0, 200)}` });
+        cursor = { ...cursor, contacts_done: true, chat_index: cursor.chat_index || 0 };
       }
     }
 
@@ -353,7 +440,11 @@ async function runSync(supabase: any, instanceId: string): Promise<any> {
     let batch: PendingMessage[] = [];
     let msgDiagSamples = 0;
 
-    for (const chat of chats) {
+    const startChatIndex = cursor.chat_index || 0;
+    const maxChatIndex = Math.min(chats.length, startChatIndex + CHATS_PER_INVOCATION);
+
+    for (let chatIndex = startChatIndex; chatIndex < maxChatIndex; chatIndex++) {
+      const chat = chats[chatIndex];
       const remoteJid: string | undefined = chat.remoteJid || chat.id || chat.jid;
       if (!remoteJid) continue;
 
@@ -385,11 +476,11 @@ async function runSync(supabase: any, instanceId: string): Promise<any> {
       chats_synced++;
 
       // Paginate messages for this chat
-      let offset = 0;
-      let page = 1;
+      let offset = chatIndex === startChatIndex ? cursor.message_offset || 0 : 0;
+      let page = chatIndex === startChatIndex ? cursor.message_page || 1 : 1;
       let totalPages = 1;
-      let bodyFormat: 'A' | 'B' = 'A';
-      let triedB = false;
+      let bodyFormat: 'A' | 'B' = chatIndex === startChatIndex ? cursor.message_body_format || 'A' : 'A';
+      let triedB = bodyFormat === 'B';
 
       while (true) {
         const url = `${apiUrl}/chat/findMessages/${instanceIdentifier}`;
@@ -415,8 +506,7 @@ async function runSync(supabase: any, instanceId: string): Promise<any> {
 
         const payload = d.parsed;
         let records: any[] = extractList(payload);
-        if (payload?.messages?.pages) totalPages = payload.messages.pages;
-        else if (payload?.pages) totalPages = payload.pages;
+        totalPages = getTotalPages(payload, records.length);
 
         // First-page fallback to body B
         if (records.length === 0 && page === 1 && bodyFormat === 'A' && !triedB) {
@@ -508,7 +598,61 @@ async function runSync(supabase: any, instanceId: string): Promise<any> {
         page += 1;
         offset += records.length;
         if (page > totalPages && totalPages > 0) break;
+
+        if (Date.now() - startedAt > MAX_INVOCATION_MS) {
+          if (batch.length > 0) {
+            const inserted = await flushBatch(supabase, batch);
+            messages_synced += inserted;
+            batch = [];
+          }
+          const next_cursor = {
+            contacts_done: true,
+            contact_index: cursor.contact_index,
+            chat_index: chatIndex,
+            message_page: page,
+            message_offset: offset,
+            message_body_format: bodyFormat,
+          };
+          scheduleNextChunk(instanceId, next_cursor);
+          return { success: true, continued: true, next_cursor, chats_synced, messages_synced, contacts_synced, diagnostics, errors };
+        }
       }
+
+      if (Date.now() - startedAt > MAX_INVOCATION_MS) {
+        if (batch.length > 0) {
+          const inserted = await flushBatch(supabase, batch);
+          messages_synced += inserted;
+          batch = [];
+        }
+        const next_cursor = {
+          contacts_done: true,
+          contact_index: cursor.contact_index,
+          chat_index: chatIndex + 1,
+          message_page: 1,
+          message_offset: 0,
+          message_body_format: 'A' as const,
+        };
+        scheduleNextChunk(instanceId, next_cursor);
+        return { success: true, continued: true, next_cursor, chats_synced, messages_synced, contacts_synced, diagnostics, errors };
+      }
+    }
+
+    if (maxChatIndex < chats.length) {
+      if (batch.length > 0) {
+        const inserted = await flushBatch(supabase, batch);
+        messages_synced += inserted;
+        batch = [];
+      }
+      const next_cursor = {
+        contacts_done: true,
+        contact_index: cursor.contact_index,
+        chat_index: maxChatIndex,
+        message_page: 1,
+        message_offset: 0,
+        message_body_format: 'A' as const,
+      };
+      scheduleNextChunk(instanceId, next_cursor);
+      return { success: true, continued: true, next_cursor, chats_synced, messages_synced, contacts_synced, diagnostics, errors };
     }
 
     // Final flush

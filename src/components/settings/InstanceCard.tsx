@@ -66,6 +66,10 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
       const contacts = result.contacts_synced ?? 0;
       const warnCount = result.errors?.length ?? 0;
       const base = `${chats} conversas, ${msgs} mensagens e ${contacts} contatos sincronizados`;
+      if (result.continued) {
+        toast.success(`${base}. Sincronização continuará em segundo plano.`);
+        return;
+      }
       if (warnCount > 0) {
         toast.warning(`${base} (${warnCount} avisos — veja console)`);
       } else {
