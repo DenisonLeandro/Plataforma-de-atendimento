@@ -490,8 +490,7 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
 
         const payload = d.parsed;
         let records: any[] = extractList(payload);
-        if (payload?.messages?.pages) totalPages = payload.messages.pages;
-        else if (payload?.pages) totalPages = payload.pages;
+        totalPages = getTotalPages(payload, records.length);
 
         // First-page fallback to body B
         if (records.length === 0 && page === 1 && bodyFormat === 'A' && !triedB) {
