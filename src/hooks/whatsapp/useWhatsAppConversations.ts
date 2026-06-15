@@ -17,6 +17,7 @@ interface ConversationsFilters {
   status?: string;
   assignedTo?: string;
   unassigned?: boolean;
+  statusOrUnassigned?: string;
   page?: number;
   pageSize?: number;
 }
@@ -66,6 +67,10 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
         query = query.is('assigned_to', null);
       }
 
+      if (filters?.statusOrUnassigned) {
+        query = query.or(`status.eq.${filters.statusOrUnassigned},assigned_to.is.null`);
+      }
+
       const { data: conversationsData, error } = await query;
 
       if (error) throw error;
@@ -93,6 +98,10 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
         countQuery = countQuery.is('assigned_to', null);
       }
 
+      if (filters?.statusOrUnassigned) {
+        countQuery = countQuery.or(`status.eq.${filters.statusOrUnassigned},assigned_to.is.null`);
+      }
+
       const { count: totalCount } = await countQuery;
 
       // Query 3: Get unread count (all conversations)
@@ -115,6 +124,10 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
 
       if (filters?.unassigned) {
         unreadQuery = unreadQuery.is('assigned_to', null);
+      }
+
+      if (filters?.statusOrUnassigned) {
+        unreadQuery = unreadQuery.or(`status.eq.${filters.statusOrUnassigned},assigned_to.is.null`);
       }
 
       const { count: unreadCount } = await unreadQuery;
@@ -141,6 +154,10 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
 
       if (filters?.unassigned) {
         allConversationsQuery = allConversationsQuery.is('assigned_to', null);
+      }
+
+      if (filters?.statusOrUnassigned) {
+        allConversationsQuery = allConversationsQuery.or(`status.eq.${filters.statusOrUnassigned},assigned_to.is.null`);
       }
 
       const { data: allConversations } = await allConversationsQuery;
