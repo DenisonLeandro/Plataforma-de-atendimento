@@ -1,4 +1,10 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
+import {
+  normalizePhoneNumber,
+  getMessageType,
+  getMessageContent,
+  isEditedMessage,
+} from '../_shared/evolution-helpers.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -15,78 +21,6 @@ interface EvolutionWebhookPayload {
   event: string;
   instance: string;
   data: any;
-}
-
-// Normalize phone number by removing WhatsApp suffixes
-function normalizePhoneNumber(remoteJid: string): { phone: string; isGroup: boolean } {
-  const isGroup = remoteJid.includes('@g.us');
-  let phone = remoteJid
-    .replace('@s.whatsapp.net', '')
-    .replace('@g.us', '')
-    .replace('@lid', '')
-    .replace(/:\d+/, ''); // Remove device suffix if present
-
-  // Normalização para números brasileiros
-  // Adiciona nono dígito (9) se número brasileiro com 12 dígitos
-  // Formato esperado: 55 + DDD(2) + 9 + número(8) = 13 dígitos
-  if (phone.startsWith('55') && phone.length === 12) {
-    const countryCode = phone.substring(0, 2); // 55
-    const ddd = phone.substring(2, 4);          // DDD (ex: 48)
-    const number = phone.substring(4);          // 8 dígitos restantes
-    phone = `${countryCode}${ddd}9${number}`;
-    console.log(`[evolution-webhook] Brazilian phone normalized: ${phone}`);
-  }
-  
-  return { phone, isGroup };
-}
-
-// Detect message type from Evolution API message object
-function getMessageType(message: any): string {
-  if (message.reactionMessage) return 'reaction';
-  if (message.conversation || message.extendedTextMessage) return 'text';
-  if (message.imageMessage) return 'image';
-  if (message.audioMessage) return 'audio';
-  if (message.videoMessage) return 'video';
-  if (message.documentMessage) return 'document';
-  if (message.stickerMessage) return 'sticker';
-  if (message.contactMessage) return 'contact';
-  if (message.contactsArrayMessage) return 'contacts';
-  return 'text';
-}
-
-// Detect if message is an edited message
-function isEditedMessage(message: any): boolean {
-  return !!(message?.editedMessage || message?.protocolMessage?.editedMessage);
-}
-
-// Extract content/caption from message
-function getMessageContent(message: any, type: string): string {
-  if (message.conversation) return message.conversation;
-  if (message.extendedTextMessage?.text) return message.extendedTextMessage.text;
-  
-  // Handle contact messages
-  if (message.contactMessage) {
-    return message.contactMessage.displayName || '📇 Contato';
-  }
-  if (message.contactsArrayMessage) {
-    const count = message.contactsArrayMessage.contacts?.length || 0;
-    return `📇 ${count} contato${count !== 1 ? 's' : ''}`;
-  }
-  
-  // For media messages, try to get caption
-  const mediaMessage = message[`${type}Message`];
-  if (mediaMessage?.caption) return mediaMessage.caption;
-  
-  // Fallback descriptions
-  const descriptions: Record<string, string> = {
-    image: '📷 Imagem',
-    audio: '🎵 Áudio',
-    video: '🎥 Vídeo',
-    document: '📄 Documento',
-    sticker: '🎨 Sticker',
-  };
-  
-  return descriptions[type] || 'Mensagem';
 }
 
 // Download media from Evolution API and upload to Supabase Storage
