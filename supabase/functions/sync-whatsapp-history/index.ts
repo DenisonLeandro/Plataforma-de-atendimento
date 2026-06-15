@@ -339,8 +339,8 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
       apikey: apiKey,
     };
 
-    // ---- 1. Sync contacts (best-effort) ----
-    {
+    // ---- 1. Sync contacts (best-effort, chunked) ----
+    if (!cursor.contacts_done) {
       const url = `${apiUrl}/chat/findContacts/${instanceIdentifier}`;
       const d = await fetchWithDiagnostics('findContacts', url, {
         method: 'POST',
@@ -348,16 +348,18 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
         body: JSON.stringify({ where: {} }),
       });
       const list = extractList(d.parsed);
+      const startIndex = cursor.contact_index || 0;
+      const contactsSlice = list.slice(startIndex, startIndex + CONTACTS_PER_INVOCATION);
       pushDiagnostic(diagnostics, {
         step: 'findContacts',
         url,
         status: d.status,
         content_type: d.contentType,
         raw_sample: d.rawSample,
-        parsed_count: list.length,
+        parsed_count: contactsSlice.length,
       });
       if (d.status >= 200 && d.status < 300) {
-        for (const c of list) {
+        for (const c of contactsSlice) {
           const remoteJid: string | undefined = c.remoteJid || c.id || c.jid;
           if (!remoteJid) continue;
           const { phone, isGroup: parsedGroup } = normalizePhoneNumber(remoteJid);
@@ -376,8 +378,21 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
           );
           if (id) contacts_synced++;
         }
+
+        if (startIndex + CONTACTS_PER_INVOCATION < list.length) {
+          const next_cursor = {
+            ...cursor,
+            contact_index: startIndex + CONTACTS_PER_INVOCATION,
+            contacts_done: false,
+          };
+          scheduleNextChunk(instanceId, next_cursor);
+          return { success: true, continued: true, next_cursor, chats_synced, messages_synced, contacts_synced, diagnostics, errors };
+        }
+
+        cursor = { ...cursor, contacts_done: true, contact_index: list.length, chat_index: cursor.chat_index || 0 };
       } else {
         errors.push({ error: `findContacts ${d.status}: ${d.rawSample.slice(0, 200)}` });
+        cursor = { ...cursor, contacts_done: true, chat_index: cursor.chat_index || 0 };
       }
     }
 
