@@ -34,15 +34,20 @@ const ConversationsSidebar = ({ selectedId, onSelect, instanceId, isCollapsed, o
   const [isNewConversationOpen, setIsNewConversationOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 20;
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
 
   // Debounce search for advanced message search
   const debouncedSearchQuery = useDebounce(search, 300);
   const { data: messageSearchResults, isLoading: isSearchingMessages } = useWhatsAppMessageSearch(debouncedSearchQuery);
 
+  // Admin no filtro "Em Aberto" deve ver active + reopened (em andamento),
+  // independentemente de quem está atendendo. Demais casos mantêm o status exato.
+  const adminOpenView = isAdmin && statusFilter === "active";
+
   const conversationFilters = {
     instanceId: instanceFilter || instanceId,
-    status: statusFilter === "all" ? undefined : statusFilter,
+    status: adminOpenView || statusFilter === "all" ? undefined : statusFilter,
+    statusIn: adminOpenView ? ["active", "reopened"] : undefined,
     page: currentPage,
     pageSize,
     assignedTo: filter === "mine" ? user?.id : undefined,

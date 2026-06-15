@@ -15,6 +15,7 @@ interface ConversationsFilters {
   instanceId?: string;
   search?: string;
   status?: string;
+  statusIn?: string[];
   assignedTo?: string;
   unassigned?: boolean;
   page?: number;
@@ -58,6 +59,10 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
         query = query.eq('status', filters.status);
       }
 
+      if (filters?.statusIn && filters.statusIn.length > 0) {
+        query = query.in('status', filters.statusIn);
+      }
+
       if (filters?.assignedTo) {
         query = query.eq('assigned_to', filters.assignedTo);
       }
@@ -85,6 +90,10 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
         countQuery = countQuery.eq('status', filters.status);
       }
 
+      if (filters?.statusIn && filters.statusIn.length > 0) {
+        countQuery = countQuery.in('status', filters.statusIn);
+      }
+
       if (filters?.assignedTo) {
         countQuery = countQuery.eq('assigned_to', filters.assignedTo);
       }
@@ -107,6 +116,10 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
 
       if (filters?.status) {
         unreadQuery = unreadQuery.eq('status', filters.status);
+      }
+
+      if (filters?.statusIn && filters.statusIn.length > 0) {
+        unreadQuery = unreadQuery.in('status', filters.statusIn);
       }
 
       if (filters?.assignedTo) {
@@ -133,6 +146,10 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
 
       if (filters?.status) {
         allConversationsQuery = allConversationsQuery.eq('status', filters.status);
+      }
+
+      if (filters?.statusIn && filters.statusIn.length > 0) {
+        allConversationsQuery = allConversationsQuery.in('status', filters.statusIn);
       }
 
       if (filters?.assignedTo) {
