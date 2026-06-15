@@ -17,6 +17,7 @@ const MAX_DIAGNOSTICS = 10;
 const CONTACTS_PER_INVOCATION = 200;
 const CHATS_PER_INVOCATION = 25;
 const MAX_INVOCATION_MS = 25_000;
+const EVOLUTION_FETCH_TIMEOUT_MS = 20_000;
 
 interface SyncCursor {
   contacts_done?: boolean;
@@ -110,12 +111,16 @@ async function fetchWithDiagnostics(
   init: RequestInit,
 ): Promise<{ status: number; contentType: string; rawSample: string; parsed: any; raw: string }> {
   console.log('[sync] ->', step, url, init.body);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), EVOLUTION_FETCH_TIMEOUT_MS);
   let res: Response;
   try {
-    res = await fetch(url, init);
+    res = await fetch(url, { ...init, signal: controller.signal });
   } catch (e) {
     console.error('[sync] fetch threw', step, (e as Error).message);
     return { status: 0, contentType: '', rawSample: `THROW: ${(e as Error).message}`, parsed: null, raw: '' };
+  } finally {
+    clearTimeout(timeoutId);
   }
   const contentType = res.headers.get('content-type') || '';
   const raw = await res.text().catch(() => '');
