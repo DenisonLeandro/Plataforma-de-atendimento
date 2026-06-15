@@ -77,32 +77,7 @@ function getTotalPages(payload: any, recordsLength: number): number {
 }
 
 function scheduleNextChunk(instanceId: string, cursor: SyncCursor) {
-  const supabaseUrl = Deno.env.get('SUPABASE_URL');
-  const anonKey = Deno.env.get('SUPABASE_ANON_KEY') || Deno.env.get('SUPABASE_PUBLISHABLE_KEY');
-  if (!supabaseUrl || !anonKey) {
-    console.warn('[sync-whatsapp-history] Missing env to schedule next chunk');
-    return;
-  }
-
-  const url = `${supabaseUrl}/functions/v1/sync-whatsapp-history`;
-  const promise = fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      apikey: anonKey,
-      Authorization: `Bearer ${anonKey}`,
-    },
-    body: JSON.stringify({ instance_id: instanceId, cursor }),
-  })
-    .then(async (res) => {
-      const raw = await res.text().catch(() => '');
-      console.log('[sync-whatsapp-history] next chunk response', res.status, raw.slice(0, 500));
-    })
-    .catch((error) => {
-      console.error('[sync-whatsapp-history] next chunk failed', error);
-    });
-
-  (globalThis as any).EdgeRuntime?.waitUntil(promise);
+  console.log('[sync-whatsapp-history] chunk paused for client continuation', { instanceId, cursor });
 }
 
 async function fetchWithDiagnostics(

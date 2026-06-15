@@ -23,7 +23,7 @@ export const useProjectSetup = () => {
         return data.length === 2;
       } catch (error: any) {
         console.error('[useProjectSetup] Error checking config:', error);
-        return false;
+        return undefined;
       }
     },
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
