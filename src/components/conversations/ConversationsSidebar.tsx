@@ -34,7 +34,8 @@ const ConversationsSidebar = ({ selectedId, onSelect, instanceId, isCollapsed, o
   const [isNewConversationOpen, setIsNewConversationOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 20;
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, isSupervisor } = useAuth();
+  const isAgentOnly = !isAdmin && !isSupervisor;
 
   // Debounce search for advanced message search
   const debouncedSearchQuery = useDebounce(search, 300);
@@ -44,14 +45,18 @@ const ConversationsSidebar = ({ selectedId, onSelect, instanceId, isCollapsed, o
   // independentemente de quem está atendendo. Demais casos mantêm o status exato.
   const adminOpenView = isAdmin && statusFilter === "active";
 
+  // Agentes só podem ver conversas atribuídas a eles — força o filtro
+  // independentemente do pill selecionado.
+  const effectiveFilter: FilterType = isAgentOnly && filter === "queue" ? "all" : filter;
   const conversationFilters = {
     instanceId: instanceFilter || instanceId,
     status: adminOpenView || statusFilter === "all" ? undefined : statusFilter,
     statusIn: adminOpenView ? ["active", "reopened"] : undefined,
     page: currentPage,
     pageSize,
-    assignedTo: filter === "mine" ? user?.id : undefined,
-    unassigned: filter === "queue" ? true : undefined,
+    assignedTo:
+      isAgentOnly ? user?.id : effectiveFilter === "mine" ? user?.id : undefined,
+    unassigned: !isAgentOnly && effectiveFilter === "queue" ? true : undefined,
   };
 
   const { conversations, totalCount, totalPages, unreadCount, waitingCount, isLoading } = useWhatsAppConversations(conversationFilters);
@@ -262,6 +267,7 @@ const ConversationsSidebar = ({ selectedId, onSelect, instanceId, isCollapsed, o
             waitingCount={waitingCount}
             queueCount={queueCount}
             myConversationsCount={myConversationsCount}
+            showQueue={!isAgentOnly}
           />
           <ConversationFiltersPopover
             statusFilter={statusFilter}

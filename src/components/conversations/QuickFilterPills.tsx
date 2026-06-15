@@ -11,6 +11,7 @@ interface QuickFilterPillsProps {
   waitingCount?: number;
   queueCount?: number;
   myConversationsCount?: number;
+  showQueue?: boolean;
 }
 
 const QuickFilterPills = ({ 
@@ -19,13 +20,14 @@ const QuickFilterPills = ({
   unreadCount = 0,
   waitingCount = 0,
   queueCount = 0,
-  myConversationsCount = 0
+  myConversationsCount = 0,
+  showQueue = true,
 }: QuickFilterPillsProps) => {
   const filters: { value: FilterType; label: string; count?: number; icon?: any }[] = [
     { value: "all", label: "Todas" },
     { value: "unread", label: "Não lidas", count: unreadCount },
     { value: "waiting", label: "Aguardando", count: waitingCount, icon: Clock },
-    { value: "queue", label: "Na Fila", count: queueCount, icon: Inbox },
+    ...(showQueue ? [{ value: "queue" as FilterType, label: "Na Fila", count: queueCount, icon: Inbox }] : []),
     { value: "mine", label: "Minhas", count: myConversationsCount, icon: User },
   ];
 
