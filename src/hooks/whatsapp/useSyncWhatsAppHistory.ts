@@ -12,6 +12,8 @@ export interface SyncDiagnostic {
 
 export interface SyncHistoryResult {
   success: boolean;
+  continued?: boolean;
+  next_cursor?: Record<string, unknown>;
   started?: boolean;
   message?: string;
   chats_synced?: number;
