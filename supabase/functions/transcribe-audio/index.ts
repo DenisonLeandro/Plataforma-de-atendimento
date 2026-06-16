@@ -151,8 +151,16 @@ Deno.serve(async (req) => {
     }
 
     const aiJson = await aiRes.json();
-    const transcription: string =
-      aiJson?.choices?.[0]?.message?.content?.toString().trim() || "";
+    const rawContent = aiJson?.choices?.[0]?.message?.content;
+    let transcription = "";
+    if (typeof rawContent === "string") {
+      transcription = rawContent.trim();
+    } else if (Array.isArray(rawContent)) {
+      transcription = rawContent
+        .map((p: any) => (typeof p === "string" ? p : p?.text ?? ""))
+        .join("")
+        .trim();
+    }
 
     if (!transcription) {
       console.error("[transcribe-audio] empty transcription from AI", JSON.stringify(aiJson).slice(0, 400));
