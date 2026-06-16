@@ -111,32 +111,36 @@ Deno.serve(async (req) => {
     const base64 = btoa(binary);
     const format = mimetypeToFormat(message.media_mimetype);
 
-    const aiRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text:
-                  "Transcreva fielmente o áudio em português brasileiro. Retorne apenas o texto transcrito, sem comentários, sem aspas, sem prefixos.",
-              },
-              {
-                type: "input_audio",
-                input_audio: { data: base64, format },
-              },
-            ],
-          },
-        ],
-      }),
-    });
+    async function callAi(model: string) {
+      return await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text:
+                    "Transcreva fielmente este áudio em português brasileiro. Retorne APENAS o texto transcrito, sem comentários, aspas ou prefixos. Se o áudio estiver vazio ou inaudível, retorne exatamente: [áudio inaudível]",
+                },
+                {
+                  type: "input_audio",
+                  input_audio: { data: base64, format },
+                },
+              ],
+            },
+          ],
+        }),
+      });
+    }
+
+    let aiRes = await callAi("google/gemini-2.5-pro");
 
     if (!aiRes.ok) {
       const errText = await aiRes.text().catch(() => "");
@@ -151,16 +155,42 @@ Deno.serve(async (req) => {
     }
 
     const aiJson = await aiRes.json();
-    const transcription: string =
-      aiJson?.choices?.[0]?.message?.content?.toString().trim() || "";
+    const rawContent = aiJson?.choices?.[0]?.message?.content;
+    let transcription = "";
+    if (typeof rawContent === "string") {
+      transcription = rawContent.trim();
+    } else if (Array.isArray(rawContent)) {
+      transcription = rawContent
+        .map((p: any) => (typeof p === "string" ? p : p?.text ?? ""))
+        .join("")
+        .trim();
+    }
 
     if (!transcription) {
       console.error("[transcribe-audio] empty transcription from AI", JSON.stringify(aiJson).slice(0, 400));
-      await supabase
-        .from("whatsapp_messages")
-        .update({ transcription_status: "failed" })
-        .eq("id", messageId);
-      return json({ error: "empty transcription" }, 502);
+      // Retry once with the flash model (different decoder path)
+      const retryRes = await callAi("google/gemini-2.5-flash");
+      if (retryRes.ok) {
+        const retryJson = await retryRes.json();
+        const rc = retryJson?.choices?.[0]?.message?.content;
+        if (typeof rc === "string") transcription = rc.trim();
+        else if (Array.isArray(rc)) {
+          transcription = rc
+            .map((p: any) => (typeof p === "string" ? p : p?.text ?? ""))
+            .join("")
+            .trim();
+        }
+        if (!transcription) {
+          console.error("[transcribe-audio] empty after retry", JSON.stringify(retryJson).slice(0, 400));
+        }
+      }
+      if (!transcription) {
+        await supabase
+          .from("whatsapp_messages")
+          .update({ transcription_status: "failed" })
+          .eq("id", messageId);
+        return json({ error: "empty transcription" }, 502);
+      }
     }
 
     const { error: updateError } = await supabase
