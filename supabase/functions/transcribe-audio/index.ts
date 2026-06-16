@@ -72,17 +72,35 @@ Deno.serve(async (req) => {
       .update({ transcription_status: "processing" })
       .eq("id", messageId);
 
-    // Download the audio
-    const audioRes = await fetch(message.media_url);
-    if (!audioRes.ok) {
-      console.error("[transcribe-audio] failed to fetch audio", audioRes.status);
-      await supabase
-        .from("whatsapp_messages")
-        .update({ transcription_status: "failed" })
-        .eq("id", messageId);
-      return json({ error: `failed to fetch audio (${audioRes.status})` }, 502);
+    // Download the audio via Storage SDK (bypasses bucket policies using service role).
+    // The public URL format is: <SUPABASE_URL>/storage/v1/object/public/whatsapp-media/<path>
+    let arrayBuffer: ArrayBuffer | null = null;
+    const marker = "/whatsapp-media/";
+    const idx = message.media_url.indexOf(marker);
+    if (idx !== -1) {
+      const path = decodeURIComponent(message.media_url.slice(idx + marker.length).split("?")[0]);
+      const { data: fileData, error: dlError } = await supabase.storage
+        .from("whatsapp-media")
+        .download(path);
+      if (dlError || !fileData) {
+        console.error("[transcribe-audio] storage download failed", dlError, "path:", path);
+      } else {
+        arrayBuffer = await fileData.arrayBuffer();
+      }
     }
-    const arrayBuffer = await audioRes.arrayBuffer();
+    // Fallback: direct fetch (works if bucket is public)
+    if (!arrayBuffer) {
+      const audioRes = await fetch(message.media_url);
+      if (!audioRes.ok) {
+        console.error("[transcribe-audio] failed to fetch audio", audioRes.status, message.media_url);
+        await supabase
+          .from("whatsapp_messages")
+          .update({ transcription_status: "failed" })
+          .eq("id", messageId);
+        return json({ error: `failed to fetch audio (${audioRes.status})` }, 502);
+      }
+      arrayBuffer = await audioRes.arrayBuffer();
+    }
     const bytes = new Uint8Array(arrayBuffer);
     // Convert to base64 in chunks to avoid stack overflow
     let binary = "";
