@@ -111,32 +111,36 @@ Deno.serve(async (req) => {
     const base64 = btoa(binary);
     const format = mimetypeToFormat(message.media_mimetype);
 
-    const aiRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text:
-                  "Transcreva fielmente o áudio em português brasileiro. Retorne apenas o texto transcrito, sem comentários, sem aspas, sem prefixos.",
-              },
-              {
-                type: "input_audio",
-                input_audio: { data: base64, format },
-              },
-            ],
-          },
-        ],
-      }),
-    });
+    async function callAi(model: string) {
+      return await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text:
+                    "Transcreva fielmente este áudio em português brasileiro. Retorne APENAS o texto transcrito, sem comentários, aspas ou prefixos. Se o áudio estiver vazio ou inaudível, retorne exatamente: [áudio inaudível]",
+                },
+                {
+                  type: "input_audio",
+                  input_audio: { data: base64, format },
+                },
+              ],
+            },
+          ],
+        }),
+      });
+    }
+
+    let aiRes = await callAi("google/gemini-2.5-pro");
 
     if (!aiRes.ok) {
       const errText = await aiRes.text().catch(() => "");
