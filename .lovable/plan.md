@@ -1,25 +1,28 @@
-## Mudança
+## Diagnóstico
 
-Ajustar a visibilidade dos botões **Assumir** e **Transferir** em `src/components/chat/ChatHeader.tsx` para seguir exatamente estas regras (vale para todos os cargos):
+Há 157 conversas (de 234) com `last_message_at` e `last_message_preview` em `NULL` — todas anteriores ao dia em que o webhook/envio passou a preencher esses campos. Por isso a lista mostra "Sem mensagens" e sem horário, mesmo existindo mensagens dentro da conversa.
 
-| Estado da conversa            | Assumir | Transferir |
-| ----------------------------- | :-----: | :--------: |
-| Sem dono (em fila)            |    ✅   |     ✅     |
-| Atribuída ao usuário atual    |    —    |     ✅     |
-| Atribuída a outra pessoa      |    —    |     —      |
+Daqui pra frente, o `evolution-webhook` e o `send-whatsapp-message` já mantêm esses campos atualizados — não há regressão pra corrigir no código.
 
-## Como fica no código
+## Correção
 
-Substituir a lógica atual (que escondia "Transferir" para atendentes na fila e dependia de `canAssign`) por:
+Rodar um **backfill** único na tabela `whatsapp_conversations`, preenchendo `last_message_at` e `last_message_preview` com base na última mensagem real de cada conversa em `whatsapp_messages`:
 
-```ts
-const isInQueue = !conversation?.assigned_to;
-const isAssignedToMe = conversation?.assigned_to === user?.id;
-
-const showAssumir = isInQueue;
-const showTransferir = isInQueue || isAssignedToMe;
+```sql
+UPDATE public.whatsapp_conversations c
+SET
+  last_message_at = m.created_at,
+  last_message_preview = LEFT(COALESCE(NULLIF(m.content, ''), ''), 100)
+FROM (
+  SELECT DISTINCT ON (conversation_id)
+    conversation_id, content, created_at
+  FROM public.whatsapp_messages
+  ORDER BY conversation_id, created_at DESC
+) m
+WHERE m.conversation_id = c.id
+  AND (c.last_message_at IS NULL OR c.last_message_preview IS NULL);
 ```
 
-E renderizar os botões usando essas duas flags. Remover as variáveis `canAssign` / `canTransfer` que não são mais necessárias.
+Conversas sem nenhuma mensagem persistida ficam como estão (continuam mostrando "Sem mensagens"), o que é o comportamento correto.
 
-Nenhuma mudança em hooks, RLS ou banco — a permissão de banco já foi corrigida na rodada anterior.
+Nenhuma mudança de schema, RLS ou código de frontend é necessária.
