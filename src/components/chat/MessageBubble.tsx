@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card } from "@/components/ui/card";
 import { Tables } from "@/integrations/supabase/types";
 import { format } from "date-fns";
-import { Check, CheckCheck, Clock, Reply, Pencil, User, Download, Loader2 } from "lucide-react";
+import { Check, CheckCheck, Clock, Reply, Pencil, User, Loader2, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { QuotedMessagePreview } from "./QuotedMessagePreview";
 import { ImageViewerModal } from "./ImageViewerModal";
@@ -16,6 +16,7 @@ import { useEditMessage } from "@/hooks/whatsapp/useEditMessage";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { AudioMessagePlayer } from "./AudioMessagePlayer";
 
 type Message = Tables<'whatsapp_messages'>;
 type Reaction = Tables<'whatsapp_reactions'>;
@@ -31,6 +32,8 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
   const [isHovered, setIsHovered] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isFetchingMedia, setIsFetchingMedia] = useState(false);
+  const [fetchFailed, setFetchFailed] = useState(false);
+  const autoFetchedRef = useRef(false);
   const isFromMe = message.is_from_me;
   const time = format(new Date(message.timestamp), 'HH:mm');
   const { sendReaction } = useMessageReaction();
@@ -44,6 +47,7 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
 
   const handleFetchMedia = async () => {
     setIsFetchingMedia(true);
+    setFetchFailed(false);
     try {
       const { data, error } = await supabase.functions.invoke('fetch-message-media', {
         body: { messageId: message.id },
@@ -55,6 +59,7 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
         queryKey: ['whatsapp', 'messages', message.conversation_id],
       });
     } catch (e: any) {
+      setFetchFailed(true);
       toast({
         title: 'Não foi possível baixar a mídia',
         description: e?.message || 'Tente novamente em alguns instantes.',
@@ -64,6 +69,15 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
       setIsFetchingMedia(false);
     }
   };
+
+  // Auto-fetch missing media once when message mounts/updates
+  useEffect(() => {
+    if (isMissingMedia && !autoFetchedRef.current && !isFetchingMedia && !fetchFailed) {
+      autoFetchedRef.current = true;
+      handleFetchMedia();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMissingMedia]);
 
   // Check if message can be edited (within 15 minutes and text only)
   const canEdit = isFromMe && 
@@ -136,27 +150,32 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
   const renderContent = () => {
     if (isMissingMedia) {
       const labels: Record<string, string> = {
-        audio: 'Baixar áudio',
-        image: 'Baixar imagem',
-        video: 'Baixar vídeo',
-        document: 'Baixar documento',
-        sticker: 'Baixar figurinha',
+        audio: 'Carregando áudio…',
+        image: 'Carregando imagem…',
+        video: 'Carregando vídeo…',
+        document: 'Carregando documento…',
+        sticker: 'Carregando figurinha…',
       };
       return (
         <div className="space-y-2">
-          <Button
-            size="sm"
-            variant={isFromMe ? 'secondary' : 'outline'}
-            onClick={handleFetchMedia}
-            disabled={isFetchingMedia}
-          >
-            {isFetchingMedia ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            ) : (
-              <Download className="w-4 h-4 mr-2" />
-            )}
-            {labels[message.message_type] || 'Baixar mídia'}
-          </Button>
+          {fetchFailed ? (
+            <div className="flex items-center gap-2 text-xs">
+              <AlertCircle className="w-3.5 h-3.5" />
+              <span>Mídia indisponível.</span>
+              <button
+                type="button"
+                onClick={handleFetchMedia}
+                className="underline hover:opacity-80"
+              >
+                Tentar novamente
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-xs opacity-80">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              <span>{labels[message.message_type] || 'Carregando mídia…'}</span>
+            </div>
+          )}
           {message.content && message.content !== '🎵 Áudio' && (
             <p className="text-xs opacity-80">{message.content}</p>
           )}
@@ -196,13 +215,17 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
       
       case 'audio':
         return (
-          <div className="space-y-2">
-            {message.media_url && (
-              <audio controls className="max-w-xs">
-                <source src={message.media_url} type={message.media_mimetype || 'audio/ogg'} />
-              </audio>
-            )}
-          </div>
+          message.media_url ? (
+            <AudioMessagePlayer
+              messageId={message.id}
+              conversationId={message.conversation_id}
+              mediaUrl={message.media_url}
+              mimetype={message.media_mimetype}
+              transcription={(message as any).audio_transcription}
+              transcriptionStatus={(message as any).transcription_status}
+              isFromMe={isFromMe}
+            />
+          ) : null
         );
       
       case 'video':

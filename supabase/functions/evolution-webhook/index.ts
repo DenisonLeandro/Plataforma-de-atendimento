@@ -702,7 +702,12 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
     if (messageType !== 'text') {
       const mediaMessage = message[`${messageType}Message`];
       if (mediaMessage) {
-        mediaMimetype = mediaMessage.mimetype || `${messageType}/*`;
+        mediaMimetype = mediaMessage.mimetype || null;
+        // WhatsApp voice notes often come back without a mimetype; default to OGG/Opus.
+        if (!mediaMimetype || mediaMimetype === `${messageType}/*`) {
+          if (messageType === 'audio') mediaMimetype = 'audio/ogg; codecs=opus';
+          else mediaMimetype = `${messageType}/*`;
+        }
         if (mediaMimetype) {
           mediaUrl = await downloadAndUploadMedia(
             secrets.api_url,
