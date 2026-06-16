@@ -33,7 +33,7 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
   const { data: topicsData } = useConversationTopics(conversationId || null);
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
   const [isEditContactModalOpen, setIsEditContactModalOpen] = useState(false);
-  const { user, isAdmin, isSupervisor } = useAuth();
+  const { user } = useAuth();
   const { assignConversation } = useConversationAssignment();
   
   if (!contact) return null;
@@ -42,9 +42,9 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
   const displayName = nameIsMissing ? 'Sem nome' : contact.name;
 
   const isInQueue = !conversation?.assigned_to;
-  const canAssign = isAdmin || isSupervisor;
   const isAssignedToMe = conversation?.assigned_to === user?.id;
-  const canTransfer = canAssign || isAssignedToMe;
+  const showAssumir = isInQueue;
+  const showTransferir = isInQueue || isAssignedToMe;
 
   const handleAssumeFromQueue = () => {
     if (conversationId && user?.id) {
@@ -111,7 +111,7 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
 
         <div className="flex items-center gap-2">
           {/* Assignment buttons */}
-          {conversation && isInQueue && (
+          {conversation && showAssumir && (
             <Button
               variant="outline"
               size="sm"
@@ -122,7 +122,7 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
             </Button>
           )}
 
-          {conversation && (canAssign || (!isInQueue && isAssignedToMe)) && (
+          {conversation && showTransferir && (
             <Button
               variant="outline"
               size="sm"
