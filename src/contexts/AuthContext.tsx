@@ -165,6 +165,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setProfile(null);
           setRole(null);
         }
+
+        // Belt-and-suspenders: ensure we never leave the app stuck on the
+        // "Verificando autenticação..." loader if the initial getSession()
+        // resolves after this event.
+        setIsLoading(false);
       }
     );
 
