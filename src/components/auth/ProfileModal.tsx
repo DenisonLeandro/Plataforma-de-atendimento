@@ -1,6 +1,9 @@
 import { useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUpdateProfile } from '@/hooks/useUpdateProfile';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
 import {
   Dialog,
   DialogContent,
@@ -8,6 +11,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -19,7 +33,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Camera, Loader2 } from 'lucide-react';
+import { Camera, Loader2, KeyRound, Trash2 } from 'lucide-react';
 
 interface ProfileModalProps {
   open: boolean;
@@ -34,9 +48,11 @@ const statusOptions = [
 ];
 
 export function ProfileModal({ open, onOpenChange }: ProfileModalProps) {
-  const { profile, user, refreshProfile } = useAuth();
+  const { profile, user, refreshProfile, signOut } = useAuth();
   const { updateProfile, uploadAvatar } = useUpdateProfile(user?.id || '');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
+  const navigate = useNavigate();
 
   const [fullName, setFullName] = useState(profile?.full_name || '');
   const [status, setStatus] = useState<'online' | 'offline' | 'away' | 'busy'>(
@@ -44,6 +60,14 @@ export function ProfileModal({ open, onOpenChange }: ProfileModalProps) {
   );
   const [avatarUrl, setAvatarUrl] = useState(profile?.avatar_url || '');
   const [isUploading, setIsUploading] = useState(false);
+
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const initials = fullName
     .split(' ')
@@ -80,9 +104,78 @@ export function ProfileModal({ open, onOpenChange }: ProfileModalProps) {
     onOpenChange(false);
   };
 
+  const handleChangePassword = async () => {
+    if (newPassword.length < 8) {
+      toast({
+        title: 'Senha muito curta',
+        description: 'A senha deve ter pelo menos 8 caracteres.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast({
+        title: 'Senhas não coincidem',
+        description: 'A confirmação deve ser igual à nova senha.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsChangingPassword(true);
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    setIsChangingPassword(false);
+
+    if (error) {
+      toast({
+        title: 'Erro ao alterar senha',
+        description: error.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setNewPassword('');
+    setConfirmPassword('');
+    toast({
+      title: 'Senha alterada',
+      description: 'Sua senha foi atualizada com sucesso.',
+    });
+  };
+
+  const handleDeleteAccount = async () => {
+    setIsDeleting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('delete-user-account');
+      if (error || (data && (data as any).error)) {
+        const msg = (data as any)?.error || error?.message || 'Erro ao excluir conta';
+        toast({
+          title: 'Não foi possível excluir',
+          description: msg,
+          variant: 'destructive',
+        });
+        setIsDeleting(false);
+        return;
+      }
+      toast({
+        title: 'Conta excluída',
+        description: 'Sua conta foi removida com sucesso.',
+      });
+      await signOut();
+      navigate('/auth');
+    } catch (e: any) {
+      toast({
+        title: 'Erro',
+        description: e?.message || 'Falha ao excluir conta',
+        variant: 'destructive',
+      });
+      setIsDeleting(false);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[480px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Editar Perfil</DialogTitle>
           <DialogDescription>
@@ -200,6 +293,116 @@ export function ProfileModal({ open, onOpenChange }: ProfileModalProps) {
             )}
           </Button>
         </div>
+
+        <Separator className="my-6" />
+
+        {/* Change Password */}
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <KeyRound className="h-4 w-4 text-muted-foreground" />
+            <h3 className="text-sm font-semibold">Alterar senha</h3>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="new_password">Nova senha</Label>
+            <Input
+              id="new_password"
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="Mínimo 8 caracteres"
+              autoComplete="new-password"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="confirm_password">Confirmar nova senha</Label>
+            <Input
+              id="confirm_password"
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Repita a nova senha"
+              autoComplete="new-password"
+            />
+          </div>
+          <Button
+            variant="secondary"
+            onClick={handleChangePassword}
+            disabled={isChangingPassword || !newPassword || !confirmPassword}
+            className="w-full"
+          >
+            {isChangingPassword ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Alterando...
+              </>
+            ) : (
+              'Alterar senha'
+            )}
+          </Button>
+        </div>
+
+        <Separator className="my-6" />
+
+        {/* Danger Zone */}
+        <div className="space-y-3 rounded-md border border-destructive/40 bg-destructive/5 p-4">
+          <div className="flex items-center gap-2">
+            <Trash2 className="h-4 w-4 text-destructive" />
+            <h3 className="text-sm font-semibold text-destructive">Zona de perigo</h3>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Excluir sua conta é permanente. Todos os seus dados pessoais serão
+            removidos e você perderá acesso ao sistema.
+          </p>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => {
+              setDeleteConfirmText('');
+              setShowDeleteDialog(true);
+            }}
+          >
+            <Trash2 className="h-4 w-4" />
+            Excluir minha conta
+          </Button>
+        </div>
+
+        <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Excluir conta permanentemente?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Essa ação não pode ser desfeita. Para confirmar, digite{' '}
+                <strong>EXCLUIR</strong> abaixo.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <Input
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              placeholder="Digite EXCLUIR"
+              autoFocus
+            />
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isDeleting}>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  handleDeleteAccount();
+                }}
+                disabled={deleteConfirmText !== 'EXCLUIR' || isDeleting}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Excluindo...
+                  </>
+                ) : (
+                  'Excluir conta'
+                )}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </DialogContent>
     </Dialog>
   );
