@@ -168,11 +168,29 @@ Deno.serve(async (req) => {
 
     if (!transcription) {
       console.error("[transcribe-audio] empty transcription from AI", JSON.stringify(aiJson).slice(0, 400));
-      await supabase
-        .from("whatsapp_messages")
-        .update({ transcription_status: "failed" })
-        .eq("id", messageId);
-      return json({ error: "empty transcription" }, 502);
+      // Retry once with the flash model (different decoder path)
+      const retryRes = await callAi("google/gemini-2.5-flash");
+      if (retryRes.ok) {
+        const retryJson = await retryRes.json();
+        const rc = retryJson?.choices?.[0]?.message?.content;
+        if (typeof rc === "string") transcription = rc.trim();
+        else if (Array.isArray(rc)) {
+          transcription = rc
+            .map((p: any) => (typeof p === "string" ? p : p?.text ?? ""))
+            .join("")
+            .trim();
+        }
+        if (!transcription) {
+          console.error("[transcribe-audio] empty after retry", JSON.stringify(retryJson).slice(0, 400));
+        }
+      }
+      if (!transcription) {
+        await supabase
+          .from("whatsapp_messages")
+          .update({ transcription_status: "failed" })
+          .eq("id", messageId);
+        return json({ error: "empty transcription" }, 502);
+      }
     }
 
     const { error: updateError } = await supabase
