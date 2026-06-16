@@ -47,7 +47,7 @@ async function downloadAndUploadMedia(
     }
     
     const response = await fetch(
-      `${apiUrl}/chat/getBase64FromMediaMessage/${instanceName}`,
+      `${apiUrl.replace(/\/+$/, "").replace(/\/manager$/, "")}/chat/getBase64FromMediaMessage/${instanceName}`,
       {
         method: 'POST',
         headers,

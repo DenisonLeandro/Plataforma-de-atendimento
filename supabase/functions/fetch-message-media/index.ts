@@ -103,9 +103,13 @@ Deno.serve(async (req) => {
         ? instanceData.instance_id_external
         : instanceData.instance_name;
 
+    // Some stored api_url values include the `/manager` suffix used by Evolution's
+    // admin UI; chat endpoints live at the API root, so strip it.
+    const apiBase = secrets.api_url.replace(/\/+$/, "").replace(/\/manager$/, "");
+
     // 3. Fetch the original message payload from Evolution to reconstruct {key, message}
     const findRes = await callEvolution(
-      secrets.api_url,
+      apiBase,
       secrets.api_key,
       providerType,
       `/chat/findMessages/${evolutionInstanceId}`,
@@ -132,7 +136,7 @@ Deno.serve(async (req) => {
 
     // 4. Ask Evolution to give us the base64-decoded media
     const mediaRes = await callEvolution(
-      secrets.api_url,
+      apiBase,
       secrets.api_key,
       providerType,
       `/chat/getBase64FromMediaMessage/${evolutionInstanceId}`,
