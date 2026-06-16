@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { NotificationProvider } from "@/contexts/NotificationContext";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/auth";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import PendingApproval from "./pages/PendingApproval";
@@ -22,9 +23,10 @@ const App = () => {
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <AuthProvider>
-          <NotificationProvider>
-            <TooltipProvider>
+        <ErrorBoundary>
+          <AuthProvider>
+            <NotificationProvider>
+              <TooltipProvider>
               <Toaster />
               <Sonner />
               <Routes>
@@ -38,9 +40,10 @@ const App = () => {
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                 <Route path="*" element={<NotFound />} />
               </Routes>
-            </TooltipProvider>
-          </NotificationProvider>
-        </AuthProvider>
+              </TooltipProvider>
+            </NotificationProvider>
+          </AuthProvider>
+        </ErrorBoundary>
       </BrowserRouter>
     </QueryClientProvider>
   );
