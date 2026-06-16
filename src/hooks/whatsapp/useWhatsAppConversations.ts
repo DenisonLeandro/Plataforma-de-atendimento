@@ -73,7 +73,10 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
 
       const { data: conversationsData, error } = await query;
 
-      if (error) throw error;
+      if (error) {
+        console.error('[useWhatsAppConversations] query error:', error);
+        throw error;
+      }
 
       let result = conversationsData as unknown as ConversationWithContact[];
 
