@@ -42,10 +42,14 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
         .select("unread_count")
         .neq("unread_count", 0);
       
-      if (error) throw error;
+      if (error) {
+        console.error('[NotificationContext] unread count error:', error);
+        throw error;
+      }
       return data;
     },
     refetchInterval: 30000, // Refresh every 30s
+    retry: false,
   });
 
   const totalUnread = conversations?.reduce((sum, conv) => sum + (conv.unread_count || 0), 0) || 0;
