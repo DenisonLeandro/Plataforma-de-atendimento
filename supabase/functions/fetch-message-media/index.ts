@@ -108,30 +108,53 @@ Deno.serve(async (req) => {
     const apiBase = secrets.api_url.replace(/\/+$/, "").replace(/\/manager$/, "");
 
     // 3. Fetch the original message payload from Evolution to reconstruct {key, message}
-    const findRes = await callEvolution(
-      apiBase,
-      secrets.api_key,
-      providerType,
-      `/chat/findMessages/${evolutionInstanceId}`,
+    // Try strict (id + remoteJid) first, then fall back to id-only — Evolution sometimes
+    // stores the remoteJid in a slightly different form (e.g. @lid vs @s.whatsapp.net).
+    const findAttempts = [
       { where: { key: { id: message.message_id, remoteJid: message.remote_jid } } },
-    );
+      { where: { key: { id: message.message_id } } },
+    ];
 
-    if (!findRes.ok) {
-      console.error("[fetch-message-media] findMessages failed", findRes.status, findRes.raw.slice(0, 300));
-      return json({ error: `findMessages failed (${findRes.status})` }, 502);
+    let record: any = null;
+    let lastStatus = 0;
+    let lastRaw = "";
+    for (const body of findAttempts) {
+      const findRes = await callEvolution(
+        apiBase,
+        secrets.api_key,
+        providerType,
+        `/chat/findMessages/${evolutionInstanceId}`,
+        body,
+      );
+      lastStatus = findRes.status;
+      lastRaw = findRes.raw;
+      if (!findRes.ok) continue;
+
+      const list: any[] = Array.isArray(findRes.parsed)
+        ? findRes.parsed
+        : findRes.parsed?.messages?.records ||
+          findRes.parsed?.records ||
+          findRes.parsed?.data ||
+          [];
+
+      record = list.find((r) => r?.key?.id === message.message_id) || list[0];
+      if (record?.key && record?.message) break;
+      record = null;
     }
 
-    const list: any[] = Array.isArray(findRes.parsed)
-      ? findRes.parsed
-      : findRes.parsed?.messages?.records ||
-        findRes.parsed?.records ||
-        findRes.parsed?.data ||
-        [];
-
-    const record = list.find((r) => r?.key?.id === message.message_id) || list[0];
-    if (!record?.key || !record?.message) {
-      console.error("[fetch-message-media] message payload not returned by Evolution");
-      return json({ error: "original message no longer available on WhatsApp" }, 404);
+    if (!record) {
+      console.warn(
+        "[fetch-message-media] message payload not returned by Evolution",
+        lastStatus,
+        lastRaw.slice(0, 200),
+      );
+      // Return 200 with a soft-failure flag so the client doesn't blow up with a 502/404
+      // and doesn't keep retrying. WhatsApp likely purged the media from the server.
+      return json({
+        success: false,
+        unavailable: true,
+        error: "Mídia não está mais disponível no WhatsApp",
+      });
     }
 
     // 4. Ask Evolution to give us the base64-decoded media

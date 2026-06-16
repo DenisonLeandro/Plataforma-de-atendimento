@@ -52,19 +52,21 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
       const { data, error } = await supabase.functions.invoke('fetch-message-media', {
         body: { messageId: message.id },
       });
-      if (error || (data && (data as any).error)) {
-        throw new Error(error?.message || (data as any).error);
+      const payload = data as any;
+      // Soft-failure: media is gone from WhatsApp — mark as unavailable, no toast, no retry.
+      if (payload?.unavailable) {
+        setFetchFailed(true);
+        return;
+      }
+      if (error || payload?.error) {
+        throw new Error(error?.message || payload?.error);
       }
       await queryClient.invalidateQueries({
         queryKey: ['whatsapp', 'messages', message.conversation_id],
       });
     } catch (e: any) {
       setFetchFailed(true);
-      toast({
-        title: 'Não foi possível baixar a mídia',
-        description: e?.message || 'Tente novamente em alguns instantes.',
-        variant: 'destructive',
-      });
+      console.warn('[MessageBubble] fetch media failed', e?.message);
     } finally {
       setIsFetchingMedia(false);
     }
