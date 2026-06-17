@@ -45,10 +45,6 @@ export function SecuritySettings() {
     toggleRestriction.mutate({ enabled: checked, key: 'restrict_signup_by_domain' });
   };
 
-  const handleToggleApproval = (checked: boolean) => {
-    toggleRestriction.mutate({ enabled: checked, key: 'require_account_approval' });
-  };
-
   if (isLoading) {
     return (
       <Card>
@@ -74,24 +70,6 @@ export function SecuritySettings() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          {/* Toggle de aprovação de contas */}
-          <div className="flex items-center justify-between space-x-4 rounded-lg border p-4">
-            <div className="flex-1 space-y-1">
-              <Label htmlFor="require-approval" className="text-base font-medium">
-                Exigir Aprovação para Novas Contas
-              </Label>
-              <p className="text-sm text-muted-foreground">
-                Quando ativado, novos usuários precisarão de aprovação manual de um administrador para acessar o sistema
-              </p>
-            </div>
-            <Switch
-              id="require-approval"
-              checked={settings.requireApproval}
-              onCheckedChange={handleToggleApproval}
-              disabled={toggleRestriction.isPending}
-            />
-          </div>
-
           {/* Toggle de restrição de domínio */}
           <div className="flex items-center justify-between space-x-4 rounded-lg border p-4">
             <div className="flex-1 space-y-1">
