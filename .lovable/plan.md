@@ -1,27 +1,20 @@
-## Problema
+## Remover exigência de aprovação de contas
 
-A instância **Advocacia Ibiporã** está marcada como desconectada porque a `api_url` salva em `whatsapp_instance_secrets` aponta para a interface web do Evolution Manager, não para a API:
+Você está certo — essa aprovação não foi pedida. Vou desativar globalmente e aprovar todas as contas existentes para que ninguém fique travado na tela "Aguardando Aprovação".
 
-- Atual: `https://evolution-api-hbbv.srv1746890.hstgr.cloud/manager`
-- Correta: `https://evolution-api-hbbv.srv1746890.hstgr.cloud`
+### O que será feito
 
-Os logs da edge function `test-instance-connection` confirmam: a resposta vem como HTML (`<title>Evolution Manager</title>`), então o status fica como `disconnected` mesmo o WhatsApp estando conectado de fato no servidor.
+1. **Banco de dados (migração)**
+   - Atualizar `project_config` para `require_account_approval = 'false'` (desliga a exigência para novas contas).
+   - `UPDATE profiles SET is_approved = true WHERE is_approved IS DISTINCT FROM true` — libera todas as contas já criadas, incluindo a do DENISON que está vendo a tela agora.
 
-## Correção
+2. **Frontend — esconder o toggle de aprovação**
+   - Em `src/components/settings/SecuritySettings.tsx`, remover o bloco "Exigir Aprovação para Novas Contas" para não voltar a ser ligado por engano.
+   - Manter o restante (restrição por domínio) intacto.
 
-1. Atualizar `whatsapp_instance_secrets.api_url` da instância `advocacia-ibipora` removendo o sufixo `/manager`.
-2. Rodar `test-instance-connection` para revalidar e atualizar o `status` em `whatsapp_instances`.
-3. Confirmar via logs que a resposta agora retorna JSON com `state: "open"`.
+### Fora de escopo
+- Não vou mexer em: regras de atribuição, Acesso a Instâncias, Evolution API, RLS de conversas, ErrorBoundary, ou qualquer outra área.
+- Não vou apagar a página `/pending-approval` nem a coluna `is_approved` (ficam inertes, sem custo, caso você queira reativar no futuro).
 
-## Prevenção (opcional, recomendado)
-
-Em `AddInstanceDialog.tsx` e `EditInstanceDialog.tsx`, normalizar o input da `api_url` no momento de salvar:
-- Remover automaticamente sufixos `/manager`, `/manager/`, barras finais.
-- Exibir hint abaixo do campo: "Use a URL base do Evolution (ex.: `https://seu-servidor.com`), sem `/manager`."
-
-Isso evita o mesmo erro em futuras instâncias self-hosted.
-
-## Fora de escopo
-
-- Nenhuma mudança em RLS, autenticação, regras de atribuição, acesso a instâncias ou ErrorBoundary.
-- Nenhuma alteração nas outras instâncias já configuradas corretamente.
+### Resultado
+Assim que a migração rodar, é só recarregar a página — você cai direto no app, sem passar pela tela de aprovação. Novos cadastros também entram direto.
