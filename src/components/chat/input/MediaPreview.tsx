@@ -36,7 +36,12 @@ export const MediaPreview = ({ file, onSend, onClose }: MediaPreviewProps) => {
     setIsUploading(true);
     
     try {
-      const fileName = `${Date.now()}-${sanitizeFileName(file.name)}`;
+      // Uploads must live under the user's own folder to satisfy the
+      // whatsapp-media storage policy that scopes writes per user id.
+      const { data: authData } = await supabase.auth.getUser();
+      const userId = authData.user?.id;
+      if (!userId) throw new Error('Not authenticated');
+      const fileName = `${userId}/${Date.now()}-${sanitizeFileName(file.name)}`;
       const { error: uploadError } = await supabase.storage
         .from('whatsapp-media')
         .upload(fileName, file, {

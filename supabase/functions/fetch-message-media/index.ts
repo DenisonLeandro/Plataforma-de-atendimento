@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { authenticateUser, canAccessConversation } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -46,6 +47,9 @@ Deno.serve(async (req) => {
   }
 
   try {
+    const auth = await authenticateUser(req);
+    if (!auth.user) return auth.response!;
+
     const { messageId } = await req.json();
     if (!messageId) return json({ error: "messageId is required" }, 400);
 
@@ -53,6 +57,17 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
+
+    // Resolve the conversation for this message and authorize.
+    const { data: msgRow } = await supabase
+      .from("whatsapp_messages")
+      .select("conversation_id")
+      .eq("id", messageId)
+      .maybeSingle();
+    if (!msgRow?.conversation_id ||
+        !(await canAccessConversation(auth.admin, auth.user.id, msgRow.conversation_id))) {
+      return json({ error: "Forbidden" }, 403);
+    }
 
     // 1. Load the message
     const { data: message, error: msgError } = await supabase
