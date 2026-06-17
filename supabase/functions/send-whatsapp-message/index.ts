@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.85.0';
+import { authenticateUser, canAccessConversation } from "../_shared/auth.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -29,6 +30,9 @@ Deno.serve(async (req) => {
   }
 
   try {
+    const auth = await authenticateUser(req);
+    if (!auth.user) return auth.response!;
+
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -59,6 +63,14 @@ Deno.serve(async (req) => {
       return new Response(
         JSON.stringify({ success: false, error: 'mediaUrl or mediaBase64 is required for media messages' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const allowed = await canAccessConversation(auth.admin, auth.user.id, body.conversationId);
+    if (!allowed) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Forbidden: no access to this conversation' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
