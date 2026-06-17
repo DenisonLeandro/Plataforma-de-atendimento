@@ -14,6 +14,52 @@ export type Database = {
   }
   public: {
     Tables: {
+      agent_instance_access: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          instance_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          instance_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          instance_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_instance_access_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_instance_access_instance_id_fkey"
+            columns: ["instance_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_instances"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_instance_access_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       assignment_rules: {
         Row: {
           created_at: string | null
@@ -835,6 +881,10 @@ export type Database = {
     Functions: {
       can_access_conversation: {
         Args: { _conversation_id: string; _user_id: string }
+        Returns: boolean
+      }
+      can_user_see_instance: {
+        Args: { _instance_id: string; _user_id: string }
         Returns: boolean
       }
       has_role: {
