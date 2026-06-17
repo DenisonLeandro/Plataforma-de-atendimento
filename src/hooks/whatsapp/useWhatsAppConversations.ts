@@ -135,75 +135,25 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
 
       const { count: unreadCount } = await unreadQuery;
 
-      // Buscar is_from_me da última mensagem de cada conversa (só das paginadas)
-      const conversationIds = result.map(c => c.id);
-      
-      // Também buscar todas as conversas para calcular waitingCount
-      let allConversationsQuery = supabase
+      // Usa a coluna persistida em vez de varrer todas as mensagens.
+      result = result.map(conv => ({
+        ...conv,
+        isLastMessageFromMe: conv.last_message_is_from_me ?? undefined,
+      }));
+
+      // waitingCount: conversas onde a última mensagem é do cliente.
+      let waitingQuery = supabase
         .from('whatsapp_conversations')
-        .select('id');
+        .select('id', { count: 'exact', head: true })
+        .eq('last_message_is_from_me', false);
 
-      if (filters?.instanceId) {
-        allConversationsQuery = allConversationsQuery.eq('instance_id', filters.instanceId);
-      }
+      if (filters?.instanceId) waitingQuery = waitingQuery.eq('instance_id', filters.instanceId);
+      if (filters?.status) waitingQuery = waitingQuery.eq('status', filters.status);
+      if (filters?.statusIn && filters.statusIn.length > 0) waitingQuery = waitingQuery.in('status', filters.statusIn);
+      if (filters?.assignedTo) waitingQuery = waitingQuery.eq('assigned_to', filters.assignedTo);
+      if (filters?.unassigned) waitingQuery = waitingQuery.is('assigned_to', null);
 
-      if (filters?.status) {
-        allConversationsQuery = allConversationsQuery.eq('status', filters.status);
-      }
-
-      if (filters?.statusIn && filters.statusIn.length > 0) {
-        allConversationsQuery = allConversationsQuery.in('status', filters.statusIn);
-      }
-
-      if (filters?.assignedTo) {
-        allConversationsQuery = allConversationsQuery.eq('assigned_to', filters.assignedTo);
-      }
-
-      if (filters?.unassigned) {
-        allConversationsQuery = allConversationsQuery.is('assigned_to', null);
-      }
-
-      const { data: allConversations } = await allConversationsQuery;
-      const allConversationIds = allConversations?.map(c => c.id) || [];
-
-      if (allConversationIds.length > 0) {
-        const { data: allLastMessages } = await supabase
-          .from('whatsapp_messages')
-          .select('conversation_id, is_from_me, timestamp')
-          .in('conversation_id', allConversationIds)
-          .order('timestamp', { ascending: false });
-
-        if (allLastMessages) {
-          // Agrupar por conversation_id e pegar a primeira (mais recente)
-          const lastMessageMap = new Map<string, boolean>();
-          allLastMessages.forEach(msg => {
-            if (!lastMessageMap.has(msg.conversation_id)) {
-              lastMessageMap.set(msg.conversation_id, msg.is_from_me || false);
-            }
-          });
-
-          // Aplicar aos resultados paginados
-          result = result.map(conv => ({
-            ...conv,
-            isLastMessageFromMe: lastMessageMap.get(conv.id),
-          }));
-
-          // Calcular waitingCount (mensagens do cliente sem resposta)
-          const waitingCount = allConversationIds.filter(
-            id => lastMessageMap.get(id) === false
-          ).length;
-
-          const totalPages = Math.ceil((totalCount || 0) / pageSize);
-
-          return {
-            conversations: result,
-            totalCount: totalCount || 0,
-            totalPages,
-            unreadCount: unreadCount || 0,
-            waitingCount,
-          } as ConversationsResult;
-        }
-      }
+      const { count: waitingCount } = await waitingQuery;
 
       const totalPages = Math.ceil((totalCount || 0) / pageSize);
 
@@ -212,9 +162,11 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
         totalCount: totalCount || 0,
         totalPages,
         unreadCount: unreadCount || 0,
-        waitingCount: 0,
+        waitingCount: waitingCount || 0,
       } as ConversationsResult;
     },
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
   });
 
   useEffect(() => {
