@@ -329,7 +329,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isAdmin = role === 'admin';
   const isSupervisor = role === 'supervisor';
   const isAgent = role === 'agent';
-  const isApproved = profile?.is_approved ?? true; // Default to true for safety
+  // Default to false: an unknown/null profile must NOT be treated as approved.
+  // Server-side RLS now also enforces is_approved, but this prevents the UI
+  // from briefly rendering protected content while the profile is loading.
+  const isApproved = profile?.is_approved ?? false;
   
   // Determine if admin should be redirected to setup (only once per session)
   const shouldRedirectToSetup = isAdmin && !isCheckingConfig && isConfigured === false && !hasRedirectedToSetup;
