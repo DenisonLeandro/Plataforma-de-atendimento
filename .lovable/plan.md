@@ -1,20 +1,29 @@
-## Remover exigência de aprovação de contas
+## Correções de performance no frontend (migração já aplicada)
 
-Você está certo — essa aprovação não foi pedida. Vou desativar globalmente e aprovar todas as contas existentes para que ninguém fique travado na tela "Aguardando Aprovação".
+A migração com índices e RLS otimizada já rodou. Falta o passo frontend, que é o **maior** ganho.
 
-### O que será feito
+### 1. `src/hooks/whatsapp/useWhatsAppConversations.ts`
+Hoje o hook faz isto a cada refetch:
+- Busca **todas** as conversas (não só as 20 paginadas) — query "SELECT id"
+- Busca **todas as mensagens** dessas conversas para descobrir quem mandou a última e contar quem está esperando resposta
 
-1. **Banco de dados (migração)**
-   - Atualizar `project_config` para `require_account_approval = 'false'` (desliga a exigência para novas contas).
-   - `UPDATE profiles SET is_approved = true WHERE is_approved IS DISTINCT FROM true` — libera todas as contas já criadas, incluindo a do DENISON que está vendo a tela agora.
+Isso bate exatamente na query mais cara do banco (`whatsapp_messages` ordenada por timestamp, 28k chamadas × 877ms = 25.000s de DB).
 
-2. **Frontend — esconder o toggle de aprovação**
-   - Em `src/components/settings/SecuritySettings.tsx`, remover o bloco "Exigir Aprovação para Novas Contas" para não voltar a ser ligado por engano.
-   - Manter o restante (restrição por domínio) intacto.
+**Fix:** a tabela `whatsapp_conversations` já tem a coluna `last_message_is_from_me`. Vou:
+- Remover o fetch de todas as mensagens.
+- Usar `conv.last_message_is_from_me` direto.
+- Trocar `waitingCount` por uma única `count(*)` com filtro `last_message_is_from_me = false`.
+- Adicionar `staleTime: 30000` e `refetchOnWindowFocus: false` no `useQuery`.
+
+### 2. `src/contexts/AuthContext.tsx`
+O log mostra `Loading user data for: ...` rodando 3-4× seguidas para o mesmo usuário. Vou:
+- Guardar `lastLoadedUserIdRef` para ignorar chamadas duplicadas do mesmo userId em <2s.
+- Remover o `console.log` de "Current auth state" em cada render (ruído).
 
 ### Fora de escopo
-- Não vou mexer em: regras de atribuição, Acesso a Instâncias, Evolution API, RLS de conversas, ErrorBoundary, ou qualquer outra área.
-- Não vou apagar a página `/pending-approval` nem a coluna `is_approved` (ficam inertes, sem custo, caso você queira reativar no futuro).
+- Nada de RLS, regras de atribuição, Evolution API, UI, aprovação de contas.
 
-### Resultado
-Assim que a migração rodar, é só recarregar a página — você cai direto no app, sem passar pela tela de aprovação. Novos cadastros também entram direto.
+### Resultado esperado
+- Listagem de conversas: de ~1s para <100ms.
+- Erro `Timed out acquiring connection from connection pool` deve sumir.
+- Sem mudança de comportamento visível.

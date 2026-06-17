@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -46,6 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [hasRedirectedToSetup, setHasRedirectedToSetup] = useState(false);
   const { toast } = useToast();
   const { setupProject, isConfigured, isCheckingConfig } = useProjectSetup();
+  const lastLoadRef = useRef<{ userId: string; at: number } | null>(null);
 
   const markSetupRedirectDone = () => {
     setHasRedirectedToSetup(true);
@@ -91,6 +92,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Load profile and role for a user
   const loadUserData = async (userId: string) => {
+    const now = Date.now();
+    if (lastLoadRef.current && lastLoadRef.current.userId === userId && now - lastLoadRef.current.at < 2000) {
+      return;
+    }
+    lastLoadRef.current = { userId, at: now };
     console.log('🔍 [AuthContext] Loading user data for:', userId);
     try {
       // Load profile
@@ -333,16 +339,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   
   // Determine if admin should be redirected to setup (only once per session)
   const shouldRedirectToSetup = isAdmin && !isCheckingConfig && isConfigured === false && !hasRedirectedToSetup;
-
-  console.log('🔐 [AuthContext] Current auth state:', { 
-    userId: user?.id, 
-    role, 
-    isAdmin, 
-    isSupervisor, 
-    isAgent,
-    profileEmail: profile?.id,
-    shouldRedirectToSetup
-  });
 
   const value: AuthContextType = {
     user,
