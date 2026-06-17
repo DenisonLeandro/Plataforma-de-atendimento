@@ -11,3 +11,4 @@ export { AssignmentRulesManager } from "./AssignmentRulesManager";
 export { InstanceSetupCollapsible } from "./InstanceSetupCollapsible";
 export { SetupGuideCollapsible } from "./SetupGuideCollapsible";
 export { SecuritySettings } from "./SecuritySettings";
+export { InstanceAccessManager } from "./InstanceAccessManager";
