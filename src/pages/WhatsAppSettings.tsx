@@ -3,7 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { InstancesList, AddInstanceDialog, TeamMembersList, AssignmentRulesManager, InstanceSetupCollapsible, SetupGuideCollapsible, SecuritySettings } from "@/components/settings";
+import { InstancesList, AddInstanceDialog, TeamMembersList, AssignmentRulesManager, InstanceSetupCollapsible, SetupGuideCollapsible, SecuritySettings, InstanceAccessManager } from "@/components/settings";
 import { MacrosManager } from "@/components/macros";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -48,6 +48,7 @@ const WhatsAppSettings = () => {
             <TabsTrigger value="macros">Macros</TabsTrigger>
             <TabsTrigger value="assignment">Atribuição</TabsTrigger>
             {isAdmin && <TabsTrigger value="team">Equipe</TabsTrigger>}
+            {isAdmin && <TabsTrigger value="access">Acesso</TabsTrigger>}
             {isAdmin && <TabsTrigger value="security">Segurança</TabsTrigger>}
           </TabsList>
 
@@ -80,6 +81,12 @@ const WhatsAppSettings = () => {
           {isAdmin && (
             <TabsContent value="team" className="mt-6">
               <TeamMembersList />
+            </TabsContent>
+          )}
+
+          {isAdmin && (
+            <TabsContent value="access" className="mt-6">
+              <InstanceAccessManager />
             </TabsContent>
           )}
 
