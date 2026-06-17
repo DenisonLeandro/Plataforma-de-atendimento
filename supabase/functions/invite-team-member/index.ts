@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { authenticateUser, userHasAnyRole } from "../_shared/auth.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -17,6 +18,17 @@ Deno.serve(async (req) => {
   }
 
   try {
+    // Authorize: only admins may invite new members.
+    const auth = await authenticateUser(req);
+    if (!auth.user) return auth.response!;
+    const isAdmin = await userHasAnyRole(auth.admin, auth.user.id, ['admin']);
+    if (!isAdmin) {
+      return new Response(
+        JSON.stringify({ error: 'Forbidden: admin role required' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
