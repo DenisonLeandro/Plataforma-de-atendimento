@@ -33,6 +33,9 @@ import { Loader2, Check, Copy, Link as LinkIcon, Info } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 
+const normalizeApiUrl = (url: string) =>
+  url.trim().replace(/\/+$/, "").replace(/\/manager$/i, "");
+
 const formSchema = z.object({
   name: z.string().min(1, "Nome obrigatório"),
   instance_name: z
@@ -40,7 +43,10 @@ const formSchema = z.object({
     .min(1, "Nome da instância obrigatório")
     .regex(/^[a-zA-Z0-9_-]+$/, "Apenas letras, números, _ e -"),
   instance_id_external: z.string().optional(),
-  api_url: z.string().url("URL inválida"),
+  api_url: z
+    .string()
+    .url("URL inválida")
+    .transform(normalizeApiUrl),
   api_key: z.string().min(1, "Token/API Key obrigatório"),
   provider_type: z.enum(["self_hosted", "cloud"]),
 });
@@ -74,7 +80,12 @@ export const AddInstanceDialog = ({ open, onOpenChange }: AddInstanceDialogProps
   const providerType = form.watch("provider_type");
 
   const handleTestConnection = async () => {
-    const values = form.getValues();
+    const raw = form.getValues();
+    const normalizedUrl = normalizeApiUrl(raw.api_url || "");
+    if (normalizedUrl !== raw.api_url) {
+      form.setValue("api_url", normalizedUrl, { shouldValidate: true });
+    }
+    const values = { ...raw, api_url: normalizedUrl };
     
     // Validate required fields for testing
     const fieldsToValidate = values.provider_type === 'cloud'
@@ -311,6 +322,9 @@ export const AddInstanceDialog = ({ open, onOpenChange }: AddInstanceDialogProps
                           {...field} 
                         />
                       </FormControl>
+                      <p className="text-xs text-muted-foreground">
+                        Use a URL base do Evolution (ex.: <code>https://seu-servidor.com</code>), sem <code>/manager</code>.
+                      </p>
                       <FormMessage />
                     </FormItem>
                   )}

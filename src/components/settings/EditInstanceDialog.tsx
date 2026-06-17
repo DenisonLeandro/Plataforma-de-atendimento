@@ -31,6 +31,9 @@ import { Tables } from "@/integrations/supabase/types";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
+const normalizeApiUrl = (url: string) =>
+  url.trim().replace(/\/+$/, "").replace(/\/manager$/i, "");
+
 const formSchema = z.object({
   name: z.string().min(1, "Nome obrigatório"),
   instance_name: z
@@ -38,7 +41,10 @@ const formSchema = z.object({
     .min(1, "Nome da instância obrigatório")
     .regex(/^[a-zA-Z0-9_-]+$/, "Apenas letras, números, _ e -"),
   instance_id_external: z.string().optional(),
-  api_url: z.string().url("URL inválida"),
+  api_url: z
+    .string()
+    .url("URL inválida")
+    .transform(normalizeApiUrl),
   api_key: z.string().min(1, "Token/API Key obrigatório"),
   provider_type: z.enum(["self_hosted", "cloud"]),
 });
@@ -194,6 +200,9 @@ export const EditInstanceDialog = ({
                       {...field} 
                     />
                   </FormControl>
+                  <p className="text-xs text-muted-foreground">
+                    Use a URL base do Evolution (ex.: <code>https://seu-servidor.com</code>), sem <code>/manager</code>.
+                  </p>
                   <FormMessage />
                 </FormItem>
               )}
