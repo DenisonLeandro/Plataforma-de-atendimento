@@ -78,7 +78,11 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
         throw error;
       }
 
-      let result = conversationsData as unknown as ConversationWithContact[];
+      const rawResult = conversationsData as unknown as (ConversationWithContact & { last_message_is_from_me?: boolean | null })[];
+      const result: ConversationWithContact[] = rawResult.map((conv) => ({
+        ...conv,
+        isLastMessageFromMe: conv.last_message_is_from_me ?? undefined,
+      }));
 
       // Query 2: Get total count (without pagination)
       let countQuery = supabase
@@ -110,7 +114,7 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
       // Query 3: Get unread count (all conversations)
       let unreadQuery = supabase
         .from('whatsapp_conversations')
-        .select('unread_count', { count: 'exact' })
+        .select('unread_count', { count: 'exact', head: true })
         .gt('unread_count', 0);
 
       if (filters?.instanceId) {
@@ -135,75 +139,29 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
 
       const { count: unreadCount } = await unreadQuery;
 
-      // Buscar is_from_me da última mensagem de cada conversa (só das paginadas)
-      const conversationIds = result.map(c => c.id);
-      
-      // Também buscar todas as conversas para calcular waitingCount
-      let allConversationsQuery = supabase
+      // Query 4: Waiting count (last message from contact, not from us)
+      let waitingQuery = supabase
         .from('whatsapp_conversations')
-        .select('id');
+        .select('*', { count: 'exact', head: true })
+        .eq('last_message_is_from_me', false);
 
       if (filters?.instanceId) {
-        allConversationsQuery = allConversationsQuery.eq('instance_id', filters.instanceId);
+        waitingQuery = waitingQuery.eq('instance_id', filters.instanceId);
       }
-
       if (filters?.status) {
-        allConversationsQuery = allConversationsQuery.eq('status', filters.status);
+        waitingQuery = waitingQuery.eq('status', filters.status);
       }
-
       if (filters?.statusIn && filters.statusIn.length > 0) {
-        allConversationsQuery = allConversationsQuery.in('status', filters.statusIn);
+        waitingQuery = waitingQuery.in('status', filters.statusIn);
       }
-
       if (filters?.assignedTo) {
-        allConversationsQuery = allConversationsQuery.eq('assigned_to', filters.assignedTo);
+        waitingQuery = waitingQuery.eq('assigned_to', filters.assignedTo);
       }
-
       if (filters?.unassigned) {
-        allConversationsQuery = allConversationsQuery.is('assigned_to', null);
+        waitingQuery = waitingQuery.is('assigned_to', null);
       }
 
-      const { data: allConversations } = await allConversationsQuery;
-      const allConversationIds = allConversations?.map(c => c.id) || [];
-
-      if (allConversationIds.length > 0) {
-        const { data: allLastMessages } = await supabase
-          .from('whatsapp_messages')
-          .select('conversation_id, is_from_me, timestamp')
-          .in('conversation_id', allConversationIds)
-          .order('timestamp', { ascending: false });
-
-        if (allLastMessages) {
-          // Agrupar por conversation_id e pegar a primeira (mais recente)
-          const lastMessageMap = new Map<string, boolean>();
-          allLastMessages.forEach(msg => {
-            if (!lastMessageMap.has(msg.conversation_id)) {
-              lastMessageMap.set(msg.conversation_id, msg.is_from_me || false);
-            }
-          });
-
-          // Aplicar aos resultados paginados
-          result = result.map(conv => ({
-            ...conv,
-            isLastMessageFromMe: lastMessageMap.get(conv.id),
-          }));
-
-          // Calcular waitingCount (mensagens do cliente sem resposta)
-          const waitingCount = allConversationIds.filter(
-            id => lastMessageMap.get(id) === false
-          ).length;
-
-          const totalPages = Math.ceil((totalCount || 0) / pageSize);
-
-          return {
-            conversations: result,
-            totalCount: totalCount || 0,
-            totalPages,
-            unreadCount: unreadCount || 0,
-            waitingCount,
-          } as ConversationsResult;
-        }
-      }
+      const { count: waitingCount } = await waitingQuery;
 
       const totalPages = Math.ceil((totalCount || 0) / pageSize);
 
@@ -212,7 +170,7 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
         totalCount: totalCount || 0,
         totalPages,
         unreadCount: unreadCount || 0,
-        waitingCount: 0,
+        waitingCount: waitingCount || 0,
       } as ConversationsResult;
     },
   });

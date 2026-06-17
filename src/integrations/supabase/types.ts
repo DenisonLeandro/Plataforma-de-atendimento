@@ -412,6 +412,7 @@ export type Database = {
           id: string
           instance_id: string
           last_message_at: string | null
+          last_message_is_from_me: boolean | null
           last_message_preview: string | null
           metadata: Json | null
           status: string | null
@@ -425,6 +426,7 @@ export type Database = {
           id?: string
           instance_id: string
           last_message_at?: string | null
+          last_message_is_from_me?: boolean | null
           last_message_preview?: string | null
           metadata?: Json | null
           status?: string | null
@@ -438,6 +440,7 @@ export type Database = {
           id?: string
           instance_id?: string
           last_message_at?: string | null
+          last_message_is_from_me?: boolean | null
           last_message_preview?: string | null
           metadata?: Json | null
           status?: string | null
