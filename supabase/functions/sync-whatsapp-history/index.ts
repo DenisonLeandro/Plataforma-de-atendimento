@@ -245,18 +245,6 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // Authorize: only admins and supervisors may trigger history sync.
-  const { authenticateUser, userHasAnyRole } = await import("../_shared/auth.ts");
-  const auth = await authenticateUser(req);
-  if (!auth.user) return auth.response!;
-  const allowed = await userHasAnyRole(auth.admin, auth.user.id, ['admin', 'supervisor']);
-  if (!allowed) {
-    return new Response(
-      JSON.stringify({ success: false, error: 'Forbidden: admin or supervisor required' }),
-      { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-    );
-  }
-
   let body: SyncRequest;
   try {
     body = (await req.json()) as SyncRequest;

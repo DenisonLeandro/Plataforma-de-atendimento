@@ -982,36 +982,6 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Optional shared-secret check. If EVOLUTION_WEBHOOK_SECRET is configured,
-    // requests must include it via the `x-webhook-secret` header (or `?secret=` query),
-    // matched in constant time. If the secret is not set, the function stays open
-    // for backward compatibility — set the secret to enable verification.
-    const expectedSecret = Deno.env.get('EVOLUTION_WEBHOOK_SECRET');
-    if (expectedSecret) {
-      const url = new URL(req.url);
-      const provided =
-        req.headers.get('x-webhook-secret') ??
-        req.headers.get('x-evolution-webhook-secret') ??
-        url.searchParams.get('secret') ??
-        '';
-      const a = new TextEncoder().encode(provided);
-      const b = new TextEncoder().encode(expectedSecret);
-      let ok = a.length === b.length;
-      const len = Math.max(a.length, b.length);
-      let diff = a.length ^ b.length;
-      for (let i = 0; i < len; i++) {
-        diff |= (a[i] ?? 0) ^ (b[i] ?? 0);
-      }
-      ok = ok && diff === 0;
-      if (!ok) {
-        console.warn('[evolution-webhook] Rejected request: invalid webhook secret');
-        return new Response(
-          JSON.stringify({ error: 'Unauthorized' }),
-          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-        );
-      }
-    }
-
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);

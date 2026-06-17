@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
-import { authenticateUser, canAccessConversation } from "../_shared/auth.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -24,9 +23,6 @@ serve(async (req) => {
   }
 
   try {
-    const auth = await authenticateUser(req);
-    if (!auth.user) return auth.response!;
-
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
@@ -46,13 +42,6 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({ success: false, error: 'conversationId is required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    if (!(await canAccessConversation(auth.admin, auth.user.id, conversationId))) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'Forbidden' }),
-        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 

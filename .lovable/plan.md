@@ -1,46 +1,27 @@
-# Por que a plataforma está lenta
+## Problema
 
-Verifiquei o banco e encontrei o culpado. Toda vez que a lista de conversas é aberta (ou atualizada por realtime), o hook `useWhatsAppConversations` executa uma consulta que busca **todas as mensagens de todas as conversas** da instância só para descobrir duas coisas:
+A instância **Advocacia Ibiporã** está marcada como desconectada porque a `api_url` salva em `whatsapp_instance_secrets` aponta para a interface web do Evolution Manager, não para a API:
 
-- se a última mensagem de cada conversa foi enviada por nós ou pelo cliente (`isLastMessageFromMe`)
-- quantas conversas estão "aguardando resposta" (`waitingCount`)
+- Atual: `https://evolution-api-hbbv.srv1746890.hstgr.cloud/manager`
+- Correta: `https://evolution-api-hbbv.srv1746890.hstgr.cloud`
 
-Essa consulta apareceu como a #1 mais lenta do banco:
+Os logs da edge function `test-instance-connection` confirmam: a resposta vem como HTML (`<title>Evolution Manager</title>`), então o status fica como `disconnected` mesmo o WhatsApp estando conectado de fato no servidor.
 
-- **27.917 execuções**, média de **864 ms**, pico de **8 s**, totalizando **~24.000 segundos** de CPU
-- ela traz milhares de linhas da tabela `whatsapp_messages` por carregamento, sem limite por conversa
+## Correção
 
-Como o banco fica saturado processando isso, as outras consultas (lista de conversas, contagens, mensagens do chat aberto) ficam na fila e a interface trava.
+1. Atualizar `whatsapp_instance_secrets.api_url` da instância `advocacia-ibipora` removendo o sufixo `/manager`.
+2. Rodar `test-instance-connection` para revalidar e atualizar o `status` em `whatsapp_instances`.
+3. Confirmar via logs que a resposta agora retorna JSON com `state: "open"`.
 
-## O que vou fazer
+## Prevenção (opcional, recomendado)
 
-### 1. Mover esses dois indicadores para a própria tabela de conversas
-Adicionar uma coluna `last_message_is_from_me boolean` em `whatsapp_conversations` e mantê-la atualizada automaticamente sempre que uma mensagem nova chega, via trigger no `INSERT` de `whatsapp_messages`. Com isso o frontend lê o dado direto da linha da conversa que ele já está buscando — zero consulta extra.
+Em `AddInstanceDialog.tsx` e `EditInstanceDialog.tsx`, normalizar o input da `api_url` no momento de salvar:
+- Remover automaticamente sufixos `/manager`, `/manager/`, barras finais.
+- Exibir hint abaixo do campo: "Use a URL base do Evolution (ex.: `https://seu-servidor.com`), sem `/manager`."
 
-### 2. Refatorar `useWhatsAppConversations` para remover a consulta pesada
-- Remover o bloco que faz `select` em `whatsapp_messages` com `.in('conversation_id', allConversationIds)`.
-- Calcular `isLastMessageFromMe` a partir da nova coluna.
-- Calcular `waitingCount` com um único `count` na tabela `whatsapp_conversations` (`last_message_is_from_me = false`), aplicando os mesmos filtros (instância, status, atribuição) — mesma semântica de hoje, mas em milissegundos.
+Isso evita o mesmo erro em futuras instâncias self-hosted.
 
-### 3. Reforço de índices (defensivo)
-Adicionar índice composto `(conversation_id, timestamp DESC)` em `whatsapp_messages` para o restante das consultas de mensagens do chat aberto.
+## Fora de escopo
 
-## Detalhes técnicos
-
-**Migração SQL**
-- `ALTER TABLE public.whatsapp_conversations ADD COLUMN last_message_is_from_me boolean;`
-- Backfill: `UPDATE` com subquery `DISTINCT ON (conversation_id) ... ORDER BY conversation_id, timestamp DESC`.
-- Função + trigger `AFTER INSERT ON whatsapp_messages` que faz `UPDATE whatsapp_conversations SET last_message_is_from_me = NEW.is_from_me WHERE id = NEW.conversation_id` (apenas quando `NEW.timestamp >= conversations.last_message_at` ou for a primeira).
-- Índice parcial: `CREATE INDEX idx_conversations_waiting ON public.whatsapp_conversations (instance_id, status) WHERE last_message_is_from_me = false;`
-- Índice composto: `CREATE INDEX idx_messages_conv_ts ON public.whatsapp_messages (conversation_id, timestamp DESC);`
-- `DROP INDEX idx_messages_conversation;` (redundante com o composto acima).
-
-**Frontend (`src/hooks/whatsapp/useWhatsAppConversations.ts`)**
-- Remover Query "buscar `allConversations` + `allLastMessages`".
-- Adicionar uma consulta leve `count` para `waitingCount` reusando os mesmos filtros.
-- Popular `isLastMessageFromMe` direto de `conv.last_message_is_from_me`.
-
-## Escopo / fora de escopo
-
-- **Dentro**: a migração descrita, refatoração do hook `useWhatsAppConversations`, atualização do tipo gerado de `whatsapp_conversations` para incluir o novo campo.
-- **Fora**: nenhuma mudança em UI, regras de atribuição, RLS, edge functions ou outras telas. Comportamento visível para o usuário continua idêntico — só fica rápido.
+- Nenhuma mudança em RLS, autenticação, regras de atribuição, acesso a instâncias ou ErrorBoundary.
+- Nenhuma alteração nas outras instâncias já configuradas corretamente.
