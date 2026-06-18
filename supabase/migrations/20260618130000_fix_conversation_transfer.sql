@@ -9,9 +9,12 @@
 DROP FUNCTION IF EXISTS public.get_assignable_agents(uuid);
 DROP FUNCTION IF EXISTS public.assign_conversation(uuid, uuid, text);
 
--- 1) Lista de atendentes atribuíveis para uma instância (campos mínimos, sem email).
---    active_conversations é contado aqui (SECURITY DEFINER), então fica correto mesmo
---    para um `agent` (que pela RLS não veria as conversas de outros atendentes).
+-- 1) Lista de atendentes atribuíveis (campos mínimos, sem email).
+--    Decisão de produto: transferência é CROSS-INSTÂNCIA — lista TODOS os atendentes
+--    ativos da plataforma, independente de agent_instance_access (advocacia única,
+--    multi-unidade; agent_instance_access continua valendo para o resto do sistema).
+--    _instance_id é mantido só para contar active_conversations naquela instância
+--    (carga de trabalho). SECURITY DEFINER conta correto mesmo para um `agent`.
 CREATE OR REPLACE FUNCTION public.get_assignable_agents(_instance_id uuid)
 RETURNS TABLE (
   id uuid,
@@ -41,13 +44,10 @@ AS $$
     ) AS active_conversations
   FROM public.profiles p
   JOIN public.user_roles ur ON ur.user_id = p.id
-  WHERE
-    -- Gate de chamador: só retorna dados se quem chama enxerga a instância.
-    public.can_user_see_instance(auth.uid(), _instance_id)
-    AND p.is_active = true
+  WHERE p.is_active = true
     AND p.is_approved = true
     AND ur.role IN ('admin', 'supervisor', 'agent')
-    AND public.can_user_see_instance(p.id, _instance_id)
+    AND p.id <> auth.uid()
 $$;
 
 REVOKE ALL ON FUNCTION public.get_assignable_agents(uuid) FROM public;
@@ -69,7 +69,6 @@ AS $$
 DECLARE
   _caller uuid := auth.uid();
   _current_assigned uuid;
-  _instance_id uuid;
 BEGIN
   IF _caller IS NULL THEN
     RAISE EXCEPTION 'Usuário não autenticado';
@@ -80,14 +79,13 @@ BEGIN
     RAISE EXCEPTION 'Sem permissão para atribuir esta conversa';
   END IF;
 
-  SELECT instance_id, assigned_to
-    INTO _instance_id, _current_assigned
+  SELECT assigned_to
+    INTO _current_assigned
   FROM public.whatsapp_conversations
   WHERE id = _conversation_id;
 
-  -- O destinatário (quando houver) precisa ser um atendente válido com acesso à
-  -- instância da conversa. Checagem inline (não usa a função gateada por chamador),
-  -- para não bloquear quem está atribuído à conversa sem acesso global à instância.
+  -- O destinatário (quando houver) só precisa ser um atendente válido e ativo.
+  -- Transferência é cross-instância (decisão de produto): NÃO exige acesso à instância.
   IF _assigned_to IS NOT NULL AND NOT EXISTS (
     SELECT 1
     FROM public.profiles p
@@ -96,9 +94,8 @@ BEGIN
       AND p.is_active = true
       AND p.is_approved = true
       AND ur.role IN ('admin', 'supervisor', 'agent')
-      AND public.can_user_see_instance(_assigned_to, _instance_id)
   ) THEN
-    RAISE EXCEPTION 'Atendente inválido para esta instância';
+    RAISE EXCEPTION 'Atendente inválido';
   END IF;
 
   UPDATE public.whatsapp_conversations
