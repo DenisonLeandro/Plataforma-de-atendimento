@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useWhatsAppActions } from '@/hooks/whatsapp/useWhatsAppActions';
+import { normalizeBrazilianPhone, isValidBrazilianPhone } from '@/utils/phoneUtils';
 
 interface EditContactModalProps {
   open: boolean;
@@ -25,6 +26,7 @@ interface EditContactModalProps {
 
 interface ContactFormData {
   name: string;
+  phone: string;
   notes: string;
 }
 
@@ -38,25 +40,38 @@ export function EditContactModal({
   onSuccess,
 }: EditContactModalProps) {
   const { updateContact, isUpdatingContact } = useWhatsAppActions();
-  const { register, handleSubmit, formState: { errors }, reset } = useForm<ContactFormData>({
-    defaultValues: { 
-      name: contactName, 
-      notes: contactNotes || '' 
+  const { register, handleSubmit, watch, formState: { errors }, reset } = useForm<ContactFormData>({
+    defaultValues: {
+      name: contactName,
+      phone: contactPhone,
+      notes: contactNotes || ''
     },
   });
 
   useEffect(() => {
     if (open) {
-      reset({ 
-        name: contactName, 
-        notes: contactNotes || '' 
+      reset({
+        name: contactName,
+        phone: contactPhone,
+        notes: contactNotes || ''
       });
     }
-  }, [open, contactName, contactNotes, reset]);
+  }, [open, contactName, contactPhone, contactNotes, reset]);
+
+  const phoneValue = watch('phone');
 
   const onSubmit = (data: ContactFormData) => {
+    const normalizedPhone = normalizeBrazilianPhone(data.phone);
     updateContact(
-      { contactId, data: { name: data.name, notes: data.notes || null } },
+      {
+        contactId,
+        data: {
+          name: data.name,
+          notes: data.notes || null,
+          // Only send phone_number when it actually changed (manual correction).
+          ...(normalizedPhone !== contactPhone ? { phone_number: normalizedPhone } : {}),
+        },
+      },
       {
         onSuccess: () => {
           onOpenChange(false);
@@ -76,12 +91,21 @@ export function EditContactModal({
 
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label>Telefone</Label>
-              <Input 
-                value={contactPhone} 
-                disabled 
-                className="bg-muted"
+              <Label htmlFor="phone">Telefone</Label>
+              <Input
+                id="phone"
+                {...register('phone', { required: 'Telefone é obrigatório' })}
+                placeholder="Ex: 5511987654321"
               />
+              {errors.phone ? (
+                <p className="text-sm text-destructive">{errors.phone.message}</p>
+              ) : (
+                phoneValue && !isValidBrazilianPhone(phoneValue) && (
+                  <p className="text-sm text-amber-600">
+                    Número fora do padrão brasileiro (DDD + número). Você ainda pode salvar.
+                  </p>
+                )
+              )}
             </div>
 
             <div className="space-y-2">

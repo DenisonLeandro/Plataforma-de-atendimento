@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
 import {
   normalizePhoneNumber,
+  resolvePhoneJid,
   getMessageType,
   getMessageContent,
   isEditedMessage,
@@ -344,7 +345,12 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
           const c = contactsSlice[i];
           const remoteJid: string | undefined = c.remoteJid || c.id || c.jid;
           if (!remoteJid) continue;
-          const { phone, isGroup: parsedGroup } = normalizePhoneNumber(remoteJid);
+          // Prefer a real phone JID when the primary id is a `@lid` (non-saved contact).
+          const phoneJid = resolvePhoneJid(
+            { remoteJid, senderPn: c.senderPn, remoteJidAlt: c.remoteJidAlt, participant: c.jid },
+            c,
+          );
+          const { phone, isGroup: parsedGroup } = normalizePhoneNumber(phoneJid);
           if (!phone) continue;
           const isGroup = parsedGroup || remoteJid.endsWith('@g.us');
           const name = c.pushName || c.name || c.notify || c.verifiedName || phone;
@@ -424,7 +430,12 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
       const remoteJid: string | undefined = chat.remoteJid || chat.id || chat.jid;
       if (!remoteJid) continue;
 
-      const { phone, isGroup: parsedGroup } = normalizePhoneNumber(remoteJid);
+      // Prefer a real phone JID when the chat id is a `@lid` (non-saved contact).
+      const phoneJid = resolvePhoneJid(
+        { remoteJid, senderPn: chat.senderPn, remoteJidAlt: chat.remoteJidAlt, participant: chat.jid },
+        chat,
+      );
+      const { phone, isGroup: parsedGroup } = normalizePhoneNumber(phoneJid);
       if (!phone) continue;
       const isGroup = parsedGroup || remoteJid.endsWith('@g.us');
 

@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
 import {
   normalizePhoneNumber,
+  resolvePhoneJid,
   getMessageType,
   getMessageContent,
   isEditedMessage,
@@ -646,9 +647,13 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
       return;
     }
 
-    // Normalize phone number
-    const { phone, isGroup } = normalizePhoneNumber(key.remoteJid);
-    console.log('[evolution-webhook] Normalized phone:', phone, 'isGroup:', isGroup);
+    // Normalize phone number.
+    // For non-saved contacts the remoteJid may be a `@lid` identifier (a long internal
+    // integer, not the real phone). resolvePhoneJid prefers a real phone JID from the
+    // payload when available, falling back to remoteJid otherwise.
+    const phoneJid = resolvePhoneJid(key, data);
+    const { phone, isGroup } = normalizePhoneNumber(phoneJid);
+    console.log('[evolution-webhook] Normalized phone:', phone, 'isGroup:', isGroup, 'from jid:', phoneJid);
 
     // Find or create contact
     // If message is from me, use phone number instead of pushName (which would be the instance owner's name)

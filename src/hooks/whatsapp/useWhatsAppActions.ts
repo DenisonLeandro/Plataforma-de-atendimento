@@ -129,25 +129,38 @@ export const useWhatsAppActions = () => {
   const updateContactMutation = useMutation({
     mutationFn: async ({ contactId, data }: {
       contactId: string;
-      data: { name: string; notes: string | null };
+      data: { name: string; notes: string | null; phone_number?: string };
     }) => {
+      const updates: Record<string, unknown> = {
+        name: data.name,
+        notes: data.notes,
+        updated_at: new Date().toISOString(),
+      };
+      // Only update the phone when explicitly provided (manual correction of e.g. @lid numbers).
+      if (data.phone_number !== undefined) {
+        updates.phone_number = data.phone_number;
+      }
       const { error } = await supabase
         .from('whatsapp_contacts')
-        .update({
-          name: data.name,
-          notes: data.notes,
-          updated_at: new Date().toISOString(),
-        })
+        .update(updates)
         .eq('id', contactId);
       if (error) throw error;
     },
     onSuccess: () => {
       toast.success('Contato atualizado com sucesso');
       queryClient.invalidateQueries({ queryKey: ['whatsapp', 'conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['whatsapp-contacts'] });
+      queryClient.invalidateQueries({ queryKey: ['contact-details'] });
     },
-    onError: (error) => {
+    onError: (error: unknown) => {
       console.error('Erro ao atualizar contato:', error);
-      toast.error('Erro ao atualizar contato');
+      // Postgres unique_violation (instance_id, phone_number) → friendly message.
+      const code = (error as { code?: string })?.code;
+      if (code === '23505') {
+        toast.error('Já existe um contato com esse número nesta instância');
+      } else {
+        toast.error('Erro ao atualizar contato');
+      }
     },
   });
 

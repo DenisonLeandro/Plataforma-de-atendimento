@@ -21,6 +21,38 @@ export function normalizePhoneNumber(remoteJid: string): { phone: string; isGrou
   return { phone, isGroup };
 }
 
+// Resolve the best JID to derive the real phone number from.
+// For contacts NOT saved in the agenda, WhatsApp/Baileys sends a `@lid` identifier
+// (a long internal integer) in `key.remoteJid` instead of the real phone JID
+// (`<phone>@s.whatsapp.net`). When that happens, look for the real phone JID in
+// alternative payload fields. Best-effort: field names vary across Evolution versions,
+// so we scan a set of candidates and only accept a value that is clearly a phone JID.
+// If none is found, fall back to the original remoteJid (no regression).
+export function resolvePhoneJid(key: any, data?: any): string {
+  const primary: string = key?.remoteJid ?? '';
+
+  // Not a @lid (real phone JID, group, etc.) → use as-is.
+  if (!primary.includes('@lid')) return primary;
+
+  const candidates = [
+    key?.senderPn,
+    key?.remoteJidAlt,
+    key?.participantPn,
+    key?.participantAlt,
+    key?.participant,
+    data?.senderPn,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.includes('@s.whatsapp.net')) {
+      return candidate;
+    }
+  }
+
+  // No real phone JID available; keep current behaviour.
+  return primary;
+}
+
 // Detect message type from Evolution API message object
 export function getMessageType(message: any): string {
   if (!message) return 'text';
