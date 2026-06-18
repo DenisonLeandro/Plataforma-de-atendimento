@@ -5,6 +5,7 @@ import { X, Send, Loader2, FileText, Music, Video } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { MediaSendParams } from "./MessageInputContainer";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface MediaPreviewProps {
   file: File;
@@ -31,12 +32,24 @@ export const MediaPreview = ({ file, onSend, onClose }: MediaPreviewProps) => {
   const [caption, setCaption] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const handleSend = async () => {
+    // A policy de INSERT do bucket exige auth.uid() IS NOT NULL e que a primeira
+    // pasta do path seja o UUID do usuário. Sem sessão, o upload falharia na RLS.
+    if (!user?.id) {
+      toast({
+        title: "Sessão expirada",
+        description: "Faça login novamente.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsUploading(true);
-    
+
     try {
-      const fileName = `${Date.now()}-${sanitizeFileName(file.name)}`;
+      const fileName = `${user.id}/${Date.now()}-${sanitizeFileName(file.name)}`;
       const { error: uploadError } = await supabase.storage
         .from('whatsapp-media')
         .upload(fileName, file, {
