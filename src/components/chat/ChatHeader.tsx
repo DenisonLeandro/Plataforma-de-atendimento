@@ -163,6 +163,7 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
           open={isAssignDialogOpen}
           onOpenChange={setIsAssignDialogOpen}
           conversationId={conversationId}
+          instanceId={conversation.instance_id ?? contact?.instance_id}
           currentAssignee={conversation.assigned_to}
           isTransfer={!isInQueue}
         />

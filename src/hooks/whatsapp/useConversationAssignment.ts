@@ -17,45 +17,22 @@ export const useConversationAssignment = () => {
   const { toast } = useToast();
 
   const assignConversation = useMutation({
-    mutationFn: async ({ 
-      conversationId, 
-      assignedTo, 
-      reason 
-    }: { 
-      conversationId: string; 
-      assignedTo: string; 
+    mutationFn: async ({
+      conversationId,
+      assignedTo,
+      reason
+    }: {
+      conversationId: string;
+      assignedTo: string;
       reason?: string;
     }) => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Usuário não autenticado');
-
-      // Get current assigned_to
-      const { data: conversation } = await supabase
-        .from('whatsapp_conversations')
-        .select('assigned_to')
-        .eq('id', conversationId)
-        .single();
-
-      // Update conversation
-      const { error: updateError } = await supabase
-        .from('whatsapp_conversations')
-        .update({ assigned_to: assignedTo })
-        .eq('id', conversationId);
-
-      if (updateError) throw updateError;
-
-      // Log assignment history
-      const { error: historyError } = await supabase
-        .from('conversation_assignments')
-        .insert({
-          conversation_id: conversationId,
-          assigned_from: conversation?.assigned_to || null,
-          assigned_to: assignedTo,
-          assigned_by: user.id,
-          reason: reason || null,
-        });
-
-      if (historyError) throw historyError;
+      // RPC SECURITY DEFINER: valida acesso, faz o UPDATE e registra o histórico no servidor.
+      const { error } = await supabase.rpc('assign_conversation', {
+        _conversation_id: conversationId,
+        _assigned_to: assignedTo,
+        _reason: reason || null,
+      });
+      if (error) throw error;
 
       return { conversationId, assignedTo };
     },
@@ -77,45 +54,21 @@ export const useConversationAssignment = () => {
   });
 
   const transferConversation = useMutation({
-    mutationFn: async ({ 
-      conversationId, 
-      newAssignee, 
-      reason 
-    }: { 
-      conversationId: string; 
-      newAssignee: string; 
+    mutationFn: async ({
+      conversationId,
+      newAssignee,
+      reason
+    }: {
+      conversationId: string;
+      newAssignee: string;
       reason?: string;
     }) => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Usuário não autenticado');
-
-      // Get current assigned_to
-      const { data: conversation } = await supabase
-        .from('whatsapp_conversations')
-        .select('assigned_to')
-        .eq('id', conversationId)
-        .single();
-
-      // Update conversation
-      const { error: updateError } = await supabase
-        .from('whatsapp_conversations')
-        .update({ assigned_to: newAssignee })
-        .eq('id', conversationId);
-
-      if (updateError) throw updateError;
-
-      // Log transfer history
-      const { error: historyError } = await supabase
-        .from('conversation_assignments')
-        .insert({
-          conversation_id: conversationId,
-          assigned_from: conversation?.assigned_to || null,
-          assigned_to: newAssignee,
-          assigned_by: user.id,
-          reason: reason || null,
-        });
-
-      if (historyError) throw historyError;
+      const { error } = await supabase.rpc('assign_conversation', {
+        _conversation_id: conversationId,
+        _assigned_to: newAssignee,
+        _reason: reason || null,
+      });
+      if (error) throw error;
 
       return { conversationId, newAssignee };
     },
@@ -138,38 +91,12 @@ export const useConversationAssignment = () => {
 
   const unassignConversation = useMutation({
     mutationFn: async (conversationId: string) => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Usuário não autenticado');
-
-      // Get current assigned_to
-      const { data: conversation } = await supabase
-        .from('whatsapp_conversations')
-        .select('assigned_to')
-        .eq('id', conversationId)
-        .single();
-
-      // Remove assignment
-      const { error: updateError } = await supabase
-        .from('whatsapp_conversations')
-        .update({ assigned_to: null })
-        .eq('id', conversationId);
-
-      if (updateError) throw updateError;
-
-      // Log history (returning to queue)
-      if (conversation?.assigned_to) {
-        const { error: historyError } = await supabase
-          .from('conversation_assignments')
-          .insert({
-            conversation_id: conversationId,
-            assigned_from: conversation.assigned_to,
-            assigned_to: user.id,
-            assigned_by: user.id,
-            reason: 'Devolvido para a fila',
-          });
-
-        if (historyError) throw historyError;
-      }
+      const { error } = await supabase.rpc('assign_conversation', {
+        _conversation_id: conversationId,
+        _assigned_to: null,
+        _reason: 'Devolvido para a fila',
+      });
+      if (error) throw error;
 
       return conversationId;
     },

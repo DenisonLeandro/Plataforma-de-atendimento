@@ -882,6 +882,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      assign_conversation: {
+        Args: {
+          _assigned_to: string | null
+          _conversation_id: string
+          _reason?: string | null
+        }
+        Returns: undefined
+      }
       can_access_conversation: {
         Args: { _conversation_id: string; _user_id: string }
         Returns: boolean
@@ -889,6 +897,17 @@ export type Database = {
       can_user_see_instance: {
         Args: { _instance_id: string; _user_id: string }
         Returns: boolean
+      }
+      get_assignable_agents: {
+        Args: { _instance_id: string }
+        Returns: {
+          id: string
+          full_name: string
+          avatar_url: string | null
+          status: string
+          role: Database["public"]["Enums"]["app_role"]
+          active_conversations: number
+        }[]
       }
       has_role: {
         Args: {

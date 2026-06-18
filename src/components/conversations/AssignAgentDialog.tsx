@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { useAgents } from '@/hooks/useAgents';
+import { useAssignableAgents } from '@/hooks/useAssignableAgents';
 import { useConversationAssignment } from '@/hooks/whatsapp/useConversationAssignment';
 import { MessageSquare, Circle } from 'lucide-react';
 
@@ -21,6 +21,7 @@ interface AssignAgentDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   conversationId: string;
+  instanceId?: string;
   currentAssignee?: string;
   isTransfer?: boolean;
 }
@@ -29,10 +30,11 @@ export function AssignAgentDialog({
   open,
   onOpenChange,
   conversationId,
+  instanceId,
   currentAssignee,
   isTransfer = false,
 }: AssignAgentDialogProps) {
-  const { agents, isLoading } = useAgents();
+  const { agents, isLoading } = useAssignableAgents(instanceId);
   const { assignConversation, transferConversation, isAssigning, isTransferring } = useConversationAssignment();
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [reason, setReason] = useState('');
