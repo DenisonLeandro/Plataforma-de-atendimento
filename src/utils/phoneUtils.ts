@@ -23,6 +23,30 @@ export function normalizeBrazilianPhone(phone: string): string {
 }
 
 /**
+ * Aplica máscara visual brasileira: (99) 99999-9999, com +55 opcional.
+ * Valores que não parecem telefone BR (ex.: LIDs do WhatsApp, 14+ dígitos) são
+ * retornados sem máscara, para não desfigurar identificadores.
+ */
+export function formatBrazilianPhone(value: string): string {
+  const digits = value.replace(/\D/g, '');
+  if (digits.length > 13) return value;
+
+  let rest = digits;
+  let prefix = '';
+  if (rest.startsWith('55') && rest.length > 11) {
+    prefix = '+55 ';
+    rest = rest.slice(2);
+  }
+
+  if (rest.length <= 2) return `${prefix}${rest}`;
+  const ddd = rest.slice(0, 2);
+  const num = rest.slice(2);
+  if (num.length <= 4) return `${prefix}(${ddd}) ${num}`;
+  if (num.length <= 8) return `${prefix}(${ddd}) ${num.slice(0, 4)}-${num.slice(4)}`;
+  return `${prefix}(${ddd}) ${num.slice(0, 5)}-${num.slice(5, 9)}`;
+}
+
+/**
  * Verifica se um número de telefone tem formato válido brasileiro
  */
 export function isValidBrazilianPhone(phone: string): boolean {

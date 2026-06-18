@@ -21,6 +21,14 @@ export function normalizePhoneNumber(remoteJid: string): { phone: string; isGrou
   return { phone, isGroup };
 }
 
+// Detect whether a JID is a WhatsApp LID (Linked Identity) rather than a real phone.
+// Since set/2025 the WhatsApp/Meta sends `@lid` (or addressingMode === 'lid') for
+// contacts that are NOT saved in the connected number's agenda (mostly Android senders).
+export function isLid(jid?: string, addressingMode?: string): boolean {
+  if (addressingMode === 'lid') return true;
+  return typeof jid === 'string' && jid.includes('@lid');
+}
+
 // Resolve the best JID to derive the real phone number from.
 // For contacts NOT saved in the agenda, WhatsApp/Baileys sends a `@lid` identifier
 // (a long internal integer) in `key.remoteJid` instead of the real phone JID
@@ -30,9 +38,10 @@ export function normalizePhoneNumber(remoteJid: string): { phone: string; isGrou
 // If none is found, fall back to the original remoteJid (no regression).
 export function resolvePhoneJid(key: any, data?: any): string {
   const primary: string = key?.remoteJid ?? '';
+  const addressingMode = key?.addressingMode ?? data?.addressingMode;
 
-  // Not a @lid (real phone JID, group, etc.) → use as-is.
-  if (!primary.includes('@lid')) return primary;
+  // Not a LID (real phone JID, group, etc.) → use as-is.
+  if (!isLid(primary, addressingMode)) return primary;
 
   const candidates = [
     key?.senderPn,
@@ -44,13 +53,24 @@ export function resolvePhoneJid(key: any, data?: any): string {
   ];
 
   for (const candidate of candidates) {
-    if (typeof candidate === 'string' && candidate.includes('@s.whatsapp.net')) {
+    if (
+      typeof candidate === 'string' &&
+      (candidate.includes('@s.whatsapp.net') || candidate.includes('@c.us'))
+    ) {
       return candidate;
     }
   }
 
   // No real phone JID available; keep current behaviour.
   return primary;
+}
+
+// Extract the real phone JID from a payload key, or null if only a LID is available.
+export function extractRealPhoneFromKey(key: any, data?: any): string | null {
+  const resolved = resolvePhoneJid(key, data);
+  if (!resolved) return null;
+  if (isLid(resolved, key?.addressingMode ?? data?.addressingMode)) return null;
+  return resolved;
 }
 
 // Detect message type from Evolution API message object

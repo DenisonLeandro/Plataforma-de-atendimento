@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useWhatsAppActions } from '@/hooks/whatsapp/useWhatsAppActions';
-import { normalizeBrazilianPhone, isValidBrazilianPhone } from '@/utils/phoneUtils';
+import { normalizeBrazilianPhone, isValidBrazilianPhone, formatBrazilianPhone } from '@/utils/phoneUtils';
 
 interface EditContactModalProps {
   open: boolean;
@@ -40,10 +40,10 @@ export function EditContactModal({
   onSuccess,
 }: EditContactModalProps) {
   const { updateContact, isUpdatingContact } = useWhatsAppActions();
-  const { register, handleSubmit, watch, formState: { errors }, reset } = useForm<ContactFormData>({
+  const { register, handleSubmit, watch, setValue, formState: { errors }, reset } = useForm<ContactFormData>({
     defaultValues: {
       name: contactName,
-      phone: contactPhone,
+      phone: formatBrazilianPhone(contactPhone),
       notes: contactNotes || ''
     },
   });
@@ -52,7 +52,7 @@ export function EditContactModal({
     if (open) {
       reset({
         name: contactName,
-        phone: contactPhone,
+        phone: formatBrazilianPhone(contactPhone),
         notes: contactNotes || ''
       });
     }
@@ -62,6 +62,8 @@ export function EditContactModal({
 
   const onSubmit = (data: ContactFormData) => {
     const normalizedPhone = normalizeBrazilianPhone(data.phone);
+    const phoneChanged = normalizedPhone !== contactPhone;
+    const nameChanged = data.name !== contactName;
     updateContact(
       {
         contactId,
@@ -69,7 +71,9 @@ export function EditContactModal({
           name: data.name,
           notes: data.notes || null,
           // Only send phone_number when it actually changed (manual correction).
-          ...(normalizedPhone !== contactPhone ? { phone_number: normalizedPhone } : {}),
+          ...(phoneChanged ? { phone_number: normalizedPhone } : {}),
+          // Lock against webhook overwrite when the user manually edited phone or name.
+          ...(phoneChanged || nameChanged ? { markManualEdit: true } : {}),
         },
       },
       {
@@ -95,7 +99,8 @@ export function EditContactModal({
               <Input
                 id="phone"
                 {...register('phone', { required: 'Telefone é obrigatório' })}
-                placeholder="Ex: 5511987654321"
+                onChange={(e) => setValue('phone', formatBrazilianPhone(e.target.value), { shouldValidate: true })}
+                placeholder="Ex: (11) 99999-9999"
               />
               {errors.phone ? (
                 <p className="text-sm text-destructive">{errors.phone.message}</p>

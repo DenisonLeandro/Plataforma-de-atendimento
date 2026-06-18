@@ -129,7 +129,7 @@ export const useWhatsAppActions = () => {
   const updateContactMutation = useMutation({
     mutationFn: async ({ contactId, data }: {
       contactId: string;
-      data: { name: string; notes: string | null; phone_number?: string };
+      data: { name: string; notes: string | null; phone_number?: string; markManualEdit?: boolean };
     }) => {
       const updates: Record<string, unknown> = {
         name: data.name,
@@ -140,6 +140,23 @@ export const useWhatsAppActions = () => {
       if (data.phone_number !== undefined) {
         updates.phone_number = data.phone_number;
       }
+
+      // When the user manually edits phone/name, lock the contact so the webhook never
+      // overwrites it again, and preserve the original LID so the webhook can re-match it.
+      if (data.markManualEdit) {
+        const { data: current } = await supabase
+          .from('whatsapp_contacts')
+          .select('metadata, phone_number')
+          .eq('id', contactId)
+          .maybeSingle();
+        const metadata = ((current?.metadata as Record<string, unknown>) || {});
+        const merged: Record<string, unknown> = { ...metadata, manual_edit: true };
+        if (!merged.lid && current?.phone_number && /^\d{14,}$/.test(current.phone_number)) {
+          merged.lid = current.phone_number;
+        }
+        updates.metadata = merged;
+      }
+
       const { error } = await supabase
         .from('whatsapp_contacts')
         .update(updates)

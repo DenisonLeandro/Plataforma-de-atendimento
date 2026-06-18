@@ -2,6 +2,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
 import {
   normalizePhoneNumber,
   resolvePhoneJid,
+  isLid,
   getMessageType,
   getMessageContent,
   isEditedMessage,
@@ -151,21 +152,39 @@ async function findOrCreateContactLite(
   isGroup: boolean,
   isFromMe: boolean,
   profilePictureUrl?: string | null,
+  lid: string | null = null,
 ): Promise<string | null> {
   const variants = buildBrazilianVariants(phone);
 
-  const { data: existing } = await supabase
-    .from('whatsapp_contacts')
-    .select('id, name, phone_number, profile_picture_url')
-    .eq('instance_id', instanceId)
-    .in('phone_number', variants)
-    .maybeSingle();
+  // Para contatos de LID, buscar primeiro por metadata.lid (reencontra após edição manual).
+  let existing: any = null;
+  if (lid) {
+    const { data: byLid } = await supabase
+      .from('whatsapp_contacts')
+      .select('id, name, phone_number, profile_picture_url, metadata')
+      .eq('instance_id', instanceId)
+      .filter('metadata->>lid', 'eq', lid)
+      .maybeSingle();
+    existing = byLid ?? null;
+  }
+  if (!existing) {
+    const { data: byPhone } = await supabase
+      .from('whatsapp_contacts')
+      .select('id, name, phone_number, profile_picture_url, metadata')
+      .eq('instance_id', instanceId)
+      .in('phone_number', variants)
+      .maybeSingle();
+    existing = byPhone ?? null;
+  }
 
   if (existing) {
+    const metadata = existing.metadata || {};
+    const manualEdit = metadata.manual_edit === true;
     const updates: Record<string, any> = {};
-    if (existing.phone_number !== phone) updates.phone_number = phone;
+    if (lid && metadata.lid !== lid) updates.metadata = { ...metadata, lid };
+    if (!manualEdit && existing.phone_number !== phone) updates.phone_number = phone;
     const shouldUpdateName =
-      !isFromMe && name && name !== phone && existing.name === existing.phone_number;
+      !manualEdit && !isFromMe && name && name !== phone && existing.name === existing.phone_number;
     if (shouldUpdateName) updates.name = name;
     if (profilePictureUrl && !existing.profile_picture_url) {
       updates.profile_picture_url = profilePictureUrl;
@@ -186,6 +205,7 @@ async function findOrCreateContactLite(
       name: contactName,
       is_group: isGroup,
       profile_picture_url: profilePictureUrl || null,
+      metadata: lid ? { lid } : {},
     })
     .select('id')
     .single();
@@ -353,6 +373,7 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
           const { phone, isGroup: parsedGroup } = normalizePhoneNumber(phoneJid);
           if (!phone) continue;
           const isGroup = parsedGroup || remoteJid.endsWith('@g.us');
+          const lidValue = isLid(remoteJid, c.addressingMode) ? normalizePhoneNumber(remoteJid).phone : null;
           const name = c.pushName || c.name || c.notify || c.verifiedName || phone;
           const pic = c.profilePicUrl || c.profilePictureUrl || null;
           const id = await findOrCreateContactLite(
@@ -363,6 +384,7 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
             isGroup,
             false,
             pic,
+            lidValue,
           );
           if (id) contacts_synced++;
 
@@ -438,6 +460,7 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
       const { phone, isGroup: parsedGroup } = normalizePhoneNumber(phoneJid);
       if (!phone) continue;
       const isGroup = parsedGroup || remoteJid.endsWith('@g.us');
+      const lidValue = isLid(remoteJid, chat.addressingMode) ? normalizePhoneNumber(remoteJid).phone : null;
 
       const chatName = chat.pushName || chat.name || phone;
       const contactId = await findOrCreateContactLite(
@@ -448,6 +471,7 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
         isGroup,
         false,
         chat.profilePicUrl || null,
+        lidValue,
       );
       if (!contactId) {
         errors.push({ chat: remoteJid, error: 'contact create failed' });

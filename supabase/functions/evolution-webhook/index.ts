@@ -2,6 +2,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
 import {
   normalizePhoneNumber,
   resolvePhoneJid,
+  extractRealPhoneFromKey,
+  isLid,
   getMessageType,
   getMessageContent,
   isEditedMessage,
@@ -185,7 +187,8 @@ async function findOrCreateContact(
   apiUrl?: string,
   apiKey?: string,
   instanceName?: string,
-  providerType: string = 'self_hosted'
+  providerType: string = 'self_hosted',
+  lid: string | null = null
 ): Promise<string | null> {
   try {
     // Gerar variantes do número para números brasileiros
@@ -203,56 +206,76 @@ async function findOrCreateContact(
       phoneVariants.push(withNinth);
     }
 
-    console.log(`[evolution-webhook] Searching contacts with variants: ${phoneVariants.join(', ')}`);
+    console.log(`[evolution-webhook] Searching contacts. lid=${lid ?? '-'} variants: ${phoneVariants.join(', ')}`);
 
-    // Buscar contato existente com qualquer variante
-    const { data: existingContact } = await supabase
-      .from('whatsapp_contacts')
-      .select('id, name, phone_number')
-      .eq('instance_id', instanceId)
-      .in('phone_number', phoneVariants)
-      .maybeSingle();
-
-    // Se encontrou com formato antigo, atualizar para formato normalizado
-    if (existingContact && existingContact.phone_number !== phoneNumber) {
-      await supabase
+    // Buscar contato existente.
+    // Para contatos de LID, primeiro tenta pelo metadata.lid — assim reencontramos o
+    // contato mesmo depois que o usuário corrigiu o phone_number manualmente.
+    let existingContact: any = null;
+    if (lid) {
+      const { data: byLid } = await supabase
         .from('whatsapp_contacts')
-        .update({ 
-          phone_number: phoneNumber,
-          updated_at: new Date().toISOString() 
-        })
-        .eq('id', existingContact.id);
-      console.log(`[evolution-webhook] Contact phone normalized: ${existingContact.phone_number} -> ${phoneNumber}`);
+        .select('id, name, phone_number, metadata')
+        .eq('instance_id', instanceId)
+        .filter('metadata->>lid', 'eq', lid)
+        .maybeSingle();
+      existingContact = byLid ?? null;
+    }
+    if (!existingContact) {
+      const { data: byPhone } = await supabase
+        .from('whatsapp_contacts')
+        .select('id, name, phone_number, metadata')
+        .eq('instance_id', instanceId)
+        .in('phone_number', phoneVariants)
+        .maybeSingle();
+      existingContact = byPhone ?? null;
     }
 
     if (existingContact) {
-      // Only update name if:
-      // 1. Message is NOT from me (avoid setting contact name to instance owner)
-      // 2. We have a real name (not just phone number)
-      // 3. Current name is the phone number
-      const shouldUpdateName = !isFromMe && 
-                               name !== phoneNumber && 
-                               existingContact.name === phoneNumber;
-      
+      const metadata = existingContact.metadata || {};
+      // Lock: nunca sobrescrever phone_number/name de um contato editado manualmente.
+      const manualEdit = metadata.manual_edit === true;
+
+      // Garantir o mapeamento metadata.lid (para reencontrar o contato em mensagens futuras).
+      if (lid && metadata.lid !== lid) {
+        await supabase
+          .from('whatsapp_contacts')
+          .update({ metadata: { ...metadata, lid }, updated_at: new Date().toISOString() })
+          .eq('id', existingContact.id);
+      }
+
+      // Atualizar phone_number para o formato resolvido/normalizado (inclui auto-upgrade
+      // de LID → número real), exceto quando travado por edição manual.
+      if (!manualEdit && existingContact.phone_number !== phoneNumber) {
+        await supabase
+          .from('whatsapp_contacts')
+          .update({ phone_number: phoneNumber, updated_at: new Date().toISOString() })
+          .eq('id', existingContact.id);
+        console.log(`[evolution-webhook] Contact phone updated: ${existingContact.phone_number} -> ${phoneNumber}`);
+      }
+
+      // Only update name if: not manual edit, message is NOT from me, we have a real name,
+      // and the current name is just the phone number.
+      const shouldUpdateName = !manualEdit &&
+                               !isFromMe &&
+                               name !== phoneNumber &&
+                               existingContact.name === existingContact.phone_number;
+
       if (shouldUpdateName) {
         await supabase
           .from('whatsapp_contacts')
-          .update({ 
-            name: name,
-            updated_at: new Date().toISOString() 
-          })
+          .update({ name: name, updated_at: new Date().toISOString() })
           .eq('id', existingContact.id);
-        
         console.log(`[evolution-webhook] Contact name updated: ${existingContact.id} -> ${name}`);
       }
-      
+
       return existingContact.id;
     }
 
     // Create new contact
     // If message is from me, use phone number as name (to avoid using instance owner's name)
     const contactName = isFromMe ? phoneNumber : (name || phoneNumber);
-    
+
     const { data: newContact, error } = await supabase
       .from('whatsapp_contacts')
       .insert({
@@ -260,6 +283,7 @@ async function findOrCreateContact(
         phone_number: phoneNumber,
         name: contactName,
         is_group: isGroup,
+        metadata: lid ? { lid } : {},
       })
       .select('id')
       .single();
@@ -649,11 +673,14 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
 
     // Normalize phone number.
     // For non-saved contacts the remoteJid may be a `@lid` identifier (a long internal
-    // integer, not the real phone). resolvePhoneJid prefers a real phone JID from the
-    // payload when available, falling back to remoteJid otherwise.
-    const phoneJid = resolvePhoneJid(key, data);
+    // integer, not the real phone). Prefer a real phone JID from the payload when available.
+    const realJid = extractRealPhoneFromKey(key, data);
+    const lidContact = isLid(key.remoteJid, key?.addressingMode ?? data?.addressingMode);
+    const phoneJid = realJid ?? key.remoteJid;
     const { phone, isGroup } = normalizePhoneNumber(phoneJid);
-    console.log('[evolution-webhook] Normalized phone:', phone, 'isGroup:', isGroup, 'from jid:', phoneJid);
+    // LID digits (kept to re-match the contact later, even after a manual phone edit).
+    const lidValue = lidContact ? normalizePhoneNumber(key.remoteJid).phone : null;
+    console.log('[evolution-webhook] phone:', phone, 'isGroup:', isGroup, 'lid:', lidValue, 'realResolved:', !!realJid);
 
     // Find or create contact
     // If message is from me, use phone number instead of pushName (which would be the instance owner's name)
@@ -667,7 +694,8 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
       secrets.api_url,
       secrets.api_key,
       evolutionInstanceId,
-      instanceData.provider_type || 'self_hosted'
+      instanceData.provider_type || 'self_hosted',
+      lidValue
     );
 
     if (!contactId) {
