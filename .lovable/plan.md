@@ -1,29 +1,37 @@
-## Correções de performance no frontend (migração já aplicada)
+# Fix: restaurar produção (tela branca em /whatsapp)
 
-A migração com índices e RLS otimizada já rodou. Falta o passo frontend, que é o **maior** ganho.
+## Causa raiz
+O commit `e970121` removeu `.env` do tracking e o adicionou ao `.gitignore`. Em stack Vite clássica da Lovable, as variáveis `VITE_*` precisam estar **no `.env` versionado** para entrar no build de produção (são inlineadas pelo Vite no momento do build, não no runtime). Sem elas:
 
-### 1. `src/hooks/whatsapp/useWhatsAppConversations.ts`
-Hoje o hook faz isto a cada refetch:
-- Busca **todas** as conversas (não só as 20 paginadas) — query "SELECT id"
-- Busca **todas as mensagens** dessas conversas para descobrir quem mandou a última e contar quem está esperando resposta
+- `src/integrations/supabase/client.ts` chama `createClient(undefined, undefined)` no top-level
+- Erro de import → React nunca monta → ErrorBoundary não captura → **tela branca total**
 
-Isso bate exatamente na query mais cara do banco (`whatsapp_messages` ordenada por timestamp, 28k chamadas × 877ms = 25.000s de DB).
+Preview funciona porque o sandbox injeta as `VITE_*` no ambiente; produção não tem essa injeção.
 
-**Fix:** a tabela `whatsapp_conversations` já tem a coluna `last_message_is_from_me`. Vou:
-- Remover o fetch de todas as mensagens.
-- Usar `conv.last_message_is_from_me` direto.
-- Trocar `waitingCount` por uma única `count(*)` com filtro `last_message_is_from_me = false`.
-- Adicionar `staleTime: 30000` e `refetchOnWindowFocus: false` no `useQuery`.
+## Mudanças (mínimas, só o necessário)
 
-### 2. `src/contexts/AuthContext.tsx`
-O log mostra `Loading user data for: ...` rodando 3-4× seguidas para o mesmo usuário. Vou:
-- Guardar `lastLoadedUserIdRef` para ignorar chamadas duplicadas do mesmo userId em <2s.
-- Remover o `console.log` de "Current auth state" em cada render (ruído).
+1. **`.gitignore`** — remover as linhas que ignoram `.env`:
+   ```
+   .env
+   .env.local
+   .env.*.local
+   ```
+   Manter apenas `.env.local` ignorado faria sentido em outros stacks, mas nessa stack Lovable o padrão é versionar `.env`.
 
-### Fora de escopo
-- Nada de RLS, regras de atribuição, Evolution API, UI, aprovação de contas.
+2. **`.env`** — voltar a ser versionado com as três variáveis públicas que o app já usa:
+   - `VITE_SUPABASE_PROJECT_ID`
+   - `VITE_SUPABASE_PUBLISHABLE_KEY` (chave publishable, segura no client)
+   - `VITE_SUPABASE_URL`
 
-### Resultado esperado
-- Listagem de conversas: de ~1s para <100ms.
-- Erro `Timed out acquiring connection from connection pool` deve sumir.
-- Sem mudança de comportamento visível.
+   Nenhum segredo privado é incluído — apenas chaves publishable, que já eram públicas anteriormente.
+
+3. Nada mais é alterado. Nenhum código de app, nenhuma migration, nenhuma edge function, nenhuma config do Vite.
+
+## Validação pós-fix
+- Publicar (Update) e abrir `https://chat-heartbeat-57.lovable.app/whatsapp`.
+- Esperado: tela de auth ou app carregando normalmente, sem branco.
+- Se ainda houver branco, abrir console e reportar — passamos para H1/H3.
+
+## Fora de escopo
+- Fase 1 do LID (já commitada e não relacionada à tela branca).
+- Qualquer alteração em RLS, Evolution, AuthContext, performance, aprovação de contas.
