@@ -123,7 +123,7 @@ export function getMessageContent(message: any, type: string): string {
 
 // Reject a promise if it doesn't settle within `ms`. Used to bound the Storage upload,
 // whose client does not accept an AbortSignal. Resolves/rejects with the original result.
-function withTimeout<T>(promise: PromiseLike<T>, ms: number, label: string): Promise<T> {
+export function withTimeout<T>(promise: PromiseLike<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(
       () => reject(new Error(`${label} timed out after ${ms}ms`)),
