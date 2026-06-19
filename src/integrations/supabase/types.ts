@@ -898,6 +898,10 @@ export type Database = {
         Args: { _instance_id: string; _user_id: string }
         Returns: boolean
       }
+      can_view_conversation: {
+        Args: { _conversation_id: string; _user_id: string }
+        Returns: boolean
+      }
       get_assignable_agents: {
         Args: { _instance_id: string }
         Returns: {
