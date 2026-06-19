@@ -114,11 +114,11 @@ Deno.serve(async (req) => {
         .from("whatsapp_messages")
         .update({ transcription_status: "failed" })
         .eq("id", messageId);
-      return json({
-        error: "audio_too_large",
-        message: `Áudio muito grande (${(bytes.length / 1024 / 1024).toFixed(1)}MB). Máximo ${MAX_AUDIO_BYTES / 1024 / 1024}MB.`,
-        maxBytes: MAX_AUDIO_BYTES,
-      }, 413);
+      return knownTranscriptionError(
+        "audio_too_large",
+        `Áudio muito grande (${(bytes.length / 1024 / 1024).toFixed(1)}MB). Máximo ${MAX_AUDIO_BYTES / 1024 / 1024}MB.`,
+        { maxBytes: MAX_AUDIO_BYTES },
+      );
     }
 
     // Use the dedicated speech-to-text endpoint (cheaper and purpose-built).
@@ -169,7 +169,7 @@ Deno.serve(async (req) => {
         .from("whatsapp_messages")
         .update({ transcription_status: "failed" })
         .eq("id", messageId);
-      return json({ error: "empty_transcription", message: "Não foi possível transcrever o áudio." }, 502);
+      return knownTranscriptionError("empty_transcription", "Não foi possível transcrever o áudio.");
     }
 
     const { error: updateError } = await supabase
