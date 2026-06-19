@@ -884,9 +884,9 @@ export type Database = {
     Functions: {
       assign_conversation: {
         Args: {
-          _assigned_to: string | null
+          _assigned_to: string
           _conversation_id: string
-          _reason?: string | null
+          _reason?: string
         }
         Returns: undefined
       }
@@ -901,12 +901,12 @@ export type Database = {
       get_assignable_agents: {
         Args: { _instance_id: string }
         Returns: {
-          id: string
-          full_name: string
-          avatar_url: string | null
-          status: string
-          role: Database["public"]["Enums"]["app_role"]
           active_conversations: number
+          avatar_url: string
+          full_name: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          status: string
         }[]
       }
       has_role: {
