@@ -1,25 +1,20 @@
-## Deploy de 4 Edge Functions
+# Disparo único: backfill-historical-media (amostragem limit=10)
 
-Deploy das funções abaixo a partir do código local (sincronizado com GitHub origin/main, commits c2e548b e 9d68164):
+## Ação
+Invocar a edge function `backfill-historical-media` uma única vez via `supabase--curl_edge_functions`, usando a sessão autenticada do preview (token injetado automaticamente — você já está logado como admin `denisonhl@hotmail.com`).
 
-1. `evolution-webhook` — sobrescreve versão em produção
-2. `sync-whatsapp-history` — sobrescreve versão em produção
-3. `fetch-message-media` — sobrescreve versão em produção
-4. `backfill-historical-media` — criada do zero (nova)
+**Request:**
+- `path`: `/backfill-historical-media`
+- `method`: `POST`
+- `headers`: `{ "Content-Type": "application/json" }`
+- `body`: `{"cursor":"0012f862-6bf8-487a-bcb1-5fbaac387149","limit":10}`
 
-### Execução
+## Após o disparo
+1. Reportar HTTP status code.
+2. Reportar a resposta JSON completa (campos: `processed`, `succeeded`, `failed`, `skipped`, `next_cursor`, `done`, `remaining`) — sem resumir.
+3. Buscar logs via `supabase--edge_function_logs` (search: `media-recovery` e `status`) e listar, por mensagem processada, o `status` + `reason` quando falha.
 
-Uma única chamada a `supabase--deploy_edge_functions` com as 4 funções.
-
-### Pós-deploy — relatório
-
-- Status (success/failed) por função
-- Confirmação de que `backfill-historical-media` aparece na lista de Edge Functions
-- Timestamp do "Last updated" pós-deploy de cada uma (via `supabase--project_info` ou equivalente)
-- Erros/warnings do processo
-
-### Não faremos
-
-- Nenhuma invocação das funções (especialmente `backfill-historical-media`)
-- Nenhuma alteração de código nas funções
-- Nenhuma alteração de schema/DB
+## Não fazer
+- Não invocar a função novamente após esse disparo único.
+- Não modificar código da função nem da pipeline.
+- Não alterar nenhum dado no banco.
