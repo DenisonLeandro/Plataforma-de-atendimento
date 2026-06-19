@@ -102,6 +102,17 @@ Deno.serve(async (req) => {
       arrayBuffer = await audioRes.arrayBuffer();
     }
     const bytes = new Uint8Array(arrayBuffer);
+    // Pre-validation: Gemini inline audio cap (~20MB). Beyond this the provider rejects
+    // with 400; we avoid spending credits on a call we know will fail.
+    const MAX_AUDIO_BYTES = 20 * 1024 * 1024;
+    if (bytes.length > MAX_AUDIO_BYTES) {
+      console.error("[transcribe-audio] audio too large:", bytes.length);
+      await supabase
+        .from("whatsapp_messages")
+        .update({ transcription_status: "failed" })
+        .eq("id", messageId);
+      return json({ error: "audio_too_large", maxBytes: MAX_AUDIO_BYTES }, 413);
+    }
     // Convert to base64 in chunks to avoid stack overflow
     let binary = "";
     const CHUNK = 0x8000;
@@ -140,7 +151,9 @@ Deno.serve(async (req) => {
       });
     }
 
-    let aiRes = await callAi("google/gemini-2.5-pro");
+    // Use flash as primary (cheaper, fast enough for WhatsApp audio).
+    // Pro is kept only as fallback if flash returns empty transcription.
+    let aiRes = await callAi("google/gemini-2.5-flash");
 
     if (!aiRes.ok) {
       const errText = await aiRes.text().catch(() => "");
@@ -149,6 +162,14 @@ Deno.serve(async (req) => {
         .from("whatsapp_messages")
         .update({ transcription_status: "failed" })
         .eq("id", messageId);
+      // Detect workspace credit limit (Lovable AI returns 403 with this `type`).
+      // Surface as 402 so the UI shows a billing-specific message and does not retry.
+      if (errText.includes("credit_limit_reached") || errText.includes("credits_exhausted")) {
+        return json({
+          error: "credits_exhausted",
+          message: "Créditos de IA esgotados. Peça ao admin do workspace para aumentar o limite ou aguarde a renovação.",
+        }, 402);
+      }
       if (aiRes.status === 429) return json({ error: "rate_limited" }, 429);
       if (aiRes.status === 402) return json({ error: "credits_exhausted" }, 402);
       return json({ error: `ai error (${aiRes.status})` }, 502);
@@ -168,8 +189,8 @@ Deno.serve(async (req) => {
 
     if (!transcription) {
       console.error("[transcribe-audio] empty transcription from AI", JSON.stringify(aiJson).slice(0, 400));
-      // Retry once with the flash model (different decoder path)
-      const retryRes = await callAi("google/gemini-2.5-flash");
+      // Fallback to Pro (more accurate, more expensive) when flash returns empty.
+      const retryRes = await callAi("google/gemini-2.5-pro");
       if (retryRes.ok) {
         const retryJson = await retryRes.json();
         const rc = retryJson?.choices?.[0]?.message?.content;
