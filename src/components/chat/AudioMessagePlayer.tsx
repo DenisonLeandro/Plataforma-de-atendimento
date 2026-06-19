@@ -187,7 +187,16 @@ export const AudioMessagePlayer = ({
       const { data, error } = await supabase.functions.invoke("transcribe-audio", {
         body: { messageId },
       });
-      const payload = (data ?? {}) as { error?: string; message?: string };
+      let payload = (data ?? {}) as { error?: string; message?: string };
+      // supabase.functions.invoke throws/sets `error` on non-2xx responses
+      // but the JSON body lives in `error.context` (a Response).
+      if (error && (error as any).context && typeof (error as any).context.json === "function") {
+        try {
+          payload = await (error as any).context.json();
+        } catch {
+          /* ignore */
+        }
+      }
       if (error || payload.error) {
         const msg = payload.message
           || (payload.error === "credits_exhausted"
