@@ -33,7 +33,7 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
   const { data: topicsData } = useConversationTopics(conversationId || null);
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
   const [isEditContactModalOpen, setIsEditContactModalOpen] = useState(false);
-  const { user } = useAuth();
+  const { user, isAdmin, isSupervisor } = useAuth();
   const { assignConversation } = useConversationAssignment();
   
   if (!contact) return null;
@@ -44,8 +44,9 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
 
   const isInQueue = !conversation?.assigned_to;
   const isAssignedToMe = conversation?.assigned_to === user?.id;
-  const showAssumir = isInQueue;
-  const showTransferir = isInQueue || isAssignedToMe;
+  const canManageOthers = isAdmin || isSupervisor;
+  const showAssumir = (isInQueue || canManageOthers) && !isAssignedToMe;
+  const showTransferir = isInQueue || isAssignedToMe || canManageOthers;
 
   const handleAssumeFromQueue = () => {
     if (conversationId && user?.id) {
