@@ -200,28 +200,43 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
   });
 
   useEffect(() => {
+    // Debounce invalidations: durante um sync que insere milhares de mensagens,
+    // agrupamos os eventos em janelas para não disparar 1 refetch por linha.
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    const scheduleInvalidate = () => {
+      if (timeout) return;
+      timeout = setTimeout(() => {
+        timeout = null;
+        queryClient.invalidateQueries({ queryKey: ['whatsapp', 'conversations'] });
+      }, 1500);
+    };
+
+    // Filtrar a subscription por instância quando aplicável, para não receber
+    // eventos de instâncias que esta tela nem está exibindo.
+    const instanceFilter = filters?.instanceId
+      ? `instance_id=eq.${filters.instanceId}`
+      : undefined;
+
     const channel = supabase
       .channel(`conversations-changes-${Math.random().toString(36).slice(2)}`)
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
-        table: 'whatsapp_conversations'
-      }, () => {
-        queryClient.invalidateQueries({ queryKey: ['whatsapp', 'conversations'] });
-      })
+        table: 'whatsapp_conversations',
+        ...(instanceFilter ? { filter: instanceFilter } : {}),
+      }, scheduleInvalidate)
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
-        table: 'whatsapp_messages'
-      }, () => {
-        queryClient.invalidateQueries({ queryKey: ['whatsapp', 'conversations'] });
-      })
+        table: 'whatsapp_messages',
+      }, scheduleInvalidate)
       .subscribe();
 
     return () => {
+      if (timeout) clearTimeout(timeout);
       supabase.removeChannel(channel);
     };
-  }, [queryClient]);
+  }, [queryClient, filters?.instanceId]);
 
   return {
     conversations: data?.conversations || [],
