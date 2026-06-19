@@ -32,6 +32,28 @@ const WhatsApp = () => {
     return () => setSelectedConversationId(null);
   }, [selectedConversation, setSelectedConversationId]);
 
+  // ESC fecha a conversa aberta (volta para tela inicial), exceto se o foco
+  // estiver em input/textarea/contenteditable (composer, busca, modais Radix etc.)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      if (!selectedConversation) return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        target?.isContentEditable
+      ) {
+        return;
+      }
+      setSelectedConversation(null);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedConversation]);
+
   const handleSelectConversation = (id: string | null) => {
     setSelectedConversation(id);
   };
