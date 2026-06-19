@@ -14,16 +14,15 @@ function json(body: unknown, status = 200) {
   });
 }
 
-function mimetypeToFormat(mt: string | null | undefined): string {
-  if (!mt) return "ogg";
-  const lower = mt.toLowerCase();
-  if (lower.includes("ogg") || lower.includes("opus")) return "ogg";
-  if (lower.includes("webm")) return "webm";
-  if (lower.includes("mp3") || lower.includes("mpeg")) return "mp3";
-  if (lower.includes("wav")) return "wav";
-  if (lower.includes("m4a") || lower.includes("mp4") || lower.includes("aac")) return "m4a";
-  if (lower.includes("flac")) return "flac";
-  return "ogg";
+function mimetypeToExt(mt: string | null | undefined): { ext: string; mime: string } {
+  const lower = (mt ?? "").toLowerCase();
+  if (lower.includes("ogg") || lower.includes("opus")) return { ext: "ogg", mime: "audio/ogg" };
+  if (lower.includes("webm")) return { ext: "webm", mime: "audio/webm" };
+  if (lower.includes("mp3") || lower.includes("mpeg")) return { ext: "mp3", mime: "audio/mpeg" };
+  if (lower.includes("wav")) return { ext: "wav", mime: "audio/wav" };
+  if (lower.includes("m4a") || lower.includes("mp4") || lower.includes("aac")) return { ext: "m4a", mime: "audio/mp4" };
+  if (lower.includes("flac")) return { ext: "flac", mime: "audio/flac" };
+  return { ext: "ogg", mime: "audio/ogg" };
 }
 
 Deno.serve(async (req) => {
@@ -102,58 +101,35 @@ Deno.serve(async (req) => {
       arrayBuffer = await audioRes.arrayBuffer();
     }
     const bytes = new Uint8Array(arrayBuffer);
-    // Pre-validation: Gemini inline audio cap (~20MB). Beyond this the provider rejects
-    // with 400; we avoid spending credits on a call we know will fail.
-    const MAX_AUDIO_BYTES = 20 * 1024 * 1024;
+    // Pre-validation: provider cap (~25MB). Avoid spending credits on a call
+    // we know will fail.
+    const MAX_AUDIO_BYTES = 24 * 1024 * 1024;
     if (bytes.length > MAX_AUDIO_BYTES) {
       console.error("[transcribe-audio] audio too large:", bytes.length);
       await supabase
         .from("whatsapp_messages")
         .update({ transcription_status: "failed" })
         .eq("id", messageId);
-      return json({ error: "audio_too_large", maxBytes: MAX_AUDIO_BYTES }, 413);
-    }
-    // Convert to base64 in chunks to avoid stack overflow
-    let binary = "";
-    const CHUNK = 0x8000;
-    for (let i = 0; i < bytes.length; i += CHUNK) {
-      binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
-    }
-    const base64 = btoa(binary);
-    const format = mimetypeToFormat(message.media_mimetype);
-
-    async function callAi(model: string) {
-      return await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            {
-              role: "user",
-              content: [
-                {
-                  type: "text",
-                  text:
-                    "Transcreva fielmente este áudio em português brasileiro. Retorne APENAS o texto transcrito, sem comentários, aspas ou prefixos. Se o áudio estiver vazio ou inaudível, retorne exatamente: [áudio inaudível]",
-                },
-                {
-                  type: "input_audio",
-                  input_audio: { data: base64, format },
-                },
-              ],
-            },
-          ],
-        }),
-      });
+      return json({
+        error: "audio_too_large",
+        message: `Áudio muito grande (${(bytes.length / 1024 / 1024).toFixed(1)}MB). Máximo ${MAX_AUDIO_BYTES / 1024 / 1024}MB.`,
+        maxBytes: MAX_AUDIO_BYTES,
+      }, 413);
     }
 
-    // Use flash as primary (cheaper, fast enough for WhatsApp audio).
-    // Pro is kept only as fallback if flash returns empty transcription.
-    let aiRes = await callAi("google/gemini-2.5-flash");
+    // Use the dedicated speech-to-text endpoint (cheaper and purpose-built).
+    // Model: openai/gpt-4o-mini-transcribe via multipart/form-data.
+    const { ext, mime } = mimetypeToExt(message.media_mimetype);
+    const audioBlob = new Blob([bytes], { type: mime });
+    const form = new FormData();
+    form.append("model", "openai/gpt-4o-mini-transcribe");
+    form.append("file", audioBlob, `audio.${ext}`);
+
+    const aiRes = await fetch("https://ai.gateway.lovable.dev/v1/audio/transcriptions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${LOVABLE_API_KEY}` },
+      body: form,
+    });
 
     if (!aiRes.ok) {
       const errText = await aiRes.text().catch(() => "");
@@ -162,56 +138,34 @@ Deno.serve(async (req) => {
         .from("whatsapp_messages")
         .update({ transcription_status: "failed" })
         .eq("id", messageId);
-      // Detect workspace credit limit (Lovable AI returns 403 with this `type`).
-      // Surface as 402 so the UI shows a billing-specific message and does not retry.
       if (errText.includes("credit_limit_reached") || errText.includes("credits_exhausted")) {
         return json({
           error: "credits_exhausted",
           message: "Créditos de IA esgotados. Peça ao admin do workspace para aumentar o limite ou aguarde a renovação.",
         }, 402);
       }
-      if (aiRes.status === 429) return json({ error: "rate_limited" }, 429);
-      if (aiRes.status === 402) return json({ error: "credits_exhausted" }, 402);
-      return json({ error: `ai error (${aiRes.status})` }, 502);
+      if (aiRes.status === 429) {
+        return json({ error: "rate_limited", message: "Muitas requisições. Tente novamente em alguns segundos." }, 429);
+      }
+      if (aiRes.status === 402) {
+        return json({ error: "credits_exhausted", message: "Créditos de IA esgotados." }, 402);
+      }
+      if (aiRes.status === 400) {
+        return json({ error: "invalid_audio", message: "Formato de áudio não suportado pelo provedor." }, 400);
+      }
+      return json({ error: `ai_error_${aiRes.status}`, message: `Erro da IA (${aiRes.status}).` }, 502);
     }
 
-    const aiJson = await aiRes.json();
-    const rawContent = aiJson?.choices?.[0]?.message?.content;
-    let transcription = "";
-    if (typeof rawContent === "string") {
-      transcription = rawContent.trim();
-    } else if (Array.isArray(rawContent)) {
-      transcription = rawContent
-        .map((p: any) => (typeof p === "string" ? p : p?.text ?? ""))
-        .join("")
-        .trim();
-    }
+    const aiJson = await aiRes.json().catch(() => null) as { text?: string } | null;
+    const transcription = (aiJson?.text ?? "").trim();
 
     if (!transcription) {
-      console.error("[transcribe-audio] empty transcription from AI", JSON.stringify(aiJson).slice(0, 400));
-      // Fallback to Pro (more accurate, more expensive) when flash returns empty.
-      const retryRes = await callAi("google/gemini-2.5-pro");
-      if (retryRes.ok) {
-        const retryJson = await retryRes.json();
-        const rc = retryJson?.choices?.[0]?.message?.content;
-        if (typeof rc === "string") transcription = rc.trim();
-        else if (Array.isArray(rc)) {
-          transcription = rc
-            .map((p: any) => (typeof p === "string" ? p : p?.text ?? ""))
-            .join("")
-            .trim();
-        }
-        if (!transcription) {
-          console.error("[transcribe-audio] empty after retry", JSON.stringify(retryJson).slice(0, 400));
-        }
-      }
-      if (!transcription) {
-        await supabase
-          .from("whatsapp_messages")
-          .update({ transcription_status: "failed" })
-          .eq("id", messageId);
-        return json({ error: "empty transcription" }, 502);
-      }
+      console.error("[transcribe-audio] empty transcription", JSON.stringify(aiJson).slice(0, 400));
+      await supabase
+        .from("whatsapp_messages")
+        .update({ transcription_status: "failed" })
+        .eq("id", messageId);
+      return json({ error: "empty_transcription", message: "Não foi possível transcrever o áudio." }, 502);
     }
 
     const { error: updateError } = await supabase
