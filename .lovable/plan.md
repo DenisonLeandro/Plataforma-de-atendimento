@@ -1,58 +1,58 @@
-# Diagnóstico da lentidão de 17/06 e plano de mitigação
+## Diagnóstico
 
-## O que encontrei
+A transcrição **não está quebrada por bug nem por limite de tamanho de áudio**. Os logs da edge function `transcribe-audio` mostram, repetidamente:
 
-### Sintoma
-Após criar uma nova instância e rodar o sync de histórico, a plataforma ficou lenta para **todos** os atendentes — não só para quem disparou o sync.
+```
+[transcribe-audio] AI gateway error 403
+{"type":"credit_limit_reached","message":"Workspace credit limit reached",
+ "details":"This workspace has reached its credit limit.
+            Ask your workspace owner to adjust the workspace limit."}
+```
 
-### Causa raiz (com evidência)
+O mesmo 403 aparece em `analyze-whatsapp-sentiment` e `categorize-whatsapp-conversation` — ou seja, **todo o Lovable AI Gateway está bloqueado por estouro de créditos do workspace**, não só a transcrição.
 
-**1. Tempestade de invalidação via Realtime (causa principal)**
+### Por que parou
+- O modelo usado (`google/gemini-2.5-pro`) é o mais caro do catálogo Lovable AI e cada áudio consome bem mais crédito que texto.
+- Quando o workspace atinge o teto de créditos, **todas** as chamadas ao gateway retornam 403 até alguém aumentar o limite ou os créditos renovarem.
 
-Em `src/hooks/whatsapp/useWhatsAppConversations.ts` há uma assinatura realtime que escuta **todo INSERT** em `whatsapp_messages` (sem filtro de instância/conversa) e, para cada evento, dispara `queryClient.invalidateQueries(['whatsapp','conversations'])`.
+### Sobre limite de tamanho do áudio
+Não é a causa atual, mas vale registrar:
+- A função baixa o áudio inteiro do Storage, converte para base64 e envia ao gateway numa única chamada. Não há limite explícito no nosso código.
+- O modelo Gemini tem teto próprio de duração/tamanho de áudio; áudios muito longos (vários minutos) podem falhar com 400 do provedor, não com 403.
+- A função roda em edge runtime com timeout padrão; áudios muito grandes também podem estourar tempo.
 
-Cada invalidação re-executa **4 queries** no servidor (lista paginada com JOIN em `whatsapp_contacts`/`profiles`, count total, unread count, waiting count). Esse hook é montado em várias telas (Conversas, Contatos, Relatório) e por múltiplos componentes — múltiplos atendentes × múltiplas montagens × milhares de inserts no sync = avalanche.
+## Plano
 
-Confirmação em `supabase--slow_queries`:
-- `whatsapp_messages` por `conversation_id = ANY(...)` → **29.215 chamadas**, total **26.242s**, média **898ms**, pico **7.99s**.
-- Variações de count/list de `whatsapp_conversations` → **23k+ chamadas** cada, somando outros **18.000s** acumulados.
+### 1. Voltar a funcionar (ação do usuário, fora do código)
+Não dá pra resolver via código — o bloqueio é de billing do workspace. Caminhos:
+- **Aumentar o limite de créditos do workspace** no painel da Lovable (Workspace → Plans/Usage), ou
+- **Esperar a renovação do ciclo** de créditos, ou
+- **Fazer upgrade do plano**.
 
-O banco em si é pequeno (281 conversas, 5.364 mensagens, 21 MB). A pressão veio do volume de chamadas, não do volume de dados.
+Enquanto isso, sentimento, categorização automática e transcrição vão continuar retornando erro.
 
-**2. Query "ANY(conversation_ids)" sem LIMIT por conversa**
+### 2. Melhorias em `supabase/functions/transcribe-audio/index.ts` (para quando os créditos voltarem)
 
-A query mais cara (`SELECT conversation_id, is_from_me, timestamp FROM whatsapp_messages WHERE conversation_id = ANY($1) ORDER BY timestamp DESC LIMIT n OFFSET 0`) percorre todas as mensagens das conversas listadas. Provavelmente em `useWhatsAppMetrics` / Relatórios. Usada por muitos clientes ao mesmo tempo, vira gargalo.
+**a) Trocar o modelo padrão para um mais barato**
+- Hoje: `google/gemini-2.5-pro` (caro) com fallback para `google/gemini-2.5-flash`.
+- Proposto: usar `google/gemini-2.5-flash` como **primário** e `gemini-2.5-pro` apenas como fallback se a transcrição vier vazia. Reduz consumo de créditos em ~5–10x sem perda perceptível de qualidade para áudio de WhatsApp.
 
-**3. Saúde do banco no momento do snapshot**
-- Memória 62%, conexões 29/60, disco 16% — sem saturação atual.
-- **23.122 transações revertidas** acumuladas — compatível com bursts de conflito durante o sync.
-- 25 índices nas tabelas principais (alguns duplicados: `idx_conversations_assigned` e `idx_conversations_assigned_to`, `idx_messages_conv_ts` e `idx_whatsapp_messages_conv_ts`) — não é a causa, mas é desperdício.
+**b) Mensagem de erro clara quando for credit_limit_reached**
+- Hoje o front recebe `ai error (403)` genérico.
+- Detectar `type === "credit_limit_reached"` no corpo da resposta do gateway e retornar status 402 com mensagem específica ("Créditos de IA esgotados — peça ao admin do workspace para aumentar o limite"), para o toast da UI orientar.
 
-## Plano de correção
+**c) Pré-validação de tamanho do áudio**
+- Checar o tamanho do `arrayBuffer` antes de mandar pro gateway. Se passar de ~20 MB (limite prático do Gemini para audio inline), marcar `transcription_status = 'failed'` com mensagem "áudio muito longo" e não gastar crédito numa chamada que vai falhar.
 
-### Fase 1 — Estancar a avalanche (alto impacto, baixo risco)
+**d) Não re-tentar em 403/402**
+- Hoje a UI pode disparar nova transcrição manual. Garantir que, ao receber 402/403, o status fique `failed` e o botão de "tentar de novo" só apareça em falhas transitórias (não em estouro de crédito).
 
-1. **`useWhatsAppConversations.ts`** — substituir invalidação imediata por **debounce/throttle** (ex.: agrupar eventos em janelas de 1–2s antes de invalidar). Resultado: durante um sync que insere 1.000 mensagens em 30s, o cliente faz ~15 refetches em vez de 1.000.
-2. **`useWhatsAppConversations.ts`** — ao receber `postgres_changes` de `whatsapp_messages`, não invalidar a query inteira: atualizar apenas a conversa afetada via `setQueryData` quando possível, ou invalidar só `unreadCount`/`waitingCount` quando o INSERT for relevante.
-3. **Filtrar a subscription por instância** quando `filters.instanceId` estiver setado, em vez de escutar todas as instâncias.
+### 3. Fora de escopo
+- Não vou mexer em `analyze-whatsapp-sentiment` nem em `categorize-whatsapp-conversation` neste round, embora sofram do mesmo 403 — se quiser, faço o mesmo tratamento de erro depois.
+- Não vou trocar o provedor de transcrição (ex.: OpenAI direto, ElevenLabs) — exigiria nova chave e mudança de billing.
 
-### Fase 2 — Aliviar o sync de histórico
+## Detalhes técnicos
 
-4. **`sync-whatsapp-history`** e **`backfill-historical-media`** — inserir mensagens em **lotes maiores com `upsert` em batch** (se ainda não estão), e adicionar pausas curtas entre lotes para não saturar replication slot do realtime.
-5. Considerar **desabilitar realtime em `whatsapp_messages`** durante backfill (publicação) ou usar um campo `source = 'backfill'` que o cliente filtra para ignorar nos invalidadores.
-
-### Fase 3 — Queries pesadas
-
-6. Auditar `useWhatsAppMetrics` (e demais consumidores de "ANY(conversation_ids) ORDER BY timestamp DESC"): paginar/limitar por conversa, ou pré-agregar em coluna persistida (já existem `last_message_at`, `last_message_is_from_me`).
-7. **Remover índices duplicados** (`idx_conversations_assigned`, `idx_whatsapp_conversations_assigned_to`, `idx_whatsapp_conversations_instance_id`, `idx_whatsapp_conversations_last_msg`, `idx_whatsapp_conversations_status`, `idx_whatsapp_messages_conv_ts`) via migration.
-
-### Fase 4 — Observabilidade
-
-8. Logar no client quando o invalidador disparar mais de N vezes/minuto (warning), para detectar regressão futura.
-
-## Fora de escopo (agora)
-- Mexer em RLS, edge functions de envio, ou no Evolution API.
-- Upgrade de instância de compute — métricas atuais não justificam.
-
-## O que entregar nesta rodada
-Se aprovado, começo pela **Fase 1** (3 itens em `useWhatsAppConversations.ts`) — é onde está o maior ganho com menor risco. Fases 2–4 podem entrar em rodadas seguintes para revisar com calma cada edge function e migration.
+- Arquivo único alterado: `supabase/functions/transcribe-audio/index.ts`.
+- Sem migrations.
+- Sem alteração de UI nesta etapa (a UI já mostra toast de erro; só vai melhorar a mensagem).
