@@ -17,6 +17,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { AudioMessagePlayer } from "./AudioMessagePlayer";
+import { isRawWhatsAppMediaUrl } from "@/utils/mediaUtils";
 
 type Message = Tables<'whatsapp_messages'>;
 type Reaction = Tables<'whatsapp_reactions'>;
@@ -44,6 +45,13 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
   const mediaTypes = ['audio', 'image', 'video', 'document', 'sticker'];
   const isMissingMedia =
     mediaTypes.includes(message.message_type) && !message.media_url;
+  // Mídia residual apontando pro CDN cru do WhatsApp (.enc) — não recuperada pelo backfill.
+  // Não auto-disparamos fetch aqui (evita tempestade de chamadas ao abrir a conversa);
+  // mostramos UI graciosa com "Tentar novamente" manual.
+  const hasRawMedia =
+    mediaTypes.includes(message.message_type) &&
+    !!message.media_url &&
+    isRawWhatsAppMediaUrl(message.media_url);
 
   const handleFetchMedia = async () => {
     setIsFetchingMedia(true);
@@ -150,7 +158,7 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
   };
 
   const renderContent = () => {
-    if (isMissingMedia) {
+    if (isMissingMedia || hasRawMedia) {
       const labels: Record<string, string> = {
         audio: 'Carregando áudio…',
         image: 'Carregando imagem…',
@@ -160,7 +168,7 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
       };
       return (
         <div className="space-y-2">
-          {fetchFailed ? (
+          {(fetchFailed || (hasRawMedia && !isFetchingMedia)) ? (
             <div className="flex items-center gap-2 text-xs">
               <AlertCircle className="w-3.5 h-3.5" />
               <span>Mídia indisponível.</span>
