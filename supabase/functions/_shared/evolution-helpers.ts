@@ -120,3 +120,137 @@ export function getMessageContent(message: any, type: string): string {
 
   return descriptions[type] || 'Mensagem';
 }
+
+// Reject a promise if it doesn't settle within `ms`. Used to bound the Storage upload,
+// whose client does not accept an AbortSignal. Resolves/rejects with the original result.
+function withTimeout<T>(promise: PromiseLike<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`${label} timed out after ${ms}ms`)),
+      ms,
+    );
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
+
+// Download media from Evolution API (base64-decoded by the server) and upload to Supabase Storage.
+// Shared by `evolution-webhook` (live) and `sync-whatsapp-history` (history backfill).
+// `timeoutMs` bounds BOTH legs independently: an AbortController on the getBase64 fetch and a
+// withTimeout wrapper on the Storage upload. Returns the public URL, or null on any failure
+// (caller treats null as "no media_url" — grava NULL e segue).
+export async function downloadAndUploadMedia(
+  apiUrl: string,
+  apiKey: string,
+  instanceName: string,
+  messageData: { key: any; message: any },
+  supabase: any,
+  mimetype: string,
+  providerType: string = 'self_hosted',
+  timeoutMs: number = 20000,
+): Promise<string | null> {
+  try {
+    console.log('[media-helpers] Downloading media from Evolution API...');
+
+    // Determine correct auth header based on provider type
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (providerType === 'cloud') {
+      headers['Authorization'] = `Bearer ${apiKey}`;
+    } else {
+      headers['apikey'] = apiKey;
+    }
+
+    // Bound the getBase64 fetch with an AbortController.
+    const controller = new AbortController();
+    const fetchTimer = setTimeout(() => controller.abort(), timeoutMs);
+    let response: Response;
+    try {
+      response = await fetch(
+        `${apiUrl.replace(/\/+$/, "").replace(/\/manager$/, "")}/chat/getBase64FromMediaMessage/${instanceName}`,
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            message: {
+              key: messageData.key,
+              message: messageData.message,
+            },
+            convertToMp4: false,
+          }),
+          signal: controller.signal,
+        }
+      );
+    } finally {
+      clearTimeout(fetchTimer);
+    }
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => '');
+      console.error('[media-helpers] Failed to download media:', response.status, errText);
+      return null;
+    }
+
+    const data = await response.json();
+    const base64Data = data.base64;
+
+    if (!base64Data) {
+      console.error('[media-helpers] No base64 data in response');
+      return null;
+    }
+
+    // Convert base64 to blob
+    const base64String = base64Data.split(',')[1] || base64Data;
+    const binaryString = atob(base64String);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    const blob = new Blob([bytes], { type: mimetype });
+
+    // Generate unique filename
+    // Extract extension correctly, removing codec info
+    const extension = (mimetype.split('/')[1] || 'bin').split(';')[0].trim();
+    const filename = `${Date.now()}-${messageData.key.id}.${extension}`;
+    const filePath = `${instanceName}/${filename}`;
+
+    console.log('[media-helpers] Uploading to Supabase Storage:', filePath);
+
+    // Upload to Supabase Storage (bounded by withTimeout — the client has no AbortSignal).
+    const { error: uploadError } = await withTimeout(
+      supabase.storage
+        .from('whatsapp-media')
+        .upload(filePath, blob, {
+          contentType: mimetype,
+          upsert: false,
+        }),
+      timeoutMs,
+      'storage upload',
+    );
+
+    if (uploadError) {
+      console.error('[media-helpers] Storage upload error:', uploadError);
+      return null;
+    }
+
+    // Get public URL
+    const { data: publicUrlData } = supabase.storage
+      .from('whatsapp-media')
+      .getPublicUrl(filePath);
+
+    console.log('[media-helpers] Media uploaded successfully:', publicUrlData.publicUrl);
+    return publicUrlData.publicUrl;
+  } catch (error) {
+    console.error('[media-helpers] Error in downloadAndUploadMedia:', error);
+    return null;
+  }
+}

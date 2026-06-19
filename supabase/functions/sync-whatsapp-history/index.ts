@@ -6,6 +6,7 @@ import {
   getMessageType,
   getMessageContent,
   isEditedMessage,
+  downloadAndUploadMedia,
 } from '../_shared/evolution-helpers.ts';
 
 const corsHeaders = {
@@ -570,8 +571,27 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
             const tsIso = new Date(Number(ts) * 1000).toISOString();
 
             const mediaMessage = type !== 'text' ? message[`${type}Message`] : null;
-            const mediaUrl = mediaMessage?.url || null;
-            const mediaMimetype = mediaMessage?.mimetype || null;
+            let mediaMimetype = mediaMessage?.mimetype || null;
+            // Espelha a resolução de mimetype do webhook ao vivo (evolution-webhook:650-655):
+            // áudio sem mimetype → OGG/Opus; demais → `${type}/*`.
+            if (mediaMessage && (!mediaMimetype || mediaMimetype === `${type}/*`)) {
+              mediaMimetype = type === 'audio' ? 'audio/ogg; codecs=opus' : `${type}/*`;
+            }
+            // Download + decrypt media through the same path as the live webhook
+            // (getBase64 → Storage) instead of storing the raw encrypted WhatsApp CDN URL.
+            // Returns null on failure → media_url stays null (grava NULL e segue).
+            let mediaUrl: string | null = null;
+            if (mediaMessage) {
+              mediaUrl = await downloadAndUploadMedia(
+                apiUrl,
+                apiKey,
+                instanceIdentifier,
+                { key, message },
+                supabase,
+                mediaMimetype,
+                providerType,
+              );
+            }
 
             const quotedMessageId =
               message.extendedTextMessage?.contextInfo?.stanzaId || null;

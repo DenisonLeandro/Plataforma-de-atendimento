@@ -7,6 +7,7 @@ import {
   getMessageType,
   getMessageContent,
   isEditedMessage,
+  downloadAndUploadMedia,
 } from '../_shared/evolution-helpers.ts';
 
 const corsHeaders = {
@@ -24,101 +25,6 @@ interface EvolutionWebhookPayload {
   event: string;
   instance: string;
   data: any;
-}
-
-// Download media from Evolution API and upload to Supabase Storage
-async function downloadAndUploadMedia(
-  apiUrl: string,
-  apiKey: string,
-  instanceName: string,
-  messageData: { key: any; message: any },
-  supabase: any,
-  mimetype: string,
-  providerType: string = 'self_hosted'
-): Promise<string | null> {
-  try {
-    console.log('[evolution-webhook] Downloading media from Evolution API...');
-    
-    // Determine correct auth header based on provider type
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-    if (providerType === 'cloud') {
-      headers['Authorization'] = `Bearer ${apiKey}`;
-    } else {
-      headers['apikey'] = apiKey;
-    }
-    
-    const response = await fetch(
-      `${apiUrl.replace(/\/+$/, "").replace(/\/manager$/, "")}/chat/getBase64FromMediaMessage/${instanceName}`,
-      {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          message: {
-            key: messageData.key,
-            message: messageData.message,
-          },
-          convertToMp4: false,
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      const errText = await response.text().catch(() => '');
-      console.error('[evolution-webhook] Failed to download media:', response.status, errText);
-      return null;
-    }
-
-    const data = await response.json();
-    const base64Data = data.base64;
-    
-    if (!base64Data) {
-      console.error('[evolution-webhook] No base64 data in response');
-      return null;
-    }
-
-    // Convert base64 to blob
-    const base64String = base64Data.split(',')[1] || base64Data;
-    const binaryString = atob(base64String);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    const blob = new Blob([bytes], { type: mimetype });
-
-    // Generate unique filename
-    // Extract extension correctly, removing codec info
-    const extension = (mimetype.split('/')[1] || 'bin').split(';')[0].trim();
-    const filename = `${Date.now()}-${messageData.key.id}.${extension}`;
-    const filePath = `${instanceName}/${filename}`;
-
-    console.log('[evolution-webhook] Uploading to Supabase Storage:', filePath);
-
-    // Upload to Supabase Storage
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from('whatsapp-media')
-      .upload(filePath, blob, {
-        contentType: mimetype,
-        upsert: false,
-      });
-
-    if (uploadError) {
-      console.error('[evolution-webhook] Storage upload error:', uploadError);
-      return null;
-    }
-
-    // Get public URL
-    const { data: publicUrlData } = supabase.storage
-      .from('whatsapp-media')
-      .getPublicUrl(filePath);
-
-    console.log('[evolution-webhook] Media uploaded successfully:', publicUrlData.publicUrl);
-    return publicUrlData.publicUrl;
-  } catch (error) {
-    console.error('[evolution-webhook] Error in downloadAndUploadMedia:', error);
-    return null;
-  }
 }
 
 // Fetch and update profile picture in background
