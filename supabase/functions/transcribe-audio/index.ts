@@ -14,6 +14,10 @@ function json(body: unknown, status = 200) {
   });
 }
 
+function knownTranscriptionError(error: string, message: string, extra: Record<string, unknown> = {}) {
+  return json({ success: false, error, message, ...extra }, 200);
+}
+
 function mimetypeToExt(mt: string | null | undefined): { ext: string; mime: string } {
   const lower = (mt ?? "").toLowerCase();
   if (lower.includes("ogg") || lower.includes("opus")) return { ext: "ogg", mime: "audio/ogg" };
@@ -139,19 +143,19 @@ Deno.serve(async (req) => {
         .update({ transcription_status: "failed" })
         .eq("id", messageId);
       if (errText.includes("credit_limit_reached") || errText.includes("credits_exhausted")) {
-        return json({
-          error: "credits_exhausted",
-          message: "Créditos de IA esgotados. Peça ao admin do workspace para aumentar o limite ou aguarde a renovação.",
-        }, 402);
+        return knownTranscriptionError(
+          "credits_exhausted",
+          "Créditos de IA esgotados. Peça ao admin do workspace para aumentar o limite ou aguarde a renovação.",
+        );
       }
       if (aiRes.status === 429) {
-        return json({ error: "rate_limited", message: "Muitas requisições. Tente novamente em alguns segundos." }, 429);
+        return knownTranscriptionError("rate_limited", "Muitas requisições. Tente novamente em alguns segundos.");
       }
       if (aiRes.status === 402) {
-        return json({ error: "credits_exhausted", message: "Créditos de IA esgotados." }, 402);
+        return knownTranscriptionError("credits_exhausted", "Créditos de IA esgotados.");
       }
       if (aiRes.status === 400) {
-        return json({ error: "invalid_audio", message: "Formato de áudio não suportado pelo provedor." }, 400);
+        return knownTranscriptionError("invalid_audio", "Formato de áudio não suportado pelo provedor.");
       }
       return json({ error: `ai_error_${aiRes.status}`, message: `Erro da IA (${aiRes.status}).` }, 502);
     }
