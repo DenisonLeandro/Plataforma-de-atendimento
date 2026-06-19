@@ -52,6 +52,7 @@ const ConversationsSidebar = ({ selectedId, onSelect, instanceId, isCollapsed, o
     pageSize,
     assignedTo: filter === "mine" ? user?.id : undefined,
     unassigned: filter === "queue" ? true : undefined,
+    search: debouncedSearchQuery.trim() || undefined,
   };
 
   const { conversations, totalCount, totalPages, unreadCount, waitingCount, isLoading } = useWhatsAppConversations(conversationFilters);
