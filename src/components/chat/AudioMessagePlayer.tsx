@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 interface AudioMessagePlayerProps {
   messageId: string;
@@ -183,14 +184,27 @@ export const AudioMessagePlayer = ({
   const triggerTranscription = async () => {
     setIsRetranscribing(true);
     try {
-      await supabase.functions.invoke("transcribe-audio", {
+      const { data, error } = await supabase.functions.invoke("transcribe-audio", {
         body: { messageId },
       });
+      const payload = (data ?? {}) as { error?: string; message?: string };
+      if (error || payload.error) {
+        const msg = payload.message
+          || (payload.error === "credits_exhausted"
+            ? "Créditos de IA esgotados. Peça ao admin do workspace para aumentar o limite."
+            : payload.error === "audio_too_large"
+              ? "Áudio muito grande para transcrever."
+              : payload.error === "rate_limited"
+                ? "Muitas requisições. Tente novamente em alguns segundos."
+                : "Não foi possível transcrever este áudio.");
+        toast.error(msg);
+      }
       await queryClient.invalidateQueries({
         queryKey: ["whatsapp", "messages", conversationId],
       });
     } catch (e) {
       console.error(e);
+      toast.error("Falha ao transcrever áudio.");
     } finally {
       setIsRetranscribing(false);
     }
