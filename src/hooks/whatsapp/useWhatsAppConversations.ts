@@ -40,6 +40,32 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
   const { data, isLoading, error } = useQuery({
     queryKey: ['whatsapp', 'conversations', filters],
     queryFn: async () => {
+      // Quando há termo de busca, primeiro descobrimos quais contact_ids casam
+      // por nome ou telefone, para filtrar conversas globalmente (não só na página).
+      let searchContactIds: string[] | null = null;
+      const searchTerm = filters?.search?.trim();
+      if (searchTerm) {
+        const escaped = searchTerm.replace(/[%,]/g, ' ');
+        const { data: matchingContacts } = await supabase
+          .from('whatsapp_contacts')
+          .select('id')
+          .or(`name.ilike.%${escaped}%,phone_number.ilike.%${escaped}%`)
+          .limit(500);
+        searchContactIds = (matchingContacts || []).map((c: { id: string }) => c.id);
+      }
+
+      const applySearch = <T extends { or: (f: string) => T; in: (col: string, vals: string[]) => T }>(q: T): T => {
+        if (!searchTerm) return q;
+        const escaped = searchTerm.replace(/[%,]/g, ' ');
+        if (searchContactIds && searchContactIds.length > 0) {
+          // match em contact_id OU em last_message_preview
+          const idsCsv = searchContactIds.join(',');
+          return q.or(`contact_id.in.(${idsCsv}),last_message_preview.ilike.%${escaped}%`);
+        }
+        // Sem contatos casando: filtra só por preview
+        return q.or(`last_message_preview.ilike.%${escaped}%`);
+      };
+
       // Query 1: Get paginated conversations
       let query = supabase
         .from('whatsapp_conversations')
@@ -70,6 +96,8 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
       if (filters?.unassigned) {
         query = query.is('assigned_to', null);
       }
+
+      query = applySearch(query as any) as typeof query;
 
       const { data: conversationsData, error } = await query;
 
@@ -104,6 +132,8 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
       if (filters?.unassigned) {
         countQuery = countQuery.is('assigned_to', null);
       }
+
+      countQuery = applySearch(countQuery as any) as typeof countQuery;
 
       const { count: totalCount } = await countQuery;
 
