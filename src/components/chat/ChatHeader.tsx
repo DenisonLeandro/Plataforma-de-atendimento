@@ -13,7 +13,7 @@ import { EditContactModal } from "./EditContactModal";
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useConversationAssignment } from "@/hooks/whatsapp/useConversationAssignment";
-import { isContactNameMissing } from "@/utils/contactUtils";
+import { isContactNameMissing, isLidValue } from "@/utils/contactUtils";
 import { cn } from "@/lib/utils";
 
 type Contact = Tables<'whatsapp_contacts'>;
@@ -40,6 +40,7 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
   
   const nameIsMissing = isContactNameMissing(contact.name, contact.phone_number);
   const displayName = nameIsMissing ? 'Sem nome' : contact.name;
+  const phoneIsLid = isLidValue(contact.phone_number);
 
   const isInQueue = !conversation?.assigned_to;
   const isAssignedToMe = conversation?.assigned_to === user?.id;
@@ -90,8 +91,11 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
                 <Pencil className="h-3 w-3 text-muted-foreground" />
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground">
-              {contact.phone_number}
+            <p className={cn(
+              "text-xs text-muted-foreground",
+              phoneIsLid && "italic"
+            )}>
+              {phoneIsLid ? 'Telefone não identificado' : contact.phone_number}
             </p>
             {topicsData?.topics && topicsData.topics.length > 0 && (
               <div className="mt-1">

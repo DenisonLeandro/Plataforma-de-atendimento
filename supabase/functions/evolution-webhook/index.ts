@@ -273,8 +273,14 @@ async function findOrCreateContact(
     }
 
     // Create new contact
-    // If message is from me, use phone number as name (to avoid using instance owner's name)
-    const contactName = isFromMe ? phoneNumber : (name || phoneNumber);
+    // If message is from me, use phone number as name (to avoid using instance owner's name).
+    // When the phone is actually a LID (no real number resolved) and there's no real pushName,
+    // store an empty name instead of the LID digits — the UI shows "Sem nome" and the user edits it.
+    const phoneIsLid = /^\d{14,}$/.test(phoneNumber);
+    const hasRealName = !!name && name !== phoneNumber;
+    const contactName = isFromMe
+      ? phoneNumber
+      : (hasRealName ? name : (phoneIsLid ? '' : phoneNumber));
 
     const { data: newContact, error } = await supabase
       .from('whatsapp_contacts')
