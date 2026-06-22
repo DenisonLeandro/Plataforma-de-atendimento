@@ -1,50 +1,59 @@
 ## Problema
 
-Após sincronizar uma instância nova (ex: "cinco conjuntos"), 1.088 contatos foram salvos corretamente no banco, mas o usuário não percebe porque:
+Você quer continuar pelo app as conversas que estão acontecendo no WhatsApp. Mas a sincronização atual cria toda conversa importada com status `closed` (arquivada), e a tela `/whatsapp` mostra por padrão só as conversas em aberto (`active`/`reopened`). Resultado: os 1.088 contatos chegaram, mas nenhuma conversa aparece na lista de Conversas.
 
-1. O toast só diz "Contatos importados (N)" — não leva pra lugar nenhum.
-2. A página /whatsapp (Conversas) fica vazia (esperado — WhatsApp/Baileys não envia histórico de chats pra instâncias recém-conectadas).
-3. Os contatos só aparecem em /whatsapp/contatos, e o usuário precisa lembrar de trocar de aba e filtrar pela instância manualmente.
-
-Nenhum bug de sync, RLS ou dados. É UX de descoberta.
-
-## Mudanças (frontend apenas, sem tocar RLS/migrations/backend)
-
-### 1. Toast com ação "Ver contatos" — `src/components/settings/InstanceCard.tsx`
-
-No ramo `chats === 0 && contacts > 0` do `handleSync`, trocar o `toast.info` por um toast com botão `action` que navega para `/whatsapp/contatos?instance=<id>`.
-
-Usar `useNavigate` do react-router e a prop `action` do sonner:
+Trecho responsável (`supabase/functions/sync-whatsapp-history/index.ts`):
 
 ```ts
-toast.info(
-  `Contatos importados (${contacts}). Nenhuma conversa disponível ainda…`,
-  {
-    duration: 12000,
-    action: {
-      label: "Ver contatos",
-      onClick: () => navigate(`/whatsapp/contatos?instance=${instance.id}`),
-    },
-  }
-);
+.insert({
+  instance_id: instanceId,
+  contact_id: contactId,
+  status: 'closed',   // <- por isso some da tela "Em Aberto"
+})
 ```
 
-### 2. ContactsSidebar respeita `?instance=<id>` — `src/components/contacts/ContactsSidebar.tsx`
+## Plano
 
-Ler `useSearchParams()` no mount e, se houver `instance`, usar como valor inicial de `selectedInstanceId` em vez de `'all'`. Mantém o comportamento padrão quando não há query param.
+### 1. Marcar como "em aberto" as conversas recentes durante a sincronização
 
-```ts
-const [searchParams] = useSearchParams();
-const initialInstance = searchParams.get('instance') ?? 'all';
-const [selectedInstanceId, setSelectedInstanceId] = useState<string>(initialInstance);
-```
+Na função `sync-whatsapp-history`, ao importar mensagens de um chat:
 
-## Fora do escopo (proposto separadamente, se você quiser)
+- Calcular o `timestamp` da mensagem mais recente importada para aquele chat.
+- Se a última mensagem é **dos últimos 30 dias**, gravar/atualizar a conversa com:
+  - `status = 'active'`
+  - `last_message_at = <timestamp>`
+  - `last_message_preview = <preview da última msg>`
+  - `last_message_is_from_me = <bool>`
+- Se for mais antigo que 30 dias, manter como `closed` (histórico arquivado, não polui a caixa "Em Aberto").
+- Conversas que já existem com status diferente de `closed` (ex.: alguém já abriu manualmente) **não são rebaixadas** — só atualizamos `last_message_*`.
 
-- Aumentar `CONTACTS_PER_INVOCATION` de 75 → 200 no edge function `sync-whatsapp-history` (corta tempo de sync de ~2-3 min pra ~1 min). Mexe em backend — só faço se você confirmar.
-- Banner/empty-state em /whatsapp explicando "instância recém-conectada não tem histórico de conversas" quando a instância filtrada tem contatos mas zero conversas.
+Isso resolve o caso de uso: chats em andamento no celular passam a aparecer imediatamente em **Conversas → Em Aberto**, prontos pra você responder pelo app.
 
-## Restrições respeitadas
+### 2. Toast pós-sync com atalho pra Conversas
 
-- Sem alteração de RLS, migrations, edge functions ou cor laranja.
-- Mudança contida em 2 arquivos de UI.
+No `InstanceCard.tsx`, quando o sync termina e veio `chats_synced > 0`, mostrar toast com botão **"Ver Conversas"** que leva pra `/whatsapp` (filtrando pela instância via `?instance=<id>`).
+
+Hoje o toast só aponta pra `/whatsapp/contatos` quando `chats === 0`. Agora cobrimos o caminho positivo também.
+
+### 3. Aceitar `?instance=` em `/whatsapp`
+
+`WhatsApp.tsx` lê `useSearchParams()` e usa `?instance=<id>` como `selectedInstanceId` inicial, igual ao que já fizemos em `/whatsapp/contatos`. Sem o parâmetro, comportamento atual (todas as instâncias) é mantido.
+
+## Detalhes técnicos
+
+**Arquivos alterados:**
+- `supabase/functions/sync-whatsapp-history/index.ts` — após o `flushBatch` de cada chat, fazer um `update` em `whatsapp_conversations` com `status`, `last_message_at`, `last_message_preview`, `last_message_is_from_me`, condicionado à janela de 30 dias e ao status atual da conversa.
+- `src/components/settings/InstanceCard.tsx` — adicionar branch de toast com action button quando `chats_synced > 0`.
+- `src/pages/WhatsApp.tsx` — ler `useSearchParams()` e inicializar `selectedInstanceId`.
+
+**Não vou mexer:**
+- RLS / policies (sem mudança).
+- Schema do banco (campos já existem).
+- Hook de sincronização no cliente (`useSyncWhatsAppHistory`).
+- Lógica do webhook (continua tratando mensagens novas como sempre).
+
+## O que você verá depois
+
+1. Clica **Sincronizar histórico** numa instância.
+2. Ao terminar: toast "X conversas importadas — Ver Conversas".
+3. Clica → vai pra `/whatsapp` já filtrada pela instância, com as conversas recentes do celular listadas em **Em Aberto**, prontas pra responder.
