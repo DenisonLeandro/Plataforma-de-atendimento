@@ -494,6 +494,12 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
       let bodyFormat: 'A' | 'B' = chatIndex === startChatIndex ? cursor.message_body_format || 'A' : 'A';
       let triedB = bodyFormat === 'B';
 
+      // Track latest message in this chat to mark the conversation as "open"
+      // when the last activity is recent.
+      let chatLatestTsSec = 0;
+      let chatLatestPreview = '';
+      let chatLatestFromMe = false;
+
       while (true) {
         const url = `${apiUrl}/chat/findMessages/${instanceIdentifier}`;
         const bodyA = { where: { key: { remoteJid } }, limit: PAGE_SIZE, offset, page };
@@ -569,6 +575,14 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
 
             const ts = rec.messageTimestamp ?? rec.timestamp ?? Math.floor(Date.now() / 1000);
             const tsIso = new Date(Number(ts) * 1000).toISOString();
+            const tsSec = Number(ts) || 0;
+            if (tsSec > chatLatestTsSec) {
+              chatLatestTsSec = tsSec;
+              chatLatestFromMe = !!key.fromMe;
+              // content might be empty for media; fall back to a short type label
+              chatLatestPreview = (content && String(content).slice(0, 200)) ||
+                (type !== 'text' ? `[${type}]` : '');
+            }
 
             const mediaMessage = type !== 'text' ? message[`${type}Message`] : null;
             let mediaMimetype = mediaMessage?.mimetype || null;
@@ -646,6 +660,43 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
           };
           scheduleNextChunk(instanceId, next_cursor);
           return { success: true, continued: true, next_cursor, chats_synced, messages_synced, contacts_synced, diagnostics, errors };
+        }
+      }
+
+      // Chat fully processed in this invocation — promote conversation to
+      // "active" if the last message is within the last 30 days so it shows
+      // up in the Conversations → Em Aberto list. Conversations that already
+      // have a non-closed status are left alone (we only refresh last_*).
+      if (chatLatestTsSec > 0) {
+        const latestIso = new Date(chatLatestTsSec * 1000).toISOString();
+        const isRecent = Date.now() / 1000 - chatLatestTsSec < 30 * 24 * 60 * 60;
+        try {
+          const { data: convRow } = await supabase
+            .from('whatsapp_conversations')
+            .select('status, last_message_at')
+            .eq('id', conversationId)
+            .maybeSingle();
+          const currentStatus: string | undefined = convRow?.status;
+          const currentLastAt: string | null = convRow?.last_message_at ?? null;
+          const updates: Record<string, any> = {
+            last_message_preview: chatLatestPreview,
+            last_message_is_from_me: chatLatestFromMe,
+            updated_at: new Date().toISOString(),
+          };
+          if (!currentLastAt || new Date(currentLastAt).getTime() <= chatLatestTsSec * 1000) {
+            updates.last_message_at = latestIso;
+          }
+          // Only promote when the conversation is currently closed and the
+          // last activity is recent — never downgrade an open conversation.
+          if (isRecent && (currentStatus === 'closed' || !currentStatus)) {
+            updates.status = 'active';
+          }
+          await supabase
+            .from('whatsapp_conversations')
+            .update(updates)
+            .eq('id', conversationId);
+        } catch (e) {
+          errors.push({ chat: remoteJid, error: `conv update: ${(e as Error).message}` });
         }
       }
 
