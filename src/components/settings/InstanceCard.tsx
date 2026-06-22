@@ -88,7 +88,15 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
       if (warnCount > 0) {
         toast.warning(`${base} (${warnCount} avisos — veja console)`);
       } else {
-        toast.success(base);
+        toast.success(base, {
+          duration: 12000,
+          action: chats > 0
+            ? {
+                label: "Ver conversas",
+                onClick: () => navigate(`/whatsapp?instance=${instance.id}`),
+              }
+            : undefined,
+        });
       }
     } catch (error: any) {
       toast.error(error?.message || "Falha ao sincronizar histórico");
