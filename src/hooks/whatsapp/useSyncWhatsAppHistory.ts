@@ -11,6 +11,7 @@ export interface SyncJob {
   contacts_synced: number;
   error_message: string | null;
   started_at: string;
+  updated_at: string;
   finished_at: string | null;
 }
 
@@ -19,6 +20,7 @@ export interface StartSyncResponse {
   job_id?: string;
   status?: string;
   reused?: boolean;
+  restarted?: boolean;
   error?: string;
 }
 
@@ -74,7 +76,7 @@ export const useSyncJob = (instance_id: string | undefined) => {
     queryFn: async (): Promise<SyncJob | null> => {
       const { data, error } = await supabase
         .from('whatsapp_sync_jobs')
-        .select('id, instance_id, status, chats_synced, messages_synced, contacts_synced, error_message, started_at, finished_at')
+        .select('id, instance_id, status, chats_synced, messages_synced, contacts_synced, error_message, started_at, updated_at, finished_at')
         .eq('instance_id', instance_id!)
         .order('started_at', { ascending: false })
         .limit(1)
@@ -106,6 +108,12 @@ export const useSyncJob = (instance_id: string | undefined) => {
       supabase.removeChannel(channel);
     };
   }, [instance_id, queryClient]);
+
+  useEffect(() => {
+    if (query.data?.status === 'completed' || query.data?.status === 'failed') {
+      queryClient.invalidateQueries({ queryKey: ['whatsapp'] });
+    }
+  }, [query.data?.status, queryClient]);
 
   return query;
 };

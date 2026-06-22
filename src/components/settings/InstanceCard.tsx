@@ -68,7 +68,10 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
     });
   });
 
-  const isSyncing = syncJob?.status === 'running' || syncHistory.isPending;
+  const isRunning = syncJob?.status === 'running';
+  const lastSyncUpdateMs = syncJob?.updated_at ? new Date(syncJob.updated_at).getTime() : 0;
+  const isSyncStale = isRunning && lastSyncUpdateMs > 0 && Date.now() - lastSyncUpdateMs > 5 * 60 * 1000;
+  const isSyncing = (isRunning && !isSyncStale) || syncHistory.isPending;
 
   const webhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/evolution-webhook`;
 
@@ -100,7 +103,9 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
     setShowSyncDialog(false);
     try {
       const result = await syncHistory.mutateAsync(instance.id);
-      if (result.reused) {
+      if (result.restarted) {
+        toast.info("Sincronização retomada. Agora as conversas e mensagens serão priorizadas.");
+      } else if (result.reused) {
         toast.info("Sincronização já em andamento — acompanhando o progresso.");
       } else {
         toast.success("Sincronização iniciada em background. Você pode fechar esta aba.");
@@ -192,8 +197,8 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
             variant="outline"
             size="sm"
             onClick={() => setShowSyncDialog(true)}
-            disabled={instance.status !== "connected" || isSyncing}
-            title={isSyncing ? "Sincronização em andamento" : "Sincronizar histórico"}
+            disabled={instance.status !== "connected" || syncHistory.isPending || (isRunning && !isSyncStale)}
+            title={isSyncStale ? "Retomar sincronização travada" : isSyncing ? "Sincronização em andamento" : "Sincronizar histórico"}
           >
             {isSyncing ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -201,9 +206,9 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
               <Download className="h-4 w-4" />
             )}
           </Button>
-          {syncJob?.status === 'running' && (
+          {isRunning && (
             <span className="text-xs text-muted-foreground self-center">
-              Sincronizando… {syncJob.chats_synced} conv. / {syncJob.messages_synced} msgs / {syncJob.contacts_synced} contatos
+              {isSyncStale ? "Parou; clique para retomar" : "Sincronizando…"} {syncJob.chats_synced} conv. / {syncJob.messages_synced} msgs / {syncJob.contacts_synced} contatos
             </span>
           )}
           <Button
