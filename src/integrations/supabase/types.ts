@@ -841,6 +841,59 @@ export type Database = {
           },
         ]
       }
+      whatsapp_sync_jobs: {
+        Row: {
+          chats_synced: number
+          contacts_synced: number
+          cursor: Json
+          error_message: string | null
+          finished_at: string | null
+          id: string
+          instance_id: string
+          messages_synced: number
+          started_at: string
+          started_by: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          chats_synced?: number
+          contacts_synced?: number
+          cursor?: Json
+          error_message?: string | null
+          finished_at?: string | null
+          id?: string
+          instance_id: string
+          messages_synced?: number
+          started_at?: string
+          started_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          chats_synced?: number
+          contacts_synced?: number
+          cursor?: Json
+          error_message?: string | null
+          finished_at?: string | null
+          id?: string
+          instance_id?: string
+          messages_synced?: number
+          started_at?: string
+          started_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_sync_jobs_instance_id_fkey"
+            columns: ["instance_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_instances"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       whatsapp_topics_history: {
         Row: {
           ai_confidence: number | null
