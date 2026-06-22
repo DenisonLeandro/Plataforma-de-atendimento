@@ -8,7 +8,7 @@ import { useInstanceStatusMonitor } from "@/hooks/useInstanceStatusMonitor";
 import { DisconnectedInstancesBanner } from "@/components/notifications/DisconnectedInstancesBanner";
 import { Button } from "@/components/ui/button";
 import { Settings, ArrowLeft } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 
 const WhatsApp = () => {
   const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
@@ -19,8 +19,12 @@ const WhatsApp = () => {
   const { disconnectedInstances } = useInstanceStatusMonitor();
   const isMobile = useIsMobile();
 
-  // Show all conversations from all instances by default
-  const [selectedInstanceId, setSelectedInstanceId] = useState<string | undefined>(undefined);
+  // Show all conversations from all instances by default; allow ?instance=<id>
+  // (used by the post-sync toast) to pre-filter to a single instance.
+  const [searchParams] = useSearchParams();
+  const [selectedInstanceId, setSelectedInstanceId] = useState<string | undefined>(
+    () => searchParams.get("instance") ?? undefined,
+  );
 
   // Fetch conversations to get contact name
   const { conversations } = useWhatsAppConversations({ instanceId: selectedInstanceId });
