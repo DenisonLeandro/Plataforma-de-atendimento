@@ -70,6 +70,13 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
         toast.warning(result.message || `${base}. Sincronização pausada — execute novamente para continuar.`);
         return;
       }
+      if (chats === 0 && contacts > 0) {
+        toast.info(
+          `Contatos importados (${contacts}). Nenhuma conversa disponível no Evolution ainda — o WhatsApp só envia histórico conforme novas mensagens chegam à instância.`,
+          { duration: 10000 }
+        );
+        return;
+      }
       if (warnCount > 0) {
         toast.warning(`${base} (${warnCount} avisos — veja console)`);
       } else {
@@ -215,7 +222,9 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
           <AlertDialogHeader>
             <AlertDialogTitle>Sincronizar histórico?</AlertDialogTitle>
             <AlertDialogDescription>
-              Isso vai importar todas as conversas e mensagens que a Evolution API tem em cache para esta instância. Pode demorar alguns minutos. Mensagens já importadas não serão duplicadas.
+              Isso vai importar contatos, conversas e mensagens que a Evolution API tem em cache para esta instância. Pode demorar alguns minutos. Mensagens já importadas não serão duplicadas.
+              {"\n\n"}
+              Importante: o WhatsApp não envia o histórico completo para instâncias recém-conectadas — só as conversas que receberem mensagens depois da conexão aparecerão aqui. Se essa instância acabou de ser criada, é normal vir só os contatos.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
