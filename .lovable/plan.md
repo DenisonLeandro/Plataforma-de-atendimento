@@ -1,39 +1,50 @@
-## Status do sync em andamento (cinco-conjuntos)
+## Problema
 
-Pelos network requests dos últimos ~50s, o sync está **funcionando normalmente**, só demorado:
+Após sincronizar uma instância nova (ex: "cinco conjuntos"), 1.088 contatos foram salvos corretamente no banco, mas o usuário não percebe porque:
 
-| Chunk | cursor depois | contacts_synced | chats_synced |
-|---|---|---|---|
-| 1 | 450 | 75 | 0 |
-| 2 | 525 | 75 | 0 |
-| 3 | 600 | 75 | 0 |
-| 4 | 675 | 75 | 0 |
-| 5 | 750 | 75 | 0 |
+1. O toast só diz "Contatos importados (N)" — não leva pra lugar nenhum.
+2. A página /whatsapp (Conversas) fica vazia (esperado — WhatsApp/Baileys não envia histórico de chats pra instâncias recém-conectadas).
+3. Os contatos só aparecem em /whatsapp/contatos, e o usuário precisa lembrar de trocar de aba e filtrar pela instância manualmente.
 
-`continued: true` em todos → o loop client-side segue chamando. Faltam ~3 chunks (~40s) pra terminar os contatos (total estimado ~975).
+Nenhum bug de sync, RLS ou dados. É UX de descoberta.
 
-Conversas seguem zero — comportamento esperado por H2 (Evolution sem cache de chats pra instância recém-conectada).
+## Mudanças (frontend apenas, sem tocar RLS/migrations/backend)
 
-## O que proponho como próximo passo
+### 1. Toast com ação "Ver contatos" — `src/components/settings/InstanceCard.tsx`
 
-1. **Esperar o sync terminar** (mais ~40s). Quando `contacts_done: true` e `findChats` rodar, o toast novo deve disparar: *"Contatos importados (N). Nenhuma conversa disponível…"*
-2. **Validar no banco** (read-only) que os contatos foram persistidos:
-   ```sql
-   SELECT count(*) FROM whatsapp_contacts
-   WHERE instance_id='a369a4f6-f7e4-41c3-a80b-d03e2248fa76';
-   ```
-3. **Confirmar H2 via curl** no Evolution (Denison roda local):
-   ```bash
-   curl -X POST \
-     https://evolution-api-hbbv.srv1746890.hstgr.cloud/chat/findChats/cinco-conjuntos \
-     -H "apikey: <api_key>" \
-     -H "Content-Type: application/json" \
-     -d '{"where":{}}'
-   ```
-   Se retornar `[]` → H2 confirmada, não há nada a "corrigir" no nosso lado além do UX já aplicado.
+No ramo `chats === 0 && contacts > 0` do `handleSync`, trocar o `toast.info` por um toast com botão `action` que navega para `/whatsapp/contatos?instance=<id>`.
 
-## Decisão pendente
+Usar `useNavigate` do react-router e a prop `action` do sonner:
 
-Quer que eu também avance a **Fase 2 médio prazo** (subir `CONTACTS_PER_INVOCATION` de 75 → 200 pra cortar o tempo de espera de 2-3 min pra ~1 min)? Sem mexer em RLS, sem mexer em chats, só ajuste de batch size em `supabase/functions/sync-whatsapp-history/index.ts`.
+```ts
+toast.info(
+  `Contatos importados (${contacts}). Nenhuma conversa disponível ainda…`,
+  {
+    duration: 12000,
+    action: {
+      label: "Ver contatos",
+      onClick: () => navigate(`/whatsapp/contatos?instance=${instance.id}`),
+    },
+  }
+);
+```
 
-Sem alteração de código nesta etapa — aguardo OK.
+### 2. ContactsSidebar respeita `?instance=<id>` — `src/components/contacts/ContactsSidebar.tsx`
+
+Ler `useSearchParams()` no mount e, se houver `instance`, usar como valor inicial de `selectedInstanceId` em vez de `'all'`. Mantém o comportamento padrão quando não há query param.
+
+```ts
+const [searchParams] = useSearchParams();
+const initialInstance = searchParams.get('instance') ?? 'all';
+const [selectedInstanceId, setSelectedInstanceId] = useState<string>(initialInstance);
+```
+
+## Fora do escopo (proposto separadamente, se você quiser)
+
+- Aumentar `CONTACTS_PER_INVOCATION` de 75 → 200 no edge function `sync-whatsapp-history` (corta tempo de sync de ~2-3 min pra ~1 min). Mexe em backend — só faço se você confirmar.
+- Banner/empty-state em /whatsapp explicando "instância recém-conectada não tem histórico de conversas" quando a instância filtrada tem contatos mas zero conversas.
+
+## Restrições respeitadas
+
+- Sem alteração de RLS, migrations, edge functions ou cor laranja.
+- Mudança contida em 2 arquivos de UI.
