@@ -21,6 +21,12 @@ const CONTACTS_PER_INVOCATION = 75;
 const CHATS_PER_INVOCATION = 10;
 const MAX_INVOCATION_MS = 25_000;
 const EVOLUTION_FETCH_TIMEOUT_MS = 20_000;
+// Recent-history window. We want open conversations to show meaningful
+// context immediately, but we don't want to drown the sync in years of
+// archived chatter. Stop paginating a chat once we hit messages older than
+// this window or once we've imported MAX_MESSAGES_PER_CHAT recent messages.
+const RECENT_WINDOW_SEC = 30 * 24 * 60 * 60;
+const MAX_MESSAGES_PER_CHAT = 200;
 
 interface SyncCursor {
   contacts_done?: boolean;
@@ -427,6 +433,20 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
         body: JSON.stringify({ where: {} }),
       });
       chats = extractList(d.parsed);
+      // Sort by latest activity DESC so recent open conversations get their
+      // history imported first — even if the sync runs out of time later.
+      const chatTs = (c: any): number => {
+        const v = c?.updatedAt ?? c?.lastMessageTimestamp ?? c?.conversationTimestamp
+          ?? c?.lastMessage?.messageTimestamp ?? c?.t ?? 0;
+        const n = Number(v);
+        if (!Number.isFinite(n) || n <= 0) {
+          const parsed = Date.parse(String(v));
+          return Number.isFinite(parsed) ? Math.floor(parsed / 1000) : 0;
+        }
+        // Some providers return ms — normalize to seconds.
+        return n > 1e12 ? Math.floor(n / 1000) : n;
+      };
+      chats.sort((a, b) => chatTs(b) - chatTs(a));
       pushDiagnostic(diagnostics, {
         step: 'findChats',
         url,
@@ -499,6 +519,9 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
       let chatLatestTsSec = 0;
       let chatLatestPreview = '';
       let chatLatestFromMe = false;
+      // Per-chat message counter used to cap recent-history import.
+      let chatMessagesImported = 0;
+      let chatHitOldMessage = false;
 
       while (true) {
         const url = `${apiUrl}/chat/findMessages/${instanceIdentifier}`;
@@ -583,6 +606,12 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
               chatLatestPreview = (content && String(content).slice(0, 200)) ||
                 (type !== 'text' ? `[${type}]` : '');
             }
+            // Skip messages older than the recent window — keep the sync
+            // focused on conversations the user actually wants to continue.
+            if (tsSec > 0 && Date.now() / 1000 - tsSec > RECENT_WINDOW_SEC) {
+              chatHitOldMessage = true;
+              continue;
+            }
 
             const mediaMessage = type !== 'text' ? message[`${type}Message`] : null;
             let mediaMimetype = mediaMessage?.mimetype || null;
@@ -624,6 +653,7 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
               timestamp: tsIso,
               edited_at: isEditedMessage(message) ? new Date().toISOString() : null,
             });
+            chatMessagesImported++;
 
             if (batch.length >= UPSERT_BATCH) {
               const inserted = await flushBatch(supabase, batch);
@@ -640,6 +670,11 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
 
         // Pagination control
         if (records.length < PAGE_SIZE) break;
+        // Stop paginating this chat once we have enough recent history or
+        // we've crossed into messages older than the recent window. The
+        // Evolution API returns newest-first within a page in most setups,
+        // so an old message in the current page is a strong "we're done" signal.
+        if (chatMessagesImported >= MAX_MESSAGES_PER_CHAT || chatHitOldMessage) break;
         page += 1;
         offset += records.length;
         if (page > totalPages && totalPages > 0) break;
