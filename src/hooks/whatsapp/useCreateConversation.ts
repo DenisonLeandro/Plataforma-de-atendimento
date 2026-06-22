@@ -48,15 +48,28 @@ export const useCreateConversation = () => {
       }
 
       // 3. Create new conversation
-      const { data: conversation, error: convError } = await supabase
+      // INSERT sem .select() para evitar o quirk de RLS no RETURNING:
+      // `INSERT ... RETURNING *` é reprovado pela policy de SELECT, mas um
+      // SELECT separado da mesma linha passa. Por isso separamos as duas operações.
+      const { error: insertError } = await supabase
         .from('whatsapp_conversations')
         .insert({
           instance_id: params.instanceId,
           contact_id: contact.id,
           status: 'active',
           unread_count: 0,
-        })
-        .select()
+        });
+
+      if (insertError) throw insertError;
+
+      // Busca a conversa recém-criada em query separada (SELECT puro passa pela RLS).
+      const { data: conversation, error: convError } = await supabase
+        .from('whatsapp_conversations')
+        .select('*')
+        .eq('instance_id', params.instanceId)
+        .eq('contact_id', contact.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
         .single();
 
       if (convError) throw convError;
