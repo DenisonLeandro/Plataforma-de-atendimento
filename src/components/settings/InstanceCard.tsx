@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Tables } from "@/integrations/supabase/types";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,7 @@ interface InstanceCardProps {
 export const InstanceCard = ({ instance }: InstanceCardProps) => {
   const { testConnection, deleteInstance } = useWhatsAppInstances();
   const syncHistory = useSyncWhatsAppHistory();
+  const navigate = useNavigate();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showSyncDialog, setShowSyncDialog] = useState(false);
@@ -73,7 +75,13 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
       if (chats === 0 && contacts > 0) {
         toast.info(
           `Contatos importados (${contacts}). Nenhuma conversa disponível no Evolution ainda — o WhatsApp só envia histórico conforme novas mensagens chegam à instância.`,
-          { duration: 10000 }
+          {
+            duration: 12000,
+            action: {
+              label: "Ver contatos",
+              onClick: () => navigate(`/whatsapp/contatos?instance=${instance.id}`),
+            },
+          }
         );
         return;
       }

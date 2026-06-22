@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { useDebounce } from '@/hooks/useDebounce';
 import { UserMenu } from '@/components/auth/UserMenu';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 
 interface ContactsSidebarProps {
@@ -18,8 +18,11 @@ interface ContactsSidebarProps {
 }
 
 export function ContactsSidebar({ selectedContactId, onSelectContact }: ContactsSidebarProps) {
+  const [searchParams] = useSearchParams();
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedInstanceId, setSelectedInstanceId] = useState<string>('all');
+  const [selectedInstanceId, setSelectedInstanceId] = useState<string>(
+    searchParams.get('instance') ?? 'all'
+  );
   const [sortBy, setSortBy] = useState<ContactSortOption>('last_interaction');
   const [currentPage, setCurrentPage] = useState(1);
   
