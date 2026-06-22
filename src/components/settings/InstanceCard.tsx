@@ -14,7 +14,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { useWhatsAppInstances, useSyncWhatsAppHistory } from "@/hooks/whatsapp";
+import { useWhatsAppInstances, useSyncWhatsAppHistory, useSyncJob, useSyncJobCompletion, type SyncJob } from "@/hooks/whatsapp";
 import { RefreshCw, Pencil, Trash2, Copy, Link, Download, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { EditInstanceDialog } from "./EditInstanceDialog";
@@ -32,6 +32,43 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showSyncDialog, setShowSyncDialog] = useState(false);
+
+  const { data: syncJob } = useSyncJob(instance.id);
+
+  useSyncJobCompletion(instance.id, (job: SyncJob) => {
+    const chats = job.chats_synced ?? 0;
+    const msgs = job.messages_synced ?? 0;
+    const contacts = job.contacts_synced ?? 0;
+    const base = `${chats} conversas, ${msgs} mensagens e ${contacts} contatos sincronizados`;
+    if (job.status === 'failed') {
+      toast.error(job.error_message || `Sincronização falhou. ${base}.`);
+      return;
+    }
+    if (chats === 0 && contacts > 0) {
+      toast.info(
+        `Contatos importados (${contacts}). Nenhuma conversa disponível no Evolution ainda — o WhatsApp só envia histórico conforme novas mensagens chegam à instância.`,
+        {
+          duration: 12000,
+          action: {
+            label: "Ver contatos",
+            onClick: () => navigate(`/whatsapp/contatos?instance=${instance.id}`),
+          },
+        },
+      );
+      return;
+    }
+    toast.success(base, {
+      duration: 12000,
+      action: chats > 0
+        ? {
+            label: "Ver conversas",
+            onClick: () => navigate(`/whatsapp?instance=${instance.id}`),
+          }
+        : undefined,
+    });
+  });
+
+  const isSyncing = syncJob?.status === 'running' || syncHistory.isPending;
 
   const webhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/evolution-webhook`;
 
@@ -63,40 +100,10 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
     setShowSyncDialog(false);
     try {
       const result = await syncHistory.mutateAsync(instance.id);
-      const chats = result.chats_synced ?? 0;
-      const msgs = result.messages_synced ?? 0;
-      const contacts = result.contacts_synced ?? 0;
-      const warnCount = result.errors?.length ?? 0;
-      const base = `${chats} conversas, ${msgs} mensagens e ${contacts} contatos sincronizados`;
-      if (result.continued) {
-        toast.warning(result.message || `${base}. Sincronização pausada — execute novamente para continuar.`);
-        return;
-      }
-      if (chats === 0 && contacts > 0) {
-        toast.info(
-          `Contatos importados (${contacts}). Nenhuma conversa disponível no Evolution ainda — o WhatsApp só envia histórico conforme novas mensagens chegam à instância.`,
-          {
-            duration: 12000,
-            action: {
-              label: "Ver contatos",
-              onClick: () => navigate(`/whatsapp/contatos?instance=${instance.id}`),
-            },
-          }
-        );
-        return;
-      }
-      if (warnCount > 0) {
-        toast.warning(`${base} (${warnCount} avisos — veja console)`);
+      if (result.reused) {
+        toast.info("Sincronização já em andamento — acompanhando o progresso.");
       } else {
-        toast.success(base, {
-          duration: 12000,
-          action: chats > 0
-            ? {
-                label: "Ver conversas",
-                onClick: () => navigate(`/whatsapp?instance=${instance.id}`),
-              }
-            : undefined,
-        });
+        toast.success("Sincronização iniciada em background. Você pode fechar esta aba.");
       }
     } catch (error: any) {
       toast.error(error?.message || "Falha ao sincronizar histórico");
@@ -185,15 +192,20 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
             variant="outline"
             size="sm"
             onClick={() => setShowSyncDialog(true)}
-            disabled={instance.status !== "connected" || syncHistory.isPending}
-            title="Sincronizar histórico"
+            disabled={instance.status !== "connected" || isSyncing}
+            title={isSyncing ? "Sincronização em andamento" : "Sincronizar histórico"}
           >
-            {syncHistory.isPending ? (
+            {isSyncing ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <Download className="h-4 w-4" />
             )}
           </Button>
+          {syncJob?.status === 'running' && (
+            <span className="text-xs text-muted-foreground self-center">
+              Sincronizando… {syncJob.chats_synced} conv. / {syncJob.messages_synced} msgs / {syncJob.contacts_synced} contatos
+            </span>
+          )}
           <Button
             variant="outline"
             size="sm"
