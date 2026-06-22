@@ -405,12 +405,11 @@ async function scheduleContinuation(instanceId: string, jobId: string) {
   await new Promise((resolve) => setTimeout(resolve, SELF_CONTINUE_DELAY_MS));
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-  const apiKey = Deno.env.get('SUPABASE_ANON_KEY') || Deno.env.get('SUPABASE_PUBLISHABLE_KEY') || serviceRoleKey;
   const res = await fetch(`${supabaseUrl}/functions/v1/sync-whatsapp-history`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      apikey: apiKey,
+      apikey: serviceRoleKey,
       Authorization: `Bearer ${serviceRoleKey}`,
     },
     body: JSON.stringify({ instance_id: instanceId, job_id: jobId, internal: true }),
