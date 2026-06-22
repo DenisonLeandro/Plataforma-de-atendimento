@@ -902,6 +902,15 @@ export type Database = {
         Args: { _conversation_id: string; _user_id: string }
         Returns: boolean
       }
+      debug_auth: {
+        Args: never
+        Returns: {
+          is_admin: boolean
+          is_supervisor: boolean
+          jwt_role: string
+          jwt_uid: string
+        }[]
+      }
       get_assignable_agents: {
         Args: { _instance_id: string }
         Returns: {
