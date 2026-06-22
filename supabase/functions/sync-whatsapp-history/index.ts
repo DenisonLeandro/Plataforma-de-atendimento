@@ -39,7 +39,6 @@ interface SyncCursor {
 
 interface SyncRequest {
   instance_id: string;
-  cursor?: SyncCursor;
 }
 
 interface Diagnostic {
@@ -295,12 +294,136 @@ Deno.serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
 
-  const result = await runSync(supabase, body.instance_id, body.cursor || {});
-  return new Response(JSON.stringify(result), {
-    status: 200,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  });
+  // Identify caller (used to stamp started_by). Edge function deploys with
+  // verify_jwt=false; we extract the JWT manually to attribute the job.
+  let startedBy: string | null = null;
+  const authHeader = req.headers.get('Authorization') || '';
+  if (authHeader.startsWith('Bearer ')) {
+    const token = authHeader.slice('Bearer '.length);
+    try {
+      const claims = await supabase.auth.getClaims(token);
+      startedBy = claims.data?.claims?.sub ?? null;
+    } catch {
+      startedBy = null;
+    }
+  }
+
+  // Reuse an in-flight job for this instance if one is already running.
+  const { data: existing } = await supabase
+    .from('whatsapp_sync_jobs')
+    .select('id, status, chats_synced, messages_synced, contacts_synced')
+    .eq('instance_id', body.instance_id)
+    .eq('status', 'running')
+    .order('started_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (existing) {
+    return new Response(
+      JSON.stringify({ success: true, job_id: existing.id, status: 'running', reused: true, ...existing }),
+      { status: 202, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    );
+  }
+
+  const { data: job, error: jobErr } = await supabase
+    .from('whatsapp_sync_jobs')
+    .insert({
+      instance_id: body.instance_id,
+      status: 'running',
+      started_by: startedBy,
+      cursor: {},
+    })
+    .select('id')
+    .single();
+
+  if (jobErr || !job) {
+    return new Response(
+      JSON.stringify({ success: false, error: jobErr?.message || 'failed to create job' }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    );
+  }
+
+  // Run sync in the background — return 202 immediately so the browser
+  // doesn't have to babysit the loop.
+  // @ts-ignore EdgeRuntime is provided by Supabase Edge Runtime
+  EdgeRuntime.waitUntil(runSyncInBackground(supabase, body.instance_id, job.id));
+
+  return new Response(
+    JSON.stringify({ success: true, job_id: job.id, status: 'running' }),
+    { status: 202, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+  );
 });
+
+async function runSyncInBackground(supabase: any, instanceId: string, jobId: string) {
+  let cursor: SyncCursor = {};
+  let totals = { chats_synced: 0, messages_synced: 0, contacts_synced: 0 };
+  const startedAt = Date.now();
+  const MAX_TOTAL_MS = 25 * 60 * 1000; // hard upper bound for the whole job
+
+  try {
+    for (let chunk = 0; chunk < 500; chunk++) {
+      if (Date.now() - startedAt > MAX_TOTAL_MS) {
+        await supabase.from('whatsapp_sync_jobs').update({
+          status: 'failed',
+          error_message: 'Tempo limite global atingido. Execute novamente para continuar.',
+          finished_at: new Date().toISOString(),
+          ...totals,
+        }).eq('id', jobId);
+        return;
+      }
+
+      const result = await runSync(supabase, instanceId, cursor);
+      if (!result?.success) {
+        await supabase.from('whatsapp_sync_jobs').update({
+          status: 'failed',
+          error_message: result?.error || 'sync chunk failed',
+          finished_at: new Date().toISOString(),
+          chats_synced: totals.chats_synced + (result?.chats_synced || 0),
+          messages_synced: totals.messages_synced + (result?.messages_synced || 0),
+          contacts_synced: totals.contacts_synced + (result?.contacts_synced || 0),
+        }).eq('id', jobId);
+        return;
+      }
+
+      totals = {
+        chats_synced: totals.chats_synced + (result.chats_synced || 0),
+        messages_synced: totals.messages_synced + (result.messages_synced || 0),
+        contacts_synced: totals.contacts_synced + (result.contacts_synced || 0),
+      };
+
+      await supabase.from('whatsapp_sync_jobs').update({
+        cursor: result.next_cursor || {},
+        ...totals,
+      }).eq('id', jobId);
+
+      if (!result.continued || !result.next_cursor) {
+        await supabase.from('whatsapp_sync_jobs').update({
+          status: 'completed',
+          finished_at: new Date().toISOString(),
+          cursor: {},
+          ...totals,
+        }).eq('id', jobId);
+        return;
+      }
+
+      cursor = result.next_cursor as SyncCursor;
+    }
+
+    await supabase.from('whatsapp_sync_jobs').update({
+      status: 'failed',
+      error_message: 'Excedeu número máximo de chunks.',
+      finished_at: new Date().toISOString(),
+      ...totals,
+    }).eq('id', jobId);
+  } catch (e) {
+    await supabase.from('whatsapp_sync_jobs').update({
+      status: 'failed',
+      error_message: (e as Error).message,
+      finished_at: new Date().toISOString(),
+      ...totals,
+    }).eq('id', jobId);
+  }
+}
 
 async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {}): Promise<any> {
   const diagnostics: Diagnostic[] = [];
