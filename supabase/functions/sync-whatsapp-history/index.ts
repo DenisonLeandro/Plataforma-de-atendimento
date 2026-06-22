@@ -6,7 +6,6 @@ import {
   getMessageType,
   getMessageContent,
   isEditedMessage,
-  downloadAndUploadMedia,
 } from '../_shared/evolution-helpers.ts';
 
 const corsHeaders = {
@@ -21,6 +20,8 @@ const CONTACTS_PER_INVOCATION = 75;
 const CHATS_PER_INVOCATION = 10;
 const MAX_INVOCATION_MS = 25_000;
 const EVOLUTION_FETCH_TIMEOUT_MS = 20_000;
+const STALE_JOB_MS = 5 * 60 * 1000;
+const SELF_CONTINUE_DELAY_MS = 100;
 // Recent-history window. We want open conversations to show meaningful
 // context immediately, but we don't want to drown the sync in years of
 // archived chatter. Stop paginating a chat once we hit messages older than
@@ -29,6 +30,7 @@ const RECENT_WINDOW_SEC = 30 * 24 * 60 * 60;
 const MAX_MESSAGES_PER_CHAT = 200;
 
 interface SyncCursor {
+  chats_done?: boolean;
   contacts_done?: boolean;
   contact_index?: number;
   chat_index?: number;
@@ -39,6 +41,8 @@ interface SyncCursor {
 
 interface SyncRequest {
   instance_id: string;
+  job_id?: string;
+  internal?: boolean;
 }
 
 interface Diagnostic {
@@ -289,16 +293,15 @@ Deno.serve(async (req) => {
     );
   }
 
-  const supabase = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-  );
-
-  // Identify caller (used to stamp started_by). Edge function deploys with
-  // verify_jwt=false; we extract the JWT manually to attribute the job.
-  let startedBy: string | null = null;
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabase = createClient(supabaseUrl, serviceRoleKey);
   const authHeader = req.headers.get('Authorization') || '';
-  if (authHeader.startsWith('Bearer ')) {
+  const isInternal = body.internal === true && authHeader === `Bearer ${serviceRoleKey}`;
+
+  // Identify caller (used to stamp started_by and authorize manual starts).
+  let startedBy: string | null = null;
+  if (authHeader.startsWith('Bearer ') && !isInternal) {
     const token = authHeader.slice('Bearer '.length);
     try {
       const claims = await supabase.auth.getClaims(token);
@@ -308,10 +311,38 @@ Deno.serve(async (req) => {
     }
   }
 
-  // Reuse an in-flight job for this instance if one is already running.
+  if (isInternal && body.job_id) {
+    // @ts-ignore EdgeRuntime is provided by Supabase Edge Runtime
+    EdgeRuntime.waitUntil(processSyncChunk(supabase, body.instance_id, body.job_id));
+    return new Response(
+      JSON.stringify({ success: true, job_id: body.job_id, status: 'running', continued: true }),
+      { status: 202, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    );
+  }
+
+  if (!startedBy) {
+    return new Response(
+      JSON.stringify({ success: false, error: 'Usuário não autenticado' }),
+      { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    );
+  }
+
+  const { data: canSee, error: canSeeErr } = await supabase.rpc('can_user_see_instance', {
+    _user_id: startedBy,
+    _instance_id: body.instance_id,
+  });
+  if (canSeeErr || canSee !== true) {
+    return new Response(
+      JSON.stringify({ success: false, error: 'Sem permissão para sincronizar esta instância' }),
+      { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    );
+  }
+
+  // Reuse fresh jobs, but allow a stale job to be resumed. This prevents the
+  // UI from staying forever at "running" after an Edge Runtime shutdown.
   const { data: existing } = await supabase
     .from('whatsapp_sync_jobs')
-    .select('id, status, chats_synced, messages_synced, contacts_synced')
+    .select('id, status, chats_synced, messages_synced, contacts_synced, updated_at')
     .eq('instance_id', body.instance_id)
     .eq('status', 'running')
     .order('started_at', { ascending: false })
@@ -319,8 +350,25 @@ Deno.serve(async (req) => {
     .maybeSingle();
 
   if (existing) {
+    const updatedAtMs = existing.updated_at ? new Date(existing.updated_at).getTime() : 0;
+    const isStale = !updatedAtMs || Date.now() - updatedAtMs > STALE_JOB_MS;
+    if (!isStale) {
+      return new Response(
+        JSON.stringify({ success: true, job_id: existing.id, status: 'running', reused: true, ...existing }),
+        { status: 202, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    await supabase.from('whatsapp_sync_jobs').update({
+      error_message: null,
+      updated_at: new Date().toISOString(),
+      finished_at: null,
+    }).eq('id', existing.id);
+
+    // @ts-ignore EdgeRuntime is provided by Supabase Edge Runtime
+    EdgeRuntime.waitUntil(processSyncChunk(supabase, body.instance_id, existing.id));
     return new Response(
-      JSON.stringify({ success: true, job_id: existing.id, status: 'running', reused: true, ...existing }),
+      JSON.stringify({ success: true, job_id: existing.id, status: 'running', restarted: true, ...existing }),
       { status: 202, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
   }
@@ -343,10 +391,9 @@ Deno.serve(async (req) => {
     );
   }
 
-  // Run sync in the background — return 202 immediately so the browser
-  // doesn't have to babysit the loop.
+  // Process one short chunk now; continuation is scheduled by processSyncChunk.
   // @ts-ignore EdgeRuntime is provided by Supabase Edge Runtime
-  EdgeRuntime.waitUntil(runSyncInBackground(supabase, body.instance_id, job.id));
+  EdgeRuntime.waitUntil(processSyncChunk(supabase, body.instance_id, job.id));
 
   return new Response(
     JSON.stringify({ success: true, job_id: job.id, status: 'running' }),
@@ -354,65 +401,68 @@ Deno.serve(async (req) => {
   );
 });
 
-async function runSyncInBackground(supabase: any, instanceId: string, jobId: string) {
-  let cursor: SyncCursor = {};
-  let totals = { chats_synced: 0, messages_synced: 0, contacts_synced: 0 };
-  const startedAt = Date.now();
-  const MAX_TOTAL_MS = 25 * 60 * 1000; // hard upper bound for the whole job
+async function scheduleContinuation(instanceId: string, jobId: string) {
+  await new Promise((resolve) => setTimeout(resolve, SELF_CONTINUE_DELAY_MS));
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const res = await fetch(`${supabaseUrl}/functions/v1/sync-whatsapp-history`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: serviceRoleKey,
+      Authorization: `Bearer ${serviceRoleKey}`,
+    },
+    body: JSON.stringify({ instance_id: instanceId, job_id: jobId, internal: true }),
+  });
+  if (!res.ok) {
+    console.error('[sync-whatsapp-history] self-continuation failed:', res.status, await res.text().catch(() => ''));
+  }
+}
 
+async function processSyncChunk(supabase: any, instanceId: string, jobId: string) {
   try {
-    for (let chunk = 0; chunk < 500; chunk++) {
-      if (Date.now() - startedAt > MAX_TOTAL_MS) {
-        await supabase.from('whatsapp_sync_jobs').update({
-          status: 'failed',
-          error_message: 'Tempo limite global atingido. Execute novamente para continuar.',
-          finished_at: new Date().toISOString(),
-          ...totals,
-        }).eq('id', jobId);
-        return;
-      }
+    const { data: job, error: jobErr } = await supabase
+      .from('whatsapp_sync_jobs')
+      .select('id, status, cursor, chats_synced, messages_synced, contacts_synced')
+      .eq('id', jobId)
+      .eq('instance_id', instanceId)
+      .maybeSingle();
 
-      const result = await runSync(supabase, instanceId, cursor);
-      if (!result?.success) {
-        await supabase.from('whatsapp_sync_jobs').update({
-          status: 'failed',
-          error_message: result?.error || 'sync chunk failed',
-          finished_at: new Date().toISOString(),
-          chats_synced: totals.chats_synced + (result?.chats_synced || 0),
-          messages_synced: totals.messages_synced + (result?.messages_synced || 0),
-          contacts_synced: totals.contacts_synced + (result?.contacts_synced || 0),
-        }).eq('id', jobId);
-        return;
-      }
+    if (jobErr || !job || job.status !== 'running') return;
 
-      totals = {
-        chats_synced: totals.chats_synced + (result.chats_synced || 0),
-        messages_synced: totals.messages_synced + (result.messages_synced || 0),
-        contacts_synced: totals.contacts_synced + (result.contacts_synced || 0),
-      };
+    const result = await runSync(supabase, instanceId, (job.cursor || {}) as SyncCursor);
+    const totals = {
+      chats_synced: (job.chats_synced || 0) + (result?.chats_synced || 0),
+      messages_synced: (job.messages_synced || 0) + (result?.messages_synced || 0),
+      contacts_synced: (job.contacts_synced || 0) + (result?.contacts_synced || 0),
+    };
 
+    if (!result?.success) {
       await supabase.from('whatsapp_sync_jobs').update({
-        cursor: result.next_cursor || {},
+        status: 'failed',
+        error_message: result?.error || 'sync chunk failed',
+        finished_at: new Date().toISOString(),
         ...totals,
       }).eq('id', jobId);
+      return;
+    }
 
-      if (!result.continued || !result.next_cursor) {
-        await supabase.from('whatsapp_sync_jobs').update({
-          status: 'completed',
-          finished_at: new Date().toISOString(),
-          cursor: {},
-          ...totals,
-        }).eq('id', jobId);
-        return;
-      }
-
-      cursor = result.next_cursor as SyncCursor;
+    if (result.continued && result.next_cursor) {
+      await supabase.from('whatsapp_sync_jobs').update({
+        cursor: result.next_cursor,
+        error_message: null,
+        ...totals,
+      }).eq('id', jobId);
+      // @ts-ignore EdgeRuntime is provided by Supabase Edge Runtime
+      EdgeRuntime.waitUntil(scheduleContinuation(instanceId, jobId));
+      return;
     }
 
     await supabase.from('whatsapp_sync_jobs').update({
-      status: 'failed',
-      error_message: 'Excedeu número máximo de chunks.',
+      status: 'completed',
       finished_at: new Date().toISOString(),
+      cursor: {},
+      error_message: null,
       ...totals,
     }).eq('id', jobId);
   } catch (e) {
@@ -420,7 +470,6 @@ async function runSyncInBackground(supabase: any, instanceId: string, jobId: str
       status: 'failed',
       error_message: (e as Error).message,
       finished_at: new Date().toISOString(),
-      ...totals,
     }).eq('id', jobId);
   }
 }
@@ -472,7 +521,9 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
     };
 
     // ---- 1. Sync contacts (best-effort, chunked) ----
-    if (!cursor.contacts_done) {
+    // Contacts are now imported AFTER chats/messages. Importing thousands of
+    // contacts first made the user wait forever before any conversation showed.
+    if (cursor.chats_done && !cursor.contacts_done) {
       const url = `${apiUrl}/chat/findContacts/${instanceIdentifier}`;
       const d = await fetchWithDiagnostics('findContacts', url, {
         method: 'POST',
@@ -521,6 +572,7 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
           if (Date.now() - startedAt > MAX_INVOCATION_MS) {
             const next_cursor = {
               ...cursor,
+              chats_done: true,
               contact_index: startIndex + i + 1,
               contacts_done: false,
             };
@@ -532,6 +584,7 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
         if (startIndex + CONTACTS_PER_INVOCATION < list.length) {
           const next_cursor = {
             ...cursor,
+            chats_done: true,
             contact_index: startIndex + CONTACTS_PER_INVOCATION,
             contacts_done: false,
           };
@@ -539,10 +592,14 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
           return { success: true, continued: true, next_cursor, chats_synced, messages_synced, contacts_synced, diagnostics, errors };
         }
 
-        cursor = { ...cursor, contacts_done: true, contact_index: list.length, chat_index: cursor.chat_index || 0 };
+        cursor = { ...cursor, chats_done: true, contacts_done: true, contact_index: list.length, chat_index: cursor.chat_index || 0 };
       } else {
         errors.push({ error: `findContacts ${d.status}: ${d.rawSample.slice(0, 200)}` });
-        cursor = { ...cursor, contacts_done: true, chat_index: cursor.chat_index || 0 };
+        cursor = { ...cursor, chats_done: true, contacts_done: true, chat_index: cursor.chat_index || 0 };
+      }
+
+      if (cursor.chats_done && cursor.contacts_done) {
+        return { success: true, chats_synced, messages_synced, contacts_synced, diagnostics, errors };
       }
     }
 
@@ -743,21 +800,10 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
             if (mediaMessage && (!mediaMimetype || mediaMimetype === `${type}/*`)) {
               mediaMimetype = type === 'audio' ? 'audio/ogg; codecs=opus' : `${type}/*`;
             }
-            // Download + decrypt media through the same path as the live webhook
-            // (getBase64 → Storage) instead of storing the raw encrypted WhatsApp CDN URL.
-            // Returns null on failure → media_url stays null (grava NULL e segue).
+            // Historical sync must prioritize chat text and conversation context.
+            // Downloading/decrypting every old media file makes the background
+            // chunk exceed runtime limits; live webhooks still save media normally.
             let mediaUrl: string | null = null;
-            if (mediaMessage) {
-              mediaUrl = await downloadAndUploadMedia(
-                apiUrl,
-                apiKey,
-                instanceIdentifier,
-                { key, message },
-                supabase,
-                mediaMimetype,
-                providerType,
-              );
-            }
 
             const quotedMessageId =
               message.extendedTextMessage?.contextInfo?.stanzaId || null;
@@ -809,7 +855,9 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
             batch = [];
           }
           const next_cursor = {
-            contacts_done: true,
+            ...cursor,
+            chats_done: false,
+            contacts_done: cursor.contacts_done ?? false,
             contact_index: cursor.contact_index,
             chat_index: chatIndex,
             message_page: page,
@@ -865,7 +913,9 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
           batch = [];
         }
         const next_cursor = {
-          contacts_done: true,
+          ...cursor,
+          chats_done: false,
+          contacts_done: cursor.contacts_done ?? false,
           contact_index: cursor.contact_index,
           chat_index: chatIndex + 1,
           message_page: 1,
@@ -884,7 +934,9 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
         batch = [];
       }
       const next_cursor = {
-        contacts_done: true,
+        ...cursor,
+        chats_done: false,
+        contacts_done: cursor.contacts_done ?? false,
         contact_index: cursor.contact_index,
         chat_index: maxChatIndex,
         message_page: 1,
@@ -901,6 +953,21 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
       messages_synced += inserted;
       console.log(`[sync-whatsapp-history] final flush (${inserted}); total=${messages_synced}`);
       batch = [];
+    }
+
+    if (!cursor.contacts_done) {
+      const next_cursor = {
+        ...cursor,
+        chats_done: true,
+        contacts_done: false,
+        contact_index: cursor.contact_index || 0,
+        chat_index: chats.length,
+        message_page: 1,
+        message_offset: 0,
+        message_body_format: 'A' as const,
+      };
+      scheduleNextChunk(instanceId, next_cursor);
+      return { success: true, continued: true, next_cursor, chats_synced, messages_synced, contacts_synced, diagnostics, errors };
     }
 
     console.log('[sync-whatsapp-history] Done:', {
