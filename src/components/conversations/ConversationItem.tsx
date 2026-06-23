@@ -23,7 +23,7 @@ type Conversation = Tables<"whatsapp_conversations"> & {
     full_name: string;
     avatar_url: string | null;
   } | null;
-  instance?: { instance_name: string } | null;
+  instance?: { instance_name: string; name: string } | null;
 };
 
 interface ConversationItemProps {
@@ -214,9 +214,9 @@ const ConversationItem = ({
                 </span>
               </span>
             )}
-            {conversation.instance?.instance_name && (
+            {conversation.instance?.name && (
               <span className="text-[11px] font-medium text-muted-foreground truncate max-w-[160px] text-right leading-none">
-                {conversation.instance.instance_name}
+                {conversation.instance.name}
               </span>
             )}
           </div>
