@@ -206,9 +206,14 @@ Deno.serve(async (req) => {
       ? (body.content || '') 
       : (body.content || `Sent ${body.messageType}`);
 
+    // UPSERT em vez de INSERT: a Evolution dispara um webhook (messages.upsert)
+    // com o MESMO message_id da mensagem que acabamos de enviar. Se o webhook
+    // gravar a linha primeiro, um INSERT aqui violaria UNIQUE(conversation_id,
+    // message_id) e a mensagem apareceria como "falhou" mesmo já tendo sido
+    // entregue. Com onConflict apenas atualizamos a linha existente.
     const { data: savedMessage, error: saveError } = await supabase
       .from('whatsapp_messages')
-      .insert({
+      .upsert({
         conversation_id: body.conversationId,
         message_id: messageId,
         remote_jid: contact.phone_number,
@@ -223,6 +228,8 @@ Deno.serve(async (req) => {
         metadata: {
           fileName: body.fileName,
         },
+      }, {
+        onConflict: 'conversation_id,message_id',
       })
       .select()
       .single();

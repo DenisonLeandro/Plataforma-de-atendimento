@@ -690,7 +690,11 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
     // Create message timestamp
     const timestamp = new Date(messageTimestamp * 1000).toISOString();
 
-    // Save message
+    // Save message. Para mensagens enviadas por nós (fromMe), o
+    // send-whatsapp-message também grava a mesma linha (que usa UPSERT). Se essa
+    // gravação chegou primeiro, este INSERT bate na UNIQUE(conversation_id,
+    // message_id) e é apenas ignorado/logado — a linha original (com a media_url
+    // correta enviada pela plataforma) é preservada.
     const { error: messageError } = await supabase
       .from('whatsapp_messages')
       .insert({
