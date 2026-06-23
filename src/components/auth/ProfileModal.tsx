@@ -34,6 +34,7 @@ import {
 } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Camera, Loader2, KeyRound, Trash2 } from 'lucide-react';
+import { useSignedUrl } from '@/utils/signedUrl';
 
 interface ProfileModalProps {
   open: boolean;
