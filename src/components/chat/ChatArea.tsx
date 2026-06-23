@@ -24,11 +24,12 @@ export const ChatArea = ({ conversationId }: ChatAreaProps) => {
   const { profile } = useAuth();
 
   // Prefixa o nome do atendente logado em toda mensagem enviada ao cliente,
-  // para controle de quem respondeu (ex.: "Denison: bom dia"). Sem nome no
-  // perfil, ou para mídia sem legenda, mantém o conteúdo original.
-  const senderName = profile?.full_name?.trim();
+  // para controle de quem respondeu. Formato: "Denison:\n<mensagem>".
+  // Usa full_name; se vazio, cai para o trecho antes do @ do e-mail.
+  const senderName =
+    profile?.full_name?.trim() || profile?.email?.split("@")[0]?.trim();
   const withSender = (content?: string) =>
-    senderName && content?.trim() ? `${senderName}: ${content}` : content;
+    senderName && content?.trim() ? `${senderName}:\n${content}` : content;
 
   // Fetch conversation details including contact
   const { data: conversation } = useQuery({
