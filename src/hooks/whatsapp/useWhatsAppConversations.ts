@@ -116,6 +116,35 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
         isLastMessageFromMe: conv.last_message_is_from_me ?? undefined,
       }));
 
+      // Conversas transferidas de instâncias às quais o usuário não tem acesso
+      // direto vêm com `instance` nulo (o embed é bloqueado pela RLS de
+      // whatsapp_instances). Buscamos o nome da instância de origem via RPC
+      // (SECURITY DEFINER) só para esses casos, para exibir de onde a conversa é.
+      const missingInstanceIds = Array.from(
+        new Set(
+          result
+            .filter((c) => !c.instance && (c as any).instance_id)
+            .map((c) => (c as any).instance_id as string)
+        )
+      );
+
+      if (missingInstanceIds.length > 0) {
+        const { data: instNames } = await (supabase.rpc as any)('get_instance_names', {
+          _ids: missingInstanceIds,
+        });
+        const nameMap = new Map<string, { name: string | null; instance_name: string | null }>(
+          (instNames || []).map((r: any) => [r.id as string, { name: r.name, instance_name: r.instance_name }])
+        );
+        result = result.map((c) => {
+          const iid = (c as any).instance_id as string | undefined;
+          if (!c.instance && iid && nameMap.has(iid)) {
+            const r = nameMap.get(iid)!;
+            return { ...c, instance: { instance_name: r.instance_name ?? '', name: r.name ?? '' } };
+          }
+          return c;
+        });
+      }
+
       // Contadores consolidados em uma única RPC (não lidas + aguardando + total),
       // pulamos quando há busca textual (a RPC não filtra por search).
       let unreadCount = 0;

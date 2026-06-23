@@ -214,9 +214,9 @@ const ConversationItem = ({
                 </span>
               </span>
             )}
-            {conversation.instance?.name && (
+            {(conversation.instance?.name || conversation.instance?.instance_name) && (
               <span className="text-[11px] font-medium text-muted-foreground truncate max-w-[160px] text-right leading-none">
-                {conversation.instance.name}
+                {conversation.instance.name || conversation.instance.instance_name}
               </span>
             )}
           </div>
