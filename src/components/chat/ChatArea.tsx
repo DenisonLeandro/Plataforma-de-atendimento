@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useWhatsAppMessages, useWhatsAppSend, useWhatsAppSentiment } from "@/hooks/whatsapp";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { ChatHeader } from "./ChatHeader";
 import { MessagesContainer } from "./MessagesContainer";
 import { MessageInputContainer, MediaSendParams } from "./input";
@@ -20,6 +21,14 @@ export const ChatArea = ({ conversationId }: ChatAreaProps) => {
   const { sentiment, isAnalyzing, analyze } = useWhatsAppSentiment(conversationId);
   const sendMutation = useWhatsAppSend();
   const queryClient = useQueryClient();
+  const { profile } = useAuth();
+
+  // Prefixa o nome do atendente logado em toda mensagem enviada ao cliente,
+  // para controle de quem respondeu (ex.: "Denison: bom dia"). Sem nome no
+  // perfil, ou para mídia sem legenda, mantém o conteúdo original.
+  const senderName = profile?.full_name?.trim();
+  const withSender = (content?: string) =>
+    senderName && content?.trim() ? `${senderName}: ${content}` : content;
 
   // Fetch conversation details including contact
   const { data: conversation } = useQuery({
@@ -50,10 +59,10 @@ export const ChatArea = ({ conversationId }: ChatAreaProps) => {
 
   const handleSendText = (content: string, quotedMessageId?: string) => {
     if (!conversationId || !content.trim()) return;
-    
+
     sendMutation.mutate({
       conversationId,
-      content,
+      content: withSender(content),
       messageType: 'text',
       quotedMessageId,
     });
@@ -70,10 +79,11 @@ export const ChatArea = ({ conversationId }: ChatAreaProps) => {
 
   const handleSendMedia = (params: MediaSendParams) => {
     if (!conversationId) return;
-    
+
     sendMutation.mutate({
       conversationId,
       ...params,
+      content: withSender(params.content),
     });
   };
 
