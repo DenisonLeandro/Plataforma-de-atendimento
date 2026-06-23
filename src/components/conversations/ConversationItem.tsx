@@ -201,24 +201,22 @@ const ConversationItem = ({
             )}
           </div>
 
-          {/* Meta column: timestamp + assignee */}
+          {/* Meta column: timestamp + assignee + instance */}
           <div className="flex flex-col items-end gap-1.5 shrink-0 min-w-[56px]">
             <span className="text-[11px] font-medium text-muted-foreground tabular-nums leading-none">
               {formatTimestamp(lastMessageTime)}
             </span>
-            {(conversation.assigned_profile?.full_name || conversation.instance?.instance_name) && (
+            {conversation.assigned_profile?.full_name && (
               <span className="inline-flex items-center gap-1 h-5 px-2 rounded-full bg-muted text-muted-foreground text-[11px] font-medium max-w-[160px]">
-                {conversation.assigned_profile?.full_name && (
-                  <User className="h-2.5 w-2.5 shrink-0" />
-                )}
+                <User className="h-2.5 w-2.5 shrink-0" />
                 <span className="truncate">
-                  {[
-                    conversation.assigned_profile?.full_name?.split(" ")[0],
-                    conversation.instance?.instance_name,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
+                  {conversation.assigned_profile.full_name.split(" ")[0]}
                 </span>
+              </span>
+            )}
+            {conversation.instance?.instance_name && (
+              <span className="text-[11px] font-medium text-muted-foreground truncate max-w-[160px] text-right leading-none">
+                {conversation.instance.instance_name}
               </span>
             )}
           </div>
