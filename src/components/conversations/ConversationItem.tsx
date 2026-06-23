@@ -23,6 +23,7 @@ type Conversation = Tables<"whatsapp_conversations"> & {
     full_name: string;
     avatar_url: string | null;
   } | null;
+  instance?: { instance_name: string } | null;
 };
 
 interface ConversationItemProps {
@@ -205,11 +206,18 @@ const ConversationItem = ({
             <span className="text-[11px] font-medium text-muted-foreground tabular-nums leading-none">
               {formatTimestamp(lastMessageTime)}
             </span>
-            {conversation.assigned_to && conversation.assigned_profile?.full_name && (
-              <span className="inline-flex items-center gap-1 h-5 px-2 rounded-full bg-muted text-muted-foreground text-[11px] font-medium max-w-[90px]">
-                <User className="h-2.5 w-2.5 shrink-0" />
+            {(conversation.assigned_profile?.full_name || conversation.instance?.instance_name) && (
+              <span className="inline-flex items-center gap-1 h-5 px-2 rounded-full bg-muted text-muted-foreground text-[11px] font-medium max-w-[160px]">
+                {conversation.assigned_profile?.full_name && (
+                  <User className="h-2.5 w-2.5 shrink-0" />
+                )}
                 <span className="truncate">
-                  {conversation.assigned_profile.full_name.split(" ")[0]}
+                  {[
+                    conversation.assigned_profile?.full_name?.split(" ")[0],
+                    conversation.instance?.instance_name,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
                 </span>
               </span>
             )}
