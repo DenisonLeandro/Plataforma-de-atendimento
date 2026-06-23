@@ -1,21 +1,22 @@
-## Problema
+## Encerrar conversas antigas — Cinco Conjuntos
 
-No filtro "Personalizado" do Relatório WhatsApp, o calendário não permite selecionar 2 datas (intervalo). Identifiquei 2 causas em `src/components/reports/DateRangeFilter.tsx`:
+Vou encerrar em massa todas as conversas ativas da instância **Advocacia Cinco Conjuntos** cuja última mensagem é do dia **19/06/2026** ou anterior (horário de Brasília).
 
-1. **`onSelect` só aceita seleção completa** — o callback só chama `setCustomRange` quando `range.from` E `range.to` existem. No modo `range` do `react-day-picker`, o primeiro clique define apenas `from` (sem `to`). Como o estado local nunca é atualizado, o segundo clique é tratado como uma nova seleção inicial, criando um loop em que nunca se consegue fechar o intervalo.
-2. **Falta `pointer-events-auto`** no Calendar dentro do Popover (padrão Shadcn), o que em alguns casos bloqueia cliques nos dias.
+### O que será feito
+- Marcar **96 conversas** atualmente "ativas" como **encerradas** (status `closed`).
+- Filtro: `instance_id = a369a4f6-f7e4-41c3-a80b-d03e2248fa76` e `last_message_at < 20/06/2026 00:00 (BRT)`.
+- Conversas já encerradas e arquivadas não são tocadas.
+- Conversas novas (de 20/06 em diante) permanecem ativas.
 
-## Correção
+### Observações
+- A ação é apenas uma atualização de status no banco — nenhuma mensagem é apagada e a conversa pode ser reaberta depois pelo menu da conversa.
+- Não altero código nem regras do app; é uma operação pontual de limpeza.
 
-Editar apenas `src/components/reports/DateRangeFilter.tsx`:
-
-- Trocar o estado controlado do Calendar para usar `DateRange` parcial (permitir `from` sem `to`).
-- Atualizar `setCustomRange` para aceitar/representar o intervalo parcial enquanto o usuário escolhe a 2ª data, e só ativar o período `'custom'` quando `from` e `to` estiverem definidos.
-- Adicionar `className="pointer-events-auto"` no `<Calendar>`.
-- Adicionar `initialFocus` e `defaultMonth` (mês da data `from` se houver) para melhor UX.
-
-Tipos: ampliar `customRange` em `WhatsAppRelatorio.tsx` e na prop do componente para `{ from: Date; to?: Date } | null` (ou manter o tipo atual e armazenar o parcial em estado interno do componente — preferir essa opção para não tocar em `WhatsAppRelatorio.tsx`).
-
-### Escopo
-- 1 arquivo alterado: `src/components/reports/DateRangeFilter.tsx`.
-- Sem mudanças em backend, hooks ou métricas.
+### SQL (detalhe técnico)
+```sql
+UPDATE whatsapp_conversations
+SET status = 'closed', updated_at = now()
+WHERE instance_id = 'a369a4f6-f7e4-41c3-a80b-d03e2248fa76'
+  AND status = 'active'
+  AND last_message_at < '2026-06-20 03:00:00+00';
+```
