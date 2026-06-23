@@ -25,9 +25,14 @@ export const ChatArea = ({ conversationId }: ChatAreaProps) => {
 
   // Prefixa o nome do atendente logado em toda mensagem enviada ao cliente,
   // para controle de quem respondeu. Formato: "Denison:\n<mensagem>".
-  // Usa full_name; se vazio, cai para o trecho antes do @ do e-mail.
-  const senderName =
-    profile?.full_name?.trim() || profile?.email?.split("@")[0]?.trim();
+  // Usa só o PRIMEIRO nome, formatado (ex.: "DENISON HENRIQUE" -> "Denison").
+  // Se full_name estiver vazio, cai para o trecho antes do @ do e-mail.
+  const rawName =
+    profile?.full_name?.trim() || profile?.email?.split("@")[0]?.trim() || "";
+  const firstName = rawName.split(/\s+/)[0] ?? "";
+  const senderName = firstName
+    ? firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase()
+    : undefined;
   const withSender = (content?: string) =>
     senderName && content?.trim() ? `${senderName}:\n${content}` : content;
 
