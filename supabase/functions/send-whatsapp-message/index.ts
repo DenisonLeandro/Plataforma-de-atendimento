@@ -128,11 +128,18 @@ Deno.serve(async (req) => {
       body.mediaUrl
     ) {
       try {
-        body.mediaBase64 = await fetchMediaAsBase64(body.mediaUrl);
+        body.mediaBase64 = await fetchMediaAsBase64(body.mediaUrl, supabase);
         console.log('[send-whatsapp-message] Media converted to base64, length:', body.mediaBase64.length);
       } catch (mediaError) {
-        // Se a conversão falhar, seguimos com a URL (comportamento anterior).
-        console.error('[send-whatsapp-message] Failed to convert media to base64, falling back to URL:', mediaError);
+        // Bucket é privado: sem base64 a Evolution não consegue baixar o arquivo.
+        console.error('[send-whatsapp-message] Failed to convert media to base64:', mediaError);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: `Não foi possível ler o arquivo do storage: ${mediaError instanceof Error ? mediaError.message : 'erro desconhecido'}`,
+          }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
     }
 
@@ -255,12 +262,26 @@ Deno.serve(async (req) => {
   }
 });
 
-async function fetchMediaAsBase64(url: string): Promise<string> {
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`Failed to fetch media from storage: ${res.status}`);
+async function fetchMediaAsBase64(url: string, supabase: any): Promise<string> {
+  let bytes: Uint8Array | null = null;
+
+  // Se for uma URL do Supabase Storage, baixa autenticado (bucket pode ser privado)
+  const storageMatch = url.match(/\/storage\/v1\/object\/(?:public|sign|authenticated)\/([^/]+)\/(.+?)(\?|$)/);
+  if (storageMatch) {
+    const bucket = storageMatch[1];
+    const path = decodeURIComponent(storageMatch[2]);
+    const { data, error } = await supabase.storage.from(bucket).download(path);
+    if (error || !data) {
+      throw new Error(`Storage download failed: ${error?.message || 'no data'}`);
+    }
+    bytes = new Uint8Array(await data.arrayBuffer());
+  } else {
+    const res = await fetch(url);
+    if (!res.ok) {
+      throw new Error(`Failed to fetch media: ${res.status}`);
+    }
+    bytes = new Uint8Array(await res.arrayBuffer());
   }
-  const bytes = new Uint8Array(await res.arrayBuffer());
 
   // Converte em chunks para não estourar o stack do String.fromCharCode
   let binary = '';
