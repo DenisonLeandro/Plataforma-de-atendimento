@@ -83,8 +83,8 @@ Deno.serve(async (req) => {
 
     if (convError || !conversation) {
       console.error('[send] Conversation not found:', convError);
-      return new Response(JSON.stringify({ error: 'Conversation not found' }), {
-        status: 200,
+      return new Response(JSON.stringify({ success: false, error: 'Conversation not found' }), {
+        status: 404,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
@@ -98,8 +98,8 @@ Deno.serve(async (req) => {
 
     if (secretsError || !secrets) {
       console.error('[send] Failed to fetch instance secrets:', secretsError);
-      return new Response(JSON.stringify({ error: 'Instance secrets not found' }), {
-        status: 200,
+      return new Response(JSON.stringify({ success: false, error: 'Instance secrets not found' }), {
+        status: 404,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
@@ -118,6 +118,23 @@ Deno.serve(async (req) => {
 
     // Determine destination number format
     const destinationNumber = getDestinationNumber(contact.phone_number);
+
+    // Para mensagens de mídia, baixamos o arquivo do Storage e enviamos como
+    // base64. Isso evita que o envio falhe quando a Evolution API não consegue
+    // acessar a URL pública do Supabase (causa comum do "arquivo somindo").
+    if (
+      body.messageType !== 'text' &&
+      !body.mediaBase64 &&
+      body.mediaUrl
+    ) {
+      try {
+        body.mediaBase64 = await fetchMediaAsBase64(body.mediaUrl);
+        console.log('[send-whatsapp-message] Media converted to base64, length:', body.mediaBase64.length);
+      } catch (mediaError) {
+        // Se a conversão falhar, seguimos com a URL (comportamento anterior).
+        console.error('[send-whatsapp-message] Failed to convert media to base64, falling back to URL:', mediaError);
+      }
+    }
 
     // Build request for Evolution API
     const { endpoint, requestBody } = buildEvolutionRequest(
@@ -144,10 +161,13 @@ Deno.serve(async (req) => {
 
     if (!evolutionResponse.ok) {
       const errorText = await evolutionResponse.text();
-      console.error('[send-whatsapp-message] Evolution API error:', errorText);
+      console.error('[send-whatsapp-message] Evolution API error:', evolutionResponse.status, errorText);
       return new Response(
-        JSON.stringify({ success: false, error: 'Failed to send message via Evolution API' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({
+          success: false,
+          error: `Evolution API (${evolutionResponse.status}): ${errorText || 'falha ao enviar mensagem'}`,
+        }),
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -203,7 +223,7 @@ Deno.serve(async (req) => {
     if (saveError) {
       console.error('[send-whatsapp-message] Error saving message:', saveError);
       return new Response(
-        JSON.stringify({ success: false, error: 'Failed to save message' }),
+        JSON.stringify({ success: false, error: `Failed to save message: ${saveError.message}` }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -227,12 +247,29 @@ Deno.serve(async (req) => {
 
   } catch (error) {
     console.error('[send-whatsapp-message] Unexpected error:', error);
+    const message = error instanceof Error ? error.message : 'Internal server error';
     return new Response(
-      JSON.stringify({ success: false, error: 'Internal server error' }),
+      JSON.stringify({ success: false, error: message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 });
+
+async function fetchMediaAsBase64(url: string): Promise<string> {
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch media from storage: ${res.status}`);
+  }
+  const bytes = new Uint8Array(await res.arrayBuffer());
+
+  // Converte em chunks para não estourar o stack do String.fromCharCode
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
 
 function getDestinationNumber(phoneNumber: string): string {
   // If phone ends with @lid (LinkedIn format), use complete format
