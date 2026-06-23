@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
@@ -21,6 +22,16 @@ export function DateRangeFilter({
   customRange,
   setCustomRange
 }: DateRangeFilterProps) {
+  const [draftRange, setDraftRange] = useState<DateRange | undefined>(
+    customRange ? { from: customRange.from, to: customRange.to } : undefined
+  );
+
+  useEffect(() => {
+    if (customRange) {
+      setDraftRange({ from: customRange.from, to: customRange.to });
+    }
+  }, [customRange]);
+
   return (
     <div className="flex items-center gap-2 flex-wrap">
       {(['today', 'yesterday', 'last7days', 'last30days'] as FilterPeriod[]).map((period) => (
@@ -47,14 +58,18 @@ export function DateRangeFilter({
         <PopoverContent className="w-auto p-0" align="start">
           <Calendar
             mode="range"
-            selected={customRange ? { from: customRange.from, to: customRange.to } : undefined}
+            defaultMonth={draftRange?.from ?? customRange?.from}
+            selected={draftRange}
             onSelect={(range: DateRange | undefined) => {
+              setDraftRange(range);
               if (range?.from && range?.to) {
                 setCustomRange({ from: range.from, to: range.to });
                 setSelectedPeriod('custom');
               }
             }}
             numberOfMonths={2}
+            initialFocus
+            className="pointer-events-auto"
           />
         </PopoverContent>
       </Popover>
