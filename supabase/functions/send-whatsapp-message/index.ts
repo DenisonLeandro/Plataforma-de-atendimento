@@ -219,7 +219,11 @@ Deno.serve(async (req) => {
         remote_jid: contact.phone_number,
         content: messageContent,
         message_type: body.messageType,
-        media_url: extractedMediaUrl || body.mediaUrl || null,
+        // Preferimos a nossa cópia no Storage (renderizável via signed URL). O
+        // extractedMediaUrl é o link cru do CDN do WhatsApp (.enc), que o
+        // frontend trata como "mídia indisponível" — só serve de fallback
+        // quando não temos URL própria (ex.: áudio gravado enviado em base64).
+        media_url: body.mediaUrl || extractedMediaUrl || null,
         media_mimetype: body.mediaMimetype || null,
         status: 'sent',
         is_from_me: true,
