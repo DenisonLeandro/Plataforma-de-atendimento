@@ -75,7 +75,7 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
           contact:whatsapp_contacts(*),
           assigned_profile:profiles(id, full_name, avatar_url),
           instance:whatsapp_instances(instance_name, name)
-        `)
+        `, { count: 'planned' })
         .order('last_message_at', { ascending: false, nullsFirst: false })
         .range(from, to);
 
@@ -101,7 +101,7 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
 
       query = applySearch(query as any) as typeof query;
 
-      const { data: conversationsData, error } = await query;
+      const { data: conversationsData, error, count: listCount } = await query;
 
       if (error) {
         console.error('[useWhatsAppConversations] query error:', error);
@@ -110,82 +110,33 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
 
       let result = conversationsData as unknown as ConversationWithContact[];
 
-      // Query 2: Get total count (without pagination)
-      let countQuery = supabase
-        .from('whatsapp_conversations')
-        .select('*', { count: 'exact', head: true });
-
-      if (filters?.instanceId) {
-        countQuery = countQuery.eq('instance_id', filters.instanceId);
-      }
-
-      if (filters?.status) {
-        countQuery = countQuery.eq('status', filters.status);
-      }
-
-      if (filters?.statusIn && filters.statusIn.length > 0) {
-        countQuery = countQuery.in('status', filters.statusIn);
-      }
-
-      if (filters?.assignedTo) {
-        countQuery = countQuery.eq('assigned_to', filters.assignedTo);
-      }
-
-      if (filters?.unassigned) {
-        countQuery = countQuery.is('assigned_to', null);
-      }
-
-      countQuery = applySearch(countQuery as any) as typeof countQuery;
-
-      const { count: totalCount } = await countQuery;
-
-      // Query 3: Get unread count (all conversations)
-      let unreadQuery = supabase
-        .from('whatsapp_conversations')
-        .select('unread_count', { count: 'exact' })
-        .gt('unread_count', 0);
-
-      if (filters?.instanceId) {
-        unreadQuery = unreadQuery.eq('instance_id', filters.instanceId);
-      }
-
-      if (filters?.status) {
-        unreadQuery = unreadQuery.eq('status', filters.status);
-      }
-
-      if (filters?.statusIn && filters.statusIn.length > 0) {
-        unreadQuery = unreadQuery.in('status', filters.statusIn);
-      }
-
-      if (filters?.assignedTo) {
-        unreadQuery = unreadQuery.eq('assigned_to', filters.assignedTo);
-      }
-
-      if (filters?.unassigned) {
-        unreadQuery = unreadQuery.is('assigned_to', null);
-      }
-
-      const { count: unreadCount } = await unreadQuery;
-
       // Usa a coluna persistida em vez de varrer todas as mensagens.
       result = result.map(conv => ({
         ...conv,
         isLastMessageFromMe: conv.last_message_is_from_me ?? undefined,
       }));
 
-      // waitingCount: conversas onde a última mensagem é do cliente.
-      let waitingQuery = supabase
-        .from('whatsapp_conversations')
-        .select('id', { count: 'exact', head: true })
-        .eq('last_message_is_from_me', false);
+      // Contadores consolidados em uma única RPC (não lidas + aguardando + total),
+      // pulamos quando há busca textual (a RPC não filtra por search).
+      let unreadCount = 0;
+      let waitingCount = 0;
+      let totalCount = listCount ?? 0;
 
-      if (filters?.instanceId) waitingQuery = waitingQuery.eq('instance_id', filters.instanceId);
-      if (filters?.status) waitingQuery = waitingQuery.eq('status', filters.status);
-      if (filters?.statusIn && filters.statusIn.length > 0) waitingQuery = waitingQuery.in('status', filters.statusIn);
-      if (filters?.assignedTo) waitingQuery = waitingQuery.eq('assigned_to', filters.assignedTo);
-      if (filters?.unassigned) waitingQuery = waitingQuery.is('assigned_to', null);
-
-      const { count: waitingCount } = await waitingQuery;
+      if (!searchTerm) {
+        const { data: counters } = await supabase.rpc('get_conversation_counters', {
+          _instance_id: filters?.instanceId ?? null,
+          _status: filters?.status ?? null,
+          _status_in: filters?.statusIn && filters.statusIn.length > 0 ? filters.statusIn : null,
+          _assigned_to: filters?.assignedTo ?? null,
+          _unassigned: filters?.unassigned ?? false,
+        });
+        const row = Array.isArray(counters) ? counters[0] : counters;
+        if (row) {
+          unreadCount = Number(row.unread_count) || 0;
+          waitingCount = Number(row.waiting_count) || 0;
+          totalCount = Number(row.total_count) || totalCount;
+        }
+      }
 
       const totalPages = Math.ceil((totalCount || 0) / pageSize);
 
@@ -197,7 +148,8 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
         waitingCount: waitingCount || 0,
       } as ConversationsResult;
     },
-    staleTime: 30_000,
+    staleTime: 60_000,
+    gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,
   });
 
@@ -210,7 +162,7 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
       timeout = setTimeout(() => {
         timeout = null;
         queryClient.invalidateQueries({ queryKey: ['whatsapp', 'conversations'] });
-      }, 1500);
+      }, 3000);
     };
 
     // Filtrar a subscription por instância quando aplicável, para não receber
