@@ -16,6 +16,7 @@ import { DeactivateMemberDialog } from "./DeactivateMemberDialog";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
+import { useSignedUrl } from "@/utils/signedUrl";
 
 interface TeamMemberRowProps {
   member: TeamMember;
@@ -38,6 +39,7 @@ export const TeamMemberRow = ({ member }: TeamMemberRowProps) => {
   const [showChangeRoleDialog, setShowChangeRoleDialog] = useState(false);
   const [showDeactivateDialog, setShowDeactivateDialog] = useState(false);
   const { approveUser, isApprovingUser } = useTeamManagement();
+  const signedAvatar = useSignedUrl(member.avatar_url || null);
 
   const handleApprove = async () => {
     try {
@@ -64,7 +66,7 @@ export const TeamMemberRow = ({ member }: TeamMemberRowProps) => {
         <TableCell>
           <div className="flex items-center gap-3">
             <Avatar>
-              <AvatarImage src={member.avatar_url || undefined} />
+              <AvatarImage src={signedAvatar} />
               <AvatarFallback className="bg-primary/10 text-primary">
                 {initials}
               </AvatarFallback>

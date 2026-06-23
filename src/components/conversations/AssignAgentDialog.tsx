@@ -16,6 +16,25 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { useAssignableAgents } from '@/hooks/useAssignableAgents';
 import { useConversationAssignment } from '@/hooks/whatsapp/useConversationAssignment';
 import { MessageSquare, Circle } from 'lucide-react';
+import { useSignedUrl } from '@/utils/signedUrl';
+
+function AgentAvatar({
+  url,
+  initials,
+}: {
+  url: string | null | undefined;
+  initials: string;
+}) {
+  const signed = useSignedUrl(url ?? null);
+  return (
+    <Avatar className="h-10 w-10">
+      <AvatarImage src={signed} />
+      <AvatarFallback className="bg-primary/10 text-primary">
+        {initials}
+      </AvatarFallback>
+    </Avatar>
+  );
+}
 
 interface AssignAgentDialogProps {
   open: boolean;
@@ -129,12 +148,10 @@ export function AssignAgentDialog({
                   `}
                 >
                   <div className="flex items-center gap-3">
-                    <Avatar className="h-10 w-10">
-                      <AvatarImage src={agent.avatar_url || undefined} />
-                      <AvatarFallback className="bg-primary/10 text-primary">
-                        {getInitials(agent.full_name)}
-                      </AvatarFallback>
-                    </Avatar>
+                    <AgentAvatar
+                      url={agent.avatar_url}
+                      initials={getInitials(agent.full_name)}
+                    />
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">

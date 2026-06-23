@@ -18,6 +18,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { AudioMessagePlayer } from "./AudioMessagePlayer";
 import { isRawWhatsAppMediaUrl } from "@/utils/mediaUtils";
+import { useSignedUrl } from "@/utils/signedUrl";
 
 type Message = Tables<'whatsapp_messages'>;
 type Reaction = Tables<'whatsapp_reactions'>;
@@ -41,6 +42,9 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
   const editMessage = useEditMessage();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  // Stored media URLs point at a now-private bucket. Sign on the fly so
+  // <img>/<video>/<a> tags can fetch the file.
+  const signedMediaUrl = useSignedUrl(message.media_url ?? null);
 
   const mediaTypes = ['audio', 'image', 'video', 'document', 'sticker'];
   const isMissingMedia =
@@ -199,10 +203,10 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
           <div className="space-y-2">
             {message.media_url && (
               <img
-                src={message.media_url}
+                src={signedMediaUrl}
                 alt="Imagem"
                 className="max-w-xs rounded-md cursor-pointer hover:opacity-90 transition-opacity"
-                onClick={() => setViewerImage(message.media_url)}
+                onClick={() => setViewerImage(signedMediaUrl ?? null)}
               />
             )}
             {message.content && <p className="text-sm">{message.content}</p>}
@@ -214,10 +218,10 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
           <div>
             {message.media_url && (
               <img
-                src={message.media_url}
+                src={signedMediaUrl}
                 alt="Sticker"
                 className="max-w-[150px] cursor-pointer hover:scale-105 transition-transform"
-                onClick={() => setViewerImage(message.media_url)}
+                onClick={() => setViewerImage(signedMediaUrl ?? null)}
               />
             )}
           </div>
@@ -225,11 +229,11 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
       
       case 'audio':
         return (
-          message.media_url ? (
+          message.media_url && signedMediaUrl ? (
             <AudioMessagePlayer
               messageId={message.id}
               conversationId={message.conversation_id}
-              mediaUrl={message.media_url}
+              mediaUrl={signedMediaUrl}
               mimetype={message.media_mimetype}
               transcription={(message as any).audio_transcription}
               transcriptionStatus={(message as any).transcription_status}
@@ -243,7 +247,7 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
           <div className="space-y-2">
             {message.media_url && (
               <video controls className="max-w-xs rounded-md">
-                <source src={message.media_url} type={message.media_mimetype || 'video/mp4'} />
+                <source src={signedMediaUrl} type={message.media_mimetype || 'video/mp4'} />
               </video>
             )}
             {message.content && <p className="text-sm">{message.content}</p>}
@@ -255,7 +259,7 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
           <div className="space-y-2">
             {message.media_url && (
               <a
-                href={message.media_url}
+                href={signedMediaUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-2 text-sm underline"

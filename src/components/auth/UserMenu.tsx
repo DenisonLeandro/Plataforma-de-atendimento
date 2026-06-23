@@ -13,6 +13,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { LogOut, User as UserIcon, Circle } from 'lucide-react';
 import { ProfileModal } from './ProfileModal';
+import { useSignedUrl } from '@/utils/signedUrl';
 
 const statusColors = {
   online: 'bg-green-500',
@@ -31,6 +32,7 @@ export function UserMenu() {
   const { profile, role, signOut } = useAuth();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const navigate = useNavigate();
+  const signedAvatar = useSignedUrl(profile?.avatar_url ?? null);
 
   const handleSignOut = async () => {
     await signOut();
@@ -54,7 +56,7 @@ export function UserMenu() {
         <button className="flex items-center gap-3 hover:bg-accent/50 rounded-lg p-2 transition-colors">
           <div className="relative">
             <Avatar className="h-10 w-10 border-2 border-border">
-              <AvatarImage src={profile.avatar_url || undefined} alt={profile.full_name} />
+              <AvatarImage src={signedAvatar} alt={profile.full_name} />
               <AvatarFallback className="bg-primary text-primary-foreground font-semibold">
                 {initials}
               </AvatarFallback>

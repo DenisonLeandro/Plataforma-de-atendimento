@@ -34,6 +34,7 @@ import {
 } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Camera, Loader2, KeyRound, Trash2 } from 'lucide-react';
+import { useSignedUrl } from '@/utils/signedUrl';
 
 interface ProfileModalProps {
   open: boolean;
@@ -59,6 +60,7 @@ export function ProfileModal({ open, onOpenChange }: ProfileModalProps) {
     (profile?.status as 'online' | 'offline' | 'away' | 'busy') || 'online'
   );
   const [avatarUrl, setAvatarUrl] = useState(profile?.avatar_url || '');
+  const signedAvatar = useSignedUrl(avatarUrl || null);
   const [isUploading, setIsUploading] = useState(false);
 
   const [newPassword, setNewPassword] = useState('');
@@ -187,7 +189,7 @@ export function ProfileModal({ open, onOpenChange }: ProfileModalProps) {
           {/* Avatar Section */}
           <div className="flex items-center gap-4">
             <Avatar className="h-20 w-20 border-2 border-border">
-              <AvatarImage src={avatarUrl || undefined} alt={fullName} />
+              <AvatarImage src={signedAvatar} alt={fullName} />
               <AvatarFallback className="bg-primary text-primary-foreground text-xl font-semibold">
                 {initials}
               </AvatarFallback>
