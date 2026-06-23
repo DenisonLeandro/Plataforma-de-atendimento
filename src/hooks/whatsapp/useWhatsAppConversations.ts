@@ -9,7 +9,7 @@ type Contact = Tables<'whatsapp_contacts'>;
 interface ConversationWithContact extends Conversation {
   contact: Contact;
   isLastMessageFromMe?: boolean;
-  instance?: { instance_name: string } | null;
+  instance?: { instance_name: string; name: string } | null;
 }
 
 interface ConversationsFilters {
@@ -74,7 +74,7 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
           *,
           contact:whatsapp_contacts(*),
           assigned_profile:profiles(id, full_name, avatar_url),
-          instance:whatsapp_instances(instance_name)
+          instance:whatsapp_instances(instance_name, name)
         `)
         .order('last_message_at', { ascending: false, nullsFirst: false })
         .range(from, to);
