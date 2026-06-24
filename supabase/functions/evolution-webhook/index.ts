@@ -776,6 +776,21 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
         console.log(`[evolution-webhook] Auto-reopened closed conversation ${conversationId}`);
       }
     }
+    else {
+      // Mensagem enviada pelo próprio número (agente respondeu pelo celular ou
+      // echo do Evolution). Mantém paridade com o branch !fromMe: reabre, mas
+      // NÃO reatribui — quem enviou já é o responsável.
+      const { data: currentConvFromMe } = await supabase
+        .from('whatsapp_conversations')
+        .select('status')
+        .eq('id', conversationId)
+        .single();
+
+      if (currentConvFromMe?.status === 'closed') {
+        updateData.status = 'active';
+        console.log(`[evolution-webhook] Auto-reopened closed conversation (fromMe) ${conversationId}`);
+      }
+    }
 
     const { error: updateError } = await supabase
       .from('whatsapp_conversations')
