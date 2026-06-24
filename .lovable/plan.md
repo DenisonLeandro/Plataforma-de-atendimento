@@ -1,44 +1,36 @@
+# Encerramento em massa — Advocacia Ibiporã
+
 ## Diagnóstico
 
-O erro persistente de tela branca é compatível com uma falha de inicialização do cliente de backend no primeiro carregamento do JavaScript.
+Olhei a instância **Advocacia Ibiporã** no banco e confirmei o cenário:
 
-O ponto crítico está em `src/integrations/supabase/client.ts`: o app cria o cliente usando `import.meta.env.VITE_SUPABASE_URL` e `import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY`. Se qualquer uma dessas variáveis não entra no build publicado, a biblioteca lança erro antes do React montar a interface, resultando em tela branca.
+- **136 conversas ativas** nessa instância.
+- Dessas, **128 estão sem atendente atribuído** e só **8 estão atribuídas ao Leonardo**.
+- Como o Leonardo é admin/atendente da instância, ele enxerga tanto as 8 dele quanto a fila das 128 não atribuídas — por isso "todas" parecem estar abertas para ele.
+- **125 das 136 ativas** têm a última mensagem em **23/06 ou antes** (são essas que vamos encerrar).
+- **Duplicadas**: confirmei várias (Luiz, Ana, Bia, Franklin, Paulo, Nando, etc.). Os pares sempre têm um número "normal" (`5543...`) e um número longo estranho (`19895...`, `12663...`). Isso é a **limitação conhecida do Evolution API com `@lid` vs `@s.whatsapp.net`** já registrada no projeto — não é bug novo, é o webhook recebendo o mesmo contato com dois identificadores diferentes em conexões QR Baileys. Não vou mexer nas duplicadas agora; o tratamento delas é outra discussão (merge manual ou aguardar correção da Evolution).
 
-O que encontrei:
-- A `.env` existe localmente e contém as variáveis necessárias.
-- A `.gitignore` atualmente ignora `.env`, `.env.local` e `.env.*.local`.
-- Em projetos Vite clássicos, isso pode fazer o build publicado sair sem as variáveis `VITE_SUPABASE_*`, mesmo que o preview funcione.
-- A captura enviada mostra um erro de console ao tentar usar `window.supabase.rpc(...)`; isso não é a causa principal, porque o projeto não expõe `supabase` em `window`. O teste correto teria que usar o cliente importado pelo bundle ou verificar as requisições reais.
-- O sintoma anterior `supabaseUrl is required` aponta diretamente para `VITE_SUPABASE_URL` ausente no bundle publicado.
-- Tentei inspecionar o domínio publicado, mas ele retornou `403 Forbidden` para a requisição direta no sandbox; ainda assim, o código local e o histórico do erro indicam a mesma raiz: build publicado sem configuração de backend embutida.
+## O que vou fazer
 
-## Causa provável
+Uma única ação de dados, sem alterar código:
 
-A plataforma parou de aparecer porque o bundle publicado foi gerado em um estado onde `VITE_SUPABASE_URL` e/ou `VITE_SUPABASE_PUBLISHABLE_KEY` estavam ausentes. Como o cliente backend é inicializado no topo do módulo, a exceção acontece antes da renderização de qualquer rota, inclusive `/auth`, `/whatsapp` e telas de fallback.
+**Encerrar todas as conversas ativas da instância Advocacia Ibiporã cuja última mensagem é até 23/06/2026 (inclusive).**
 
-## Plano de correção
+Concretamente:
 
-1. **Corrigir a fonte do problema de build**
-   - Remover as regras que ignoram `.env` da `.gitignore` para que as variáveis públicas `VITE_SUPABASE_*` sejam consideradas no fluxo de build do projeto.
-   - Manter ignorados somente arquivos locais/sensíveis apropriados, sem bloquear a `.env` gerenciada do app.
+```sql
+UPDATE whatsapp_conversations
+SET status = 'closed', updated_at = now()
+WHERE instance_id = '47090649-e7bb-46f4-9089-6c108d3cfb4b'
+  AND status = 'active'
+  AND last_message_at < '2026-06-24'::date;
+```
 
-2. **Adicionar proteção contra tela branca definitiva**
-   - Criar um pequeno módulo de validação de ambiente antes da criação do cliente backend.
-   - Se as variáveis estiverem ausentes, renderizar uma tela de erro clara em vez de quebrar o bundle inteiro.
-   - A mensagem será voltada para recuperação operacional, sem expor chaves ou segredos.
+Isso encerra as ~125 conversas antigas (atribuídas ou não), liberando a fila do Leonardo. As 11 ativas com mensagem em 24/06 ficam intocadas. Conversas já `closed` / `archived` não são tocadas.
 
-3. **Evitar crash na inicialização do React**
-   - Ajustar `src/integrations/supabase/client.ts` para validar `VITE_SUPABASE_URL` e `VITE_SUPABASE_PUBLISHABLE_KEY` antes de chamar `createClient`.
-   - Preservar o import existente `import { supabase } from "@/integrations/supabase/client"` para não refatorar o app inteiro.
+## Não incluído neste plano
 
-4. **Validar no preview**
-   - Confirmar que o app renderiza normalmente em `/whatsapp` quando as variáveis existem.
-   - Confirmar que não há erro de console relacionado a `supabaseUrl is required`.
+- **Mesclar/limpar contatos duplicados** (@lid) — requer decisão de produto sobre qual número manter e remapeamento de mensagens. Posso fazer num plano separado se quiser.
+- **Gerar resumo por IA** ao encerrar — pulado de propósito no bulk (seriam 125 chamadas de IA). Se quiser resumos automáticos, me diz e eu adapto.
 
-5. **Republicar após a correção**
-   - Depois da implementação, o app precisa ser publicado novamente para gerar um bundle novo com as variáveis corretas.
-   - Depois disso, fazer hard refresh no domínio publicado para eliminar o bundle antigo em cache.
-
-## Resultado esperado
-
-A plataforma volta a aparecer no preview e no publicado. Mesmo que ocorra alguma falha futura de configuração de ambiente, o usuário verá uma tela de diagnóstico em vez de tela branca.
+Confirma que posso rodar o `UPDATE`?
