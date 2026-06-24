@@ -336,6 +336,27 @@ Deno.serve(async (req) => {
       })
       .eq('id', body.conversationId);
 
+    // Auto-reabre conversa encerrada quando o agente envia uma mensagem.
+    // Não reatribui: quem está enviando já é o responsável de fato.
+    {
+      const { data: convStatus } = await supabase
+        .from('whatsapp_conversations')
+        .select('status')
+        .eq('id', body.conversationId)
+        .maybeSingle();
+      if (convStatus?.status === 'closed') {
+        const { error: reopenError } = await supabase
+          .from('whatsapp_conversations')
+          .update({ status: 'active', updated_at: new Date().toISOString() })
+          .eq('id', body.conversationId);
+        if (reopenError) {
+          console.error('[send-whatsapp-message] Error reopening closed conversation:', reopenError);
+        } else {
+          console.log(`[send-whatsapp-message] Conversation REOPENED by agent send: ${body.conversationId}`);
+        }
+      }
+    }
+
     console.log('[send-whatsapp-message] Message sent and saved:', savedMessage.id);
 
     return new Response(
