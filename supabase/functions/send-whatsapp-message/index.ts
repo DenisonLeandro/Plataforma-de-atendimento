@@ -123,6 +123,7 @@ Deno.serve(async (req) => {
     // "open" mas o socket interno está fechado, e o sendText devolve
     // "Error: Connection Closed". Antes de enviar, conferimos o estado e, se
     // estiver fechado, tentamos um connect leve para reabrir o socket.
+    let preState: string | null = null;
     try {
       const stateResp = await fetch(`${baseEvolutionUrl}/instance/connectionState/${instanceIdentifier}`, {
         headers: { apikey: secrets.api_key },
@@ -131,14 +132,17 @@ Deno.serve(async (req) => {
         const stateText = await stateResp.text();
         let stateData: any = {};
         if (stateText) { try { stateData = JSON.parse(stateText); } catch {} }
-        const s = stateData?.state ?? stateData?.instance?.state;
-        if (s === 'close' || s === 'closed') {
-          console.warn('[send-whatsapp-message] Socket fechado, tentando reabrir antes do envio');
+        preState = stateData?.state ?? stateData?.instance?.state ?? null;
+        console.log('[send-whatsapp-message] PRÉ-envio connectionState:', preState, 'raw:', JSON.stringify(stateData));
+        if (preState === 'close' || preState === 'closed') {
+          console.warn('[send-whatsapp-message] Socket fechado antes do envio, tentando reabrir');
           await fetch(`${baseEvolutionUrl}/instance/connect/${instanceIdentifier}`, {
             headers: { apikey: secrets.api_key },
           }).catch(() => null);
           await new Promise((r) => setTimeout(r, 1500));
         }
+      } else {
+        console.warn('[send-whatsapp-message] PRÉ-envio connectionState HTTP', stateResp.status);
       }
     } catch (e) {
       console.warn('[send-whatsapp-message] Pré-check de estado falhou (ignorado):', e);
@@ -204,10 +208,21 @@ Deno.serve(async (req) => {
 
     if (!attempt.ok && looksLikeConnectionClosed(attempt.text)) {
       console.warn('[send-whatsapp-message] Connection Closed no envio, tentando recuperar socket e reenviar');
+      // Log do estado pós-erro para distinguir "socket flapando" de "sessão expirada"
       try {
-        await fetch(`${baseEvolutionUrl}/instance/connect/${instanceIdentifier}`, {
+        const postResp = await fetch(`${baseEvolutionUrl}/instance/connectionState/${instanceIdentifier}`, {
           headers: { apikey: secrets.api_key },
-        }).catch(() => null);
+        });
+        const postTxt = postResp.ok ? await postResp.text() : '';
+        console.warn('[send-whatsapp-message] PÓS-erro connectionState HTTP', postResp.status, 'body:', postTxt);
+      } catch {}
+      try {
+        const reconnResp = await fetch(`${baseEvolutionUrl}/instance/connect/${instanceIdentifier}`, {
+          headers: { apikey: secrets.api_key },
+        });
+        const reconnTxt = await reconnResp.text().catch(() => '');
+        const hasQr = /"code"\s*:\s*"[^"]{20,}/.test(reconnTxt) || /"base64"\s*:\s*"[^"]{20,}/.test(reconnTxt);
+        console.warn('[send-whatsapp-message] /instance/connect respondeu', reconnResp.status, 'qr?', hasQr);
         // marca instância como "connecting" para refletir o estado real
         await supabase
           .from('whatsapp_instances')
