@@ -116,6 +116,34 @@ Deno.serve(async (req) => {
 
     console.log('[send-whatsapp-message] Sending to:', contact.phone_number, 'Provider:', providerType, 'Instance:', instanceIdentifier);
 
+    const instanceRowId = (conversation as any).whatsapp_instances.id;
+    const baseEvolutionUrl = (secrets.api_url.endsWith('/') ? secrets.api_url.slice(0, -1) : secrets.api_url).replace(/\/manager$/, '');
+
+    // Pré-check do socket Baileys: a Evolution às vezes mantém a instância como
+    // "open" mas o socket interno está fechado, e o sendText devolve
+    // "Error: Connection Closed". Antes de enviar, conferimos o estado e, se
+    // estiver fechado, tentamos um connect leve para reabrir o socket.
+    try {
+      const stateResp = await fetch(`${baseEvolutionUrl}/instance/connectionState/${instanceIdentifier}`, {
+        headers: { apikey: secrets.api_key },
+      });
+      if (stateResp.ok) {
+        const stateText = await stateResp.text();
+        let stateData: any = {};
+        if (stateText) { try { stateData = JSON.parse(stateText); } catch {} }
+        const s = stateData?.state ?? stateData?.instance?.state;
+        if (s === 'close' || s === 'closed') {
+          console.warn('[send-whatsapp-message] Socket fechado, tentando reabrir antes do envio');
+          await fetch(`${baseEvolutionUrl}/instance/connect/${instanceIdentifier}`, {
+            headers: { apikey: secrets.api_key },
+          }).catch(() => null);
+          await new Promise((r) => setTimeout(r, 1500));
+        }
+      }
+    } catch (e) {
+      console.warn('[send-whatsapp-message] Pré-check de estado falhou (ignorado):', e);
+    }
+
     // Determine destination number format
     const destinationNumber = getDestinationNumber(contact.phone_number);
 
@@ -156,29 +184,66 @@ Deno.serve(async (req) => {
     // Get correct auth headers based on provider type
     const authHeaders = getEvolutionAuthHeaders(secrets.api_key, providerType);
 
-    // Send to Evolution API
-    const evolutionResponse = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...authHeaders,
-      },
-      body: JSON.stringify(requestBody),
-    });
+    // Função de envio (usada para o envio inicial e para o retry após recuperar o socket)
+    const doSend = async () => {
+      const r = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify(requestBody),
+      });
+      const txt = await r.text();
+      return { ok: r.ok, status: r.status, text: txt };
+    };
 
-    if (!evolutionResponse.ok) {
-      const errorText = await evolutionResponse.text();
-      console.error('[send-whatsapp-message] Evolution API error:', evolutionResponse.status, errorText);
+    let attempt = await doSend();
+
+    // Se a Evolution devolveu "Connection Closed", o socket Baileys caiu.
+    // Tentamos reabrir uma vez via /instance/connect e reenviar.
+    const looksLikeConnectionClosed = (txt: string) =>
+      /Connection\s*Closed/i.test(txt || '');
+
+    if (!attempt.ok && looksLikeConnectionClosed(attempt.text)) {
+      console.warn('[send-whatsapp-message] Connection Closed no envio, tentando recuperar socket e reenviar');
+      try {
+        await fetch(`${baseEvolutionUrl}/instance/connect/${instanceIdentifier}`, {
+          headers: { apikey: secrets.api_key },
+        }).catch(() => null);
+        // marca instância como "connecting" para refletir o estado real
+        await supabase
+          .from('whatsapp_instances')
+          .update({ status: 'connecting', updated_at: new Date().toISOString() })
+          .eq('id', instanceRowId);
+        await new Promise((r) => setTimeout(r, 2500));
+        attempt = await doSend();
+      } catch (e) {
+        console.error('[send-whatsapp-message] Falha ao tentar recuperar socket:', e);
+      }
+    }
+
+    if (!attempt.ok) {
+      console.error('[send-whatsapp-message] Evolution API error:', attempt.status, attempt.text);
+
+      // Mensagem amigável quando for o caso clássico do socket fechado
+      const friendly = looksLikeConnectionClosed(attempt.text)
+        ? 'A conexão com o WhatsApp caiu nesta instância (socket fechado). Vá em Configurações → Instâncias e clique em "Reconectar". Se persistir, leia o QR Code novamente.'
+        : `Evolution API (${attempt.status}): ${attempt.text || 'falha ao enviar mensagem'}`;
+
+      // Sincroniza o status no banco quando for connection closed
+      if (looksLikeConnectionClosed(attempt.text)) {
+        await supabase
+          .from('whatsapp_instances')
+          .update({ status: 'connecting', updated_at: new Date().toISOString() })
+          .eq('id', instanceRowId)
+          .catch?.(() => null);
+      }
+
       return new Response(
-        JSON.stringify({
-          success: false,
-          error: `Evolution API (${evolutionResponse.status}): ${errorText || 'falha ao enviar mensagem'}`,
-        }),
+        JSON.stringify({ success: false, error: friendly, code: looksLikeConnectionClosed(attempt.text) ? 'CONNECTION_CLOSED' : 'EVOLUTION_ERROR' }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const evolutionData = await evolutionResponse.json();
+    const evolutionData = attempt.text ? JSON.parse(attempt.text) : {};
     console.log('[send-whatsapp-message] Evolution API response:', evolutionData);
 
     // Extract message ID from Evolution API response
