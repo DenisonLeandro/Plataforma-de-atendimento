@@ -1,25 +1,22 @@
-## Plano para recuperar a plataforma
+## Plano
 
-1. **Confirmar a causa da tela branca**
-   - Reproduzir em `/whatsapp` no ambiente local/publicado e coletar console/network do carregamento inicial.
-   - Verificar se o HTML/JS está carregando e se o erro acontece no React antes da UI renderizar.
+1. Confirmar o ponto exato da quebra no frontend
+   - O erro visível é `supabaseUrl is required`, disparado na inicialização do cliente do backend.
+   - Isso faz o React falhar antes de renderizar a plataforma, resultando na tela branca.
 
-2. **Isolar o arquivo responsável**
-   - Priorizar os pontos que envolvem o último ajuste aprovado: `DisconnectedInstancesBanner.tsx`, `WhatsApp.tsx` e providers globais.
-   - Checar também erros de runtime em componentes globais (`App.tsx`, `AuthContext`, `ProtectedRoute`, `sonner`) caso o crash aconteça antes da rota.
+2. Corrigir a configuração do cliente backend
+   - Ajustar o uso das variáveis públicas do backend para garantir que o cliente receba URL e chave válidas.
+   - Não alterar lógica de negócio, RLS, tabelas ou edge functions.
+   - Não editar o arquivo auto-gerado `src/integrations/supabase/client.ts`; se necessário, corrigir a origem/configuração esperada pelo app ou os pontos de uso seguros no frontend.
 
-3. **Aplicar correção mínima**
-   - Se o problema for causado pelo banner/última alteração, ajustar apenas esse componente sem mexer em backend, RLS, migrations, edge functions ou regras de conversa.
-   - Se o problema for outro erro de frontend que impede renderização, corrigir somente o trecho necessário para a plataforma voltar a aparecer.
+3. Revisar chamadas diretas que dependem dessas mesmas variáveis
+   - Conferir `AuthContext`, sincronização do WhatsApp e componentes de instância que montam URLs de functions/webhooks.
+   - Garantir que essas chamadas não construam URLs inválidas quando a variável pública não estiver disponível.
 
-4. **Validar**
-   - Abrir `/whatsapp` após o ajuste e confirmar que a interface renderiza novamente.
-   - Confirmar que o botão de fechar o banner continua funcionando se houver instâncias desconectadas.
+4. Validar a recuperação da tela
+   - Abrir a rota `/whatsapp` no preview autenticado.
+   - Verificar que a plataforma volta a renderizar e que o console não mostra mais `supabaseUrl is required`.
 
-## Restrições mantidas
+## Resultado esperado
 
-- Não tocar em RLS, banco, migrations ou edge functions.
-- Não tocar em `useCreateConversation`, `can_view_conversation`, `can_access_conversation`.
-- Não alterar cor laranja.
-- Não fazer auto-auditoria.
-- Não comitar nem dar push sem aprovação explícita.
+A plataforma deixa de ficar em tela branca e volta a carregar normalmente, sem mudanças em banco, permissões, RLS ou functions.
