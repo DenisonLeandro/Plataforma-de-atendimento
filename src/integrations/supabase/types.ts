@@ -989,6 +989,14 @@ export type Database = {
           waiting_count: number
         }[]
       }
+      get_instance_names: {
+        Args: { _ids: string[] }
+        Returns: {
+          id: string
+          instance_name: string
+          name: string
+        }[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
