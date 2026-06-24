@@ -166,6 +166,17 @@ export const useWhatsAppInstances = () => {
     },
   });
 
+  const diagnoseInstance = useMutation({
+    mutationFn: async (id: string) => {
+      const { data, error } = await supabase.functions.invoke(
+        'diagnose-instance',
+        { body: { instanceId: id } }
+      );
+      if (error) throw error;
+      return data;
+    },
+  });
+
   return {
     instances,
     isLoading,
@@ -175,5 +186,6 @@ export const useWhatsAppInstances = () => {
     deleteInstance,
     testConnection,
     reconnectInstance,
+    diagnoseInstance,
   };
 };
