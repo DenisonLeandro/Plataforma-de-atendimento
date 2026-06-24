@@ -1,4 +1,5 @@
-import { AlertTriangle } from 'lucide-react';
+import { useState } from 'react';
+import { AlertTriangle, X } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
@@ -11,7 +12,9 @@ interface DisconnectedInstancesBannerProps {
 }
 
 export const DisconnectedInstancesBanner = ({ instances }: DisconnectedInstancesBannerProps) => {
-  if (instances.length === 0) return null;
+  const [dismissed, setDismissed] = useState(false);
+
+  if (dismissed || instances.length === 0) return null;
 
   const instanceNames = instances.map((inst) => inst.name).join(', ');
   const isSingle = instances.length === 1;
