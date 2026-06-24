@@ -20,7 +20,7 @@ export const DisconnectedInstancesBanner = ({ instances }: DisconnectedInstances
   const isSingle = instances.length === 1;
 
   return (
-    <Alert variant="destructive" className="rounded-none border-x-0 border-t-0">
+    <Alert variant="destructive" className="rounded-none border-x-0 border-t-0 pr-10">
       <AlertTriangle className="h-4 w-4" />
       <AlertTitle>
         {isSingle ? 'Instância Desconectada' : `${instances.length} Instâncias Desconectadas`}
@@ -37,6 +37,15 @@ export const DisconnectedInstancesBanner = ({ instances }: DisconnectedInstances
           </Link>
         </Button>
       </AlertDescription>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="absolute right-2 top-2 h-6 w-6 text-destructive hover:text-destructive/80 hover:bg-transparent"
+        onClick={() => setDismissed(true)}
+        aria-label="Fechar aviso"
+      >
+        <X className="h-4 w-4" />
+      </Button>
     </Alert>
   );
 };
