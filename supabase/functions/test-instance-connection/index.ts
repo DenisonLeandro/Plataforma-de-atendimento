@@ -12,6 +12,17 @@ function getEvolutionAuthHeaders(apiKey: string, providerType: string): Record<s
   return { apikey: apiKey };
 }
 
+// Mapeia qualquer formato de resposta da Evolution para um status nosso.
+// A Evolution devolve `{ state }`, `{ instance: { state } }` ou (Cloud) body vazio em 200.
+function mapEvolutionState(data: any, hasBody: boolean): 'connected' | 'connecting' | 'disconnected' {
+  if (!hasBody) return 'connected'; // Cloud 200 sem corpo = conectado
+  const s = data?.state ?? data?.instance?.state;
+  if (s === 'open' || s === 'connected') return 'connected';
+  if (s === 'connecting') return 'connecting';
+  if (s === 'close' || s === 'closed') return 'disconnected';
+  return 'disconnected';
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
