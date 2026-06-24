@@ -80,11 +80,49 @@ serve(async (req) => {
       : instance.instance_name;
 
     const baseUrl = secrets.api_url.endsWith('/') ? secrets.api_url.slice(0, -1) : secrets.api_url;
+
+    // 1) Checa estado atual antes de forçar nada. Bater em /instance/connect
+    //    numa instância já `open` causava status "connecting" falso no banco.
+    const stateUrl = `${baseUrl}/instance/connectionState/${identifier}`;
+    const stateResp = await fetch(stateUrl, { headers: { apikey: secrets.api_key } });
+    let stateData: any = {};
+    if (stateResp.ok) {
+      const t = await stateResp.text();
+      if (t) { try { stateData = JSON.parse(t); } catch {} }
+    }
+    const currentState = stateData?.state ?? stateData?.instance?.state;
+    console.log('[reconnect-instance] Estado atual no Evolution:', currentState);
+
+    if (currentState === 'open' || currentState === 'connected') {
+      // Já está conectada — só sincronizamos o banco e saímos.
+      await supabaseAdmin
+        .from('whatsapp_instances')
+        .update({ status: 'connected', updated_at: new Date().toISOString() })
+        .eq('id', instanceId);
+      return new Response(
+        JSON.stringify({ success: true, alreadyConnected: true }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (currentState === 'connecting') {
+      // Baileys já está tentando reconectar sozinho. Não força de novo.
+      await supabaseAdmin
+        .from('whatsapp_instances')
+        .update({ status: 'connecting', updated_at: new Date().toISOString() })
+        .eq('id', instanceId);
+      return new Response(
+        JSON.stringify({ success: true, stillConnecting: true }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // 2) Só agora força o reconnect (estado close/closed/desconhecido).
     const url = `${baseUrl}/instance/connect/${identifier}`;
     console.log('[reconnect-instance] Forçando reconexão:', url);
 
     const response = await fetch(url, {
-      method: 'GET', // Evolution aceita GET no /instance/connect e devolve QR/pairing
+      method: 'GET',
       headers: { apikey: secrets.api_key },
     });
 
@@ -102,19 +140,25 @@ serve(async (req) => {
       });
     }
 
-    // Marca como connecting e zera contador de falhas
+    // Só considera "QR" se realmente vier uma string base64 não-vazia.
+    const qr = (typeof data?.code === 'string' && data.code.length > 20)
+      ? data.code
+      : (typeof data?.base64 === 'string' && data.base64.length > 20)
+        ? data.base64
+        : null;
+
     await supabaseAdmin
       .from('whatsapp_instances')
       .update({
         status: 'connecting',
-        qr_code: data?.code || data?.base64 || null,
+        ...(qr ? { qr_code: qr } : {}),
         updated_at: new Date().toISOString(),
       })
       .eq('id', instanceId);
 
-    console.log('[reconnect-instance] Reconexão disparada com sucesso');
+    console.log('[reconnect-instance] Reconexão disparada (qr=' + !!qr + ')');
     return new Response(
-      JSON.stringify({ success: true, qr: data?.code || data?.base64 || null, raw: data }),
+      JSON.stringify({ success: true, qr }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
