@@ -33,13 +33,22 @@ export const useAssignmentRules = () => {
 
   const createRule = useMutation({
     mutationFn: async (rule: Omit<AssignmentRule, 'id' | 'created_at' | 'updated_at' | 'round_robin_last_index'>) => {
-      const { data, error } = await supabase
+      // INSERT e SELECT separados para evitar o quirk de RLS no RETURNING.
+      const { error } = await supabase
         .from('assignment_rules')
-        .insert(rule)
-        .select()
-        .single();
+        .insert(rule);
 
       if (error) throw error;
+
+      const { data, error: fetchError } = await supabase
+        .from('assignment_rules')
+        .select('*')
+        .eq('instance_id', rule.instance_id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (fetchError) throw fetchError;
       return data;
     },
     onSuccess: () => {

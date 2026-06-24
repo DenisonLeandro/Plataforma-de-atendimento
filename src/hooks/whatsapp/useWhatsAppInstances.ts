@@ -41,18 +41,27 @@ export const useWhatsAppInstances = () => {
     mutationFn: async (instance: InstanceInsertWithSecrets) => {
       const { api_url, api_key, provider_type, instance_id_external, ...instanceData } = instance;
 
-      // 1. Create instance in main table with provider_type and instance_id_external
-      const { data: instanceResult, error: instanceError } = await supabase
+      // 1. Create instance in main table with provider_type and instance_id_external.
+      // INSERT e SELECT separados para evitar o quirk de RLS no RETURNING.
+      const { error: instanceError } = await supabase
         .from('whatsapp_instances')
         .insert({
           ...instanceData,
           provider_type: provider_type || 'self_hosted',
           instance_id_external: instance_id_external || null,
-        } as any)
-        .select()
-        .single();
+        } as any);
 
       if (instanceError) throw instanceError;
+
+      const { data: instanceResult, error: instanceFetchError } = await supabase
+        .from('whatsapp_instances')
+        .select('*')
+        .eq('instance_name', (instanceData as any).instance_name)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (instanceFetchError) throw instanceFetchError;
 
       // 2. Create secrets in separate table
       const { error: secretsError } = await supabase

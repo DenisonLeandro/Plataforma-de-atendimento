@@ -36,13 +36,27 @@ export const useWhatsAppMacros = (instanceId?: string) => {
   // Create macro
   const createMacro = useMutation({
     mutationFn: async (macro: MacroInsert) => {
-      const { data, error } = await supabase
+      // INSERT e SELECT separados para evitar o quirk de RLS no RETURNING.
+      const { error } = await supabase
         .from('whatsapp_macros')
-        .insert(macro)
-        .select()
-        .single();
+        .insert(macro);
 
       if (error) throw error;
+
+      let fetchQuery = supabase
+        .from('whatsapp_macros')
+        .select('*')
+        .eq('name', macro.name);
+      fetchQuery = macro.instance_id
+        ? fetchQuery.eq('instance_id', macro.instance_id)
+        : fetchQuery.is('instance_id', null);
+
+      const { data, error: fetchError } = await fetchQuery
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (fetchError) throw fetchError;
       return data;
     },
     onSuccess: () => {

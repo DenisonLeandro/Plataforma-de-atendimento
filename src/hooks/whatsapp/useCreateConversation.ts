@@ -17,8 +17,8 @@ export const useCreateConversation = () => {
 
   const mutation = useMutation({
     mutationFn: async (params: CreateConversationParams) => {
-      // 1. Upsert contact
-      const { data: contact, error: contactError } = await supabase
+      // 1. Upsert contact — UPSERT e SELECT separados para evitar o quirk de RLS no RETURNING.
+      const { error: contactError } = await supabase
         .from('whatsapp_contacts')
         .upsert({
           instance_id: params.instanceId,
@@ -27,11 +27,18 @@ export const useCreateConversation = () => {
           profile_picture_url: params.profilePictureUrl,
         }, {
           onConflict: 'instance_id,phone_number',
-        })
-        .select()
-        .single();
+        });
 
       if (contactError) throw contactError;
+
+      const { data: contact, error: contactFetchError } = await supabase
+        .from('whatsapp_contacts')
+        .select('*')
+        .eq('instance_id', params.instanceId)
+        .eq('phone_number', params.phoneNumber)
+        .single();
+
+      if (contactFetchError) throw contactFetchError;
 
       // 2. Check if conversation already exists
       const { data: existingConv, error: checkError } = await supabase
