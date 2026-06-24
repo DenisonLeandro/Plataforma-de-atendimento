@@ -135,7 +135,7 @@ serve(async (req) => {
     // Handle empty response body (Evolution Cloud returns empty body on success)
     const responseText = await response.text();
     let data: any = {};
-    
+
     if (responseText) {
       try {
         data = JSON.parse(responseText);
@@ -143,32 +143,38 @@ serve(async (req) => {
         console.log('[test-instance-connection] Response is not JSON:', responseText);
       }
     }
-    
+
     console.log('[test-instance-connection] Connection test successful, data:', JSON.stringify(data));
 
-    // Map Evolution API state to our status
-    // Empty response with 200 status means connected for Evolution Cloud
-    let newStatus = 'disconnected';
-    if (!responseText || data.state === 'open' || data.instance?.state === 'open') {
+    const mapped = mapEvolutionState(data, !!responseText);
+    const currentStatus = (instance as any).status as string | undefined;
+
+    // Importante: `connecting` é um estado intermediário do Baileys que aparece
+    // por alguns segundos quando o socket renova. Se a instância já estava
+    // `connected`, NÃO rebaixamos — isso evitava o falso "Desconectado" depois
+    // de clicar em testar.
+    let newStatus: string;
+    if (mapped === 'connecting' && currentStatus === 'connected') {
       newStatus = 'connected';
-    } else if (data.state === 'connecting') {
-      newStatus = 'connecting';
+      console.log('[test-instance-connection] Mantendo status connected (Evolution está em connecting transitório)');
+    } else {
+      newStatus = mapped;
     }
 
-    // Update status in database
     await supabaseAdmin
       .from('whatsapp_instances')
-      .update({ 
+      .update({
         status: newStatus,
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
       })
       .eq('id', instanceId);
 
-    console.log(`[test-instance-connection] Updated instance status to ${newStatus}`);
+    console.log(`[test-instance-connection] Updated instance status to ${newStatus} (evolution=${mapped})`);
 
-    return new Response(JSON.stringify(data), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
+    return new Response(
+      JSON.stringify({ ...data, mappedStatus: newStatus, evolutionState: mapped }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
   } catch (error) {
     console.error('[test-instance-connection] Error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
