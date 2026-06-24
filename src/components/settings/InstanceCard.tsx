@@ -103,7 +103,11 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
   const handleReconnect = async () => {
     try {
       const result = await reconnectInstance.mutateAsync(instance.id);
-      if (result?.qr) {
+      if (result?.alreadyConnected) {
+        toast.success("Instância já está conectada — nada a fazer.");
+      } else if (result?.stillConnecting) {
+        toast.info("Baileys já está reconectando. Aguarde alguns segundos e teste novamente.");
+      } else if (result?.qr) {
         toast.info("Sessão expirada — gere o QR Code para reconectar.", { duration: 8000 });
       } else {
         toast.success("Reconexão disparada. Aguarde alguns segundos e teste a conexão.");
