@@ -92,7 +92,7 @@ serve(async (req) => {
     // Fetch instance name, provider_type, and instance_id_external
     const { data: instance, error: instanceError } = await supabaseAdmin
       .from('whatsapp_instances')
-      .select('instance_name, provider_type, instance_id_external')
+      .select('instance_name, provider_type, instance_id_external, status')
       .eq('id', instanceId)
       .single();
 
