@@ -15,9 +15,10 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useWhatsAppInstances, useSyncWhatsAppHistory, useSyncJob, useSyncJobCompletion, type SyncJob } from "@/hooks/whatsapp";
-import { RefreshCw, Pencil, Trash2, Copy, Link, Download, Loader2, Plug } from "lucide-react";
+import { RefreshCw, Pencil, Trash2, Copy, Link, Download, Loader2, Plug, Stethoscope } from "lucide-react";
 import { toast } from "sonner";
 import { EditInstanceDialog } from "./EditInstanceDialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 type Instance = Tables<"whatsapp_instances">;
 
@@ -26,12 +27,14 @@ interface InstanceCardProps {
 }
 
 export const InstanceCard = ({ instance }: InstanceCardProps) => {
-  const { testConnection, deleteInstance, reconnectInstance } = useWhatsAppInstances();
+  const { testConnection, deleteInstance, reconnectInstance, diagnoseInstance } = useWhatsAppInstances();
   const syncHistory = useSyncWhatsAppHistory();
   const navigate = useNavigate();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showSyncDialog, setShowSyncDialog] = useState(false);
+  const [diagnosis, setDiagnosis] = useState<any | null>(null);
+  const [showDiagnosisDialog, setShowDiagnosisDialog] = useState(false);
 
   const { data: syncJob } = useSyncJob(instance.id);
 
@@ -114,6 +117,16 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
       }
     } catch (error: any) {
       toast.error(error?.message || "Falha ao reconectar instância");
+    }
+  };
+
+  const handleDiagnose = async () => {
+    try {
+      const result = await diagnoseInstance.mutateAsync(instance.id);
+      setDiagnosis(result);
+      setShowDiagnosisDialog(true);
+    } catch (error: any) {
+      toast.error(error?.message || "Falha ao diagnosticar instância");
     }
   };
 
@@ -238,6 +251,19 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
           <Button
             variant="outline"
             size="sm"
+            onClick={handleDiagnose}
+            disabled={diagnoseInstance.isPending}
+            title="Diagnosticar (consulta a Evolution e mostra o estado real do socket)"
+          >
+            {diagnoseInstance.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Stethoscope className="h-4 w-4" />
+            )}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => setShowSyncDialog(true)}
             disabled={instance.status !== "connected" || syncHistory.isPending || (isRunning && !isSyncStale)}
             title={isSyncStale ? "Retomar sincronização travada" : isSyncing ? "Sincronização em andamento" : "Sincronizar histórico"}
@@ -315,6 +341,56 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
         open={showEditDialog}
         onOpenChange={setShowEditDialog}
       />
+
+      <Dialog open={showDiagnosisDialog} onOpenChange={setShowDiagnosisDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Diagnóstico da instância</DialogTitle>
+            <DialogDescription>
+              Estado real reportado pela Evolution agora — útil quando o status no banco
+              não corresponde ao comportamento no envio.
+            </DialogDescription>
+          </DialogHeader>
+          {diagnosis && (
+            <div className="space-y-3 text-sm">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <div className="text-muted-foreground">Status no banco</div>
+                  <div className="font-medium">{diagnosis.databaseStatus}</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">Estado na Evolution</div>
+                  <div className="font-medium">{diagnosis.evolution?.connectionState ?? '—'}</div>
+                </div>
+                <div className="col-span-2">
+                  <div className="text-muted-foreground">Veredito</div>
+                  <div className="font-medium">{diagnosis.verdict}</div>
+                </div>
+              </div>
+              <div>
+                <div className="text-muted-foreground mb-1">Detalhes brutos</div>
+                <pre className="bg-muted rounded p-2 text-xs overflow-auto max-h-72">
+{JSON.stringify(diagnosis, null, 2)}
+                </pre>
+              </div>
+              {diagnosis.verdict === 'evolution_socket_closed' && (
+                <p className="text-xs text-muted-foreground">
+                  O socket Baileys está fechado. Clique em "Reconectar" para forçar reabertura;
+                  se vier QR Code, a sessão expirou e você precisa escanear de novo.
+                </p>
+              )}
+              {diagnosis.verdict === 'evolution_says_connected' && (
+                <p className="text-xs text-muted-foreground">
+                  A Evolution diz que está conectada. Se ainda assim o envio falha com
+                  "Connection Closed", o problema está no servidor Evolution (versão do
+                  WhatsApp Web em <code>CONFIG_SESSION_PHONE_VERSION</code> desatualizada
+                  é a causa mais comum).
+                </p>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </>
   );
 };
