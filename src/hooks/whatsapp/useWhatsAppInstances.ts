@@ -152,6 +152,20 @@ export const useWhatsAppInstances = () => {
     },
   });
 
+  const reconnectInstance = useMutation({
+    mutationFn: async (id: string) => {
+      const { data, error } = await supabase.functions.invoke(
+        'reconnect-instance',
+        { body: { instanceId: id } }
+      );
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['whatsapp', 'instances'] });
+    },
+  });
+
   return {
     instances,
     isLoading,
@@ -160,5 +174,6 @@ export const useWhatsAppInstances = () => {
     updateInstance,
     deleteInstance,
     testConnection,
+    reconnectInstance,
   };
 };

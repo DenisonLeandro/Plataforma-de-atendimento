@@ -15,7 +15,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useWhatsAppInstances, useSyncWhatsAppHistory, useSyncJob, useSyncJobCompletion, type SyncJob } from "@/hooks/whatsapp";
-import { RefreshCw, Pencil, Trash2, Copy, Link, Download, Loader2 } from "lucide-react";
+import { RefreshCw, Pencil, Trash2, Copy, Link, Download, Loader2, Plug } from "lucide-react";
 import { toast } from "sonner";
 import { EditInstanceDialog } from "./EditInstanceDialog";
 
@@ -26,7 +26,7 @@ interface InstanceCardProps {
 }
 
 export const InstanceCard = ({ instance }: InstanceCardProps) => {
-  const { testConnection, deleteInstance } = useWhatsAppInstances();
+  const { testConnection, deleteInstance, reconnectInstance } = useWhatsAppInstances();
   const syncHistory = useSyncWhatsAppHistory();
   const navigate = useNavigate();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -82,10 +82,34 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
 
   const handleTestConnection = async () => {
     try {
-      await testConnection.mutateAsync(instance.id);
-      toast.success("Conexão testada com sucesso!");
+      // Faz até 3 tentativas se a Evolution responder "connecting" (estado
+      // transitório do Baileys que dura poucos segundos quando o socket renova).
+      let result: any = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        result = await testConnection.mutateAsync(instance.id);
+        if (result?.mappedStatus === 'connected') break;
+        if (result?.evolutionState !== 'connecting') break;
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+      const status = result?.mappedStatus;
+      if (status === 'connected') toast.success("Conexão OK — instância conectada.");
+      else if (status === 'connecting') toast.info("Instância está reconectando. Aguarde alguns segundos e teste novamente.");
+      else toast.error("Instância desconectada. Use 'Reconectar' para forçar o socket sem perder a sessão.");
     } catch (error) {
       toast.error("Falha ao testar conexão");
+    }
+  };
+
+  const handleReconnect = async () => {
+    try {
+      const result = await reconnectInstance.mutateAsync(instance.id);
+      if (result?.qr) {
+        toast.info("Sessão expirada — gere o QR Code para reconectar.", { duration: 8000 });
+      } else {
+        toast.success("Reconexão disparada. Aguarde alguns segundos e teste a conexão.");
+      }
+    } catch (error: any) {
+      toast.error(error?.message || "Falha ao reconectar instância");
     }
   };
 
@@ -190,8 +214,22 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
             size="sm"
             onClick={handleTestConnection}
             disabled={testConnection.isPending}
+            title="Testar conexão"
           >
             <RefreshCw className={`h-4 w-4 ${testConnection.isPending ? "animate-spin" : ""}`} />
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleReconnect}
+            disabled={reconnectInstance.isPending}
+            title="Reconectar (força o socket sem perder a sessão)"
+          >
+            {reconnectInstance.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Plug className="h-4 w-4" />
+            )}
           </Button>
           <Button
             variant="outline"

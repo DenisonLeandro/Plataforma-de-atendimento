@@ -12,6 +12,17 @@ function getEvolutionAuthHeaders(apiKey: string, providerType: string): Record<s
   return { apikey: apiKey };
 }
 
+function mapEvolutionState(data: any, hasBody: boolean): 'connected' | 'connecting' | 'disconnected' {
+  if (!hasBody) return 'connected';
+  const s = data?.state ?? data?.instance?.state;
+  if (s === 'open' || s === 'connected') return 'connected';
+  if (s === 'connecting') return 'connecting';
+  if (s === 'close' || s === 'closed') return 'disconnected';
+  return 'disconnected';
+}
+
+const FAILURE_THRESHOLD = 3;
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -24,10 +35,10 @@ serve(async (req) => {
 
     console.log('[check-instances-status] Starting periodic status check');
 
-    // Fetch all instances including provider_type and instance_id_external
+    // Fetch all instances including provider_type, instance_id_external, status e metadata
     const { data: instances, error: instancesError } = await supabaseAdmin
       .from('whatsapp_instances')
-      .select('id, instance_name, provider_type, instance_id_external');
+      .select('id, instance_name, provider_type, instance_id_external, status, metadata');
 
     if (instancesError) {
       console.error('[check-instances-status] Failed to fetch instances:', instancesError);
@@ -73,42 +84,62 @@ serve(async (req) => {
           { headers: authHeaders }
         );
 
+        const currentStatus = (instance as any).status as string | undefined;
+        const currentMeta = ((instance as any).metadata as Record<string, any>) || {};
+        const prevFailures = Number(currentMeta.consecutive_failures || 0);
+
         if (!response.ok) {
-          console.error(`[check-instances-status] Evolution API returned error for ${instance.instance_name}: ${response.status}`);
-          
-          // Mark as disconnected if API call fails
+          // Falha transitória: incrementa contador. Só marca disconnected após N falhas seguidas.
+          const failures = prevFailures + 1;
+          const shouldDowngrade =
+            failures >= FAILURE_THRESHOLD && currentStatus === 'connected';
+          const newMeta = { ...currentMeta, consecutive_failures: failures, last_check_error: response.status };
           await supabaseAdmin
             .from('whatsapp_instances')
-            .update({ 
-              status: 'disconnected',
-              updated_at: new Date().toISOString()
+            .update({
+              ...(shouldDowngrade ? { status: 'disconnected' } : {}),
+              metadata: newMeta,
+              updated_at: new Date().toISOString(),
             })
             .eq('id', instance.id);
-          
-          updatedCount++;
+
+          console.warn(
+            `[check-instances-status] ${instance.instance_name}: Evolution erro ${response.status} (falhas=${failures}/${FAILURE_THRESHOLD}, downgrade=${shouldDowngrade})`
+          );
+          errorCount++;
           continue;
         }
 
-        const connectionData = await response.json();
-        
-        // Map Evolution API state to our status
-        let newStatus = 'disconnected';
-        if (connectionData.state === 'open' || connectionData.instance?.state === 'open') {
-          newStatus = 'connected';
-        } else if (connectionData.state === 'connecting') {
-          newStatus = 'connecting';
+        const responseText = await response.text();
+        let connectionData: any = {};
+        if (responseText) {
+          try { connectionData = JSON.parse(responseText); } catch {}
         }
 
-        // Update status in database
+        const mapped = mapEvolutionState(connectionData, !!responseText);
+
+        // Não rebaixa connected -> disconnected/connecting por estado transitório:
+        // só atualiza se vier `open` (zerando falhas) ou se já estávamos fora de connected.
+        let newStatus = currentStatus || 'disconnected';
+        if (mapped === 'connected') {
+          newStatus = 'connected';
+        } else if (currentStatus !== 'connected') {
+          newStatus = mapped;
+        }
+
+        const newMeta = { ...currentMeta, consecutive_failures: 0, last_check_error: null };
         await supabaseAdmin
           .from('whatsapp_instances')
-          .update({ 
+          .update({
             status: newStatus,
-            updated_at: new Date().toISOString()
+            metadata: newMeta,
+            updated_at: new Date().toISOString(),
           })
           .eq('id', instance.id);
 
-        console.log(`[check-instances-status] Updated ${instance.instance_name} to ${newStatus}`);
+        console.log(
+          `[check-instances-status] ${instance.instance_name}: evolution=${mapped} -> status=${newStatus}`
+        );
         updatedCount++;
 
       } catch (error) {
