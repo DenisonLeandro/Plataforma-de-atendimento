@@ -87,12 +87,13 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
 
   // Auto-fetch missing media once when message mounts/updates
   useEffect(() => {
-    if (isMissingMedia && !autoFetchedRef.current && !isFetchingMedia && !fetchFailed) {
+    const shouldAutoFetch = isMissingMedia && !['pending', 'failed', 'unavailable'].includes(mediaStatus || '');
+    if (shouldAutoFetch && !autoFetchedRef.current && !isFetchingMedia && !fetchFailed) {
       autoFetchedRef.current = true;
       handleFetchMedia();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMissingMedia]);
+  }, [isMissingMedia, mediaStatus]);
 
   // Check if message can be edited (within 15 minutes and text only)
   const canEdit = isFromMe && 
