@@ -15,7 +15,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useWhatsAppInstances, useSyncWhatsAppHistory, useSyncJob, useSyncJobCompletion, type SyncJob } from "@/hooks/whatsapp";
-import { RefreshCw, Pencil, Trash2, Copy, Link, Download, Loader2, Plug, Stethoscope } from "lucide-react";
+import { RefreshCw, Pencil, Trash2, Copy, Link, Download, Loader2, Plug, Stethoscope, Users } from "lucide-react";
 import { toast } from "sonner";
 import { EditInstanceDialog } from "./EditInstanceDialog";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -27,7 +27,7 @@ interface InstanceCardProps {
 }
 
 export const InstanceCard = ({ instance }: InstanceCardProps) => {
-  const { testConnection, deleteInstance, reconnectInstance, diagnoseInstance } = useWhatsAppInstances();
+  const { testConnection, deleteInstance, reconnectInstance, diagnoseInstance, resolveLidConversations } = useWhatsAppInstances();
   const syncHistory = useSyncWhatsAppHistory();
   const navigate = useNavigate();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -127,6 +127,19 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
       setShowDiagnosisDialog(true);
     } catch (error: any) {
       toast.error(error?.message || "Falha ao diagnosticar instância");
+    }
+  };
+
+  const handleResolveLid = async () => {
+    try {
+      const result = await resolveLidConversations.mutateAsync({ id: instance.id });
+      const s = result?.stats ?? {};
+      toast.success(
+        `Conversas @lid processadas: ${s.merged ?? 0} fundidas, ${s.renamed ?? 0} renomeadas, ${s.unresolved ?? 0} sem mapeamento (de ${s.totalOrphans ?? 0}).`,
+        { duration: 10000 },
+      );
+    } catch (error: any) {
+      toast.error(error?.message || "Falha ao resolver conversas @lid");
     }
   };
 
@@ -259,6 +272,19 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <Stethoscope className="h-4 w-4" />
+            )}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleResolveLid}
+            disabled={resolveLidConversations.isPending}
+            title="Resolver conversas @lid (funde órfãs sem mensagens com a conversa real)"
+          >
+            {resolveLidConversations.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Users className="h-4 w-4" />
             )}
           </Button>
           <Button
