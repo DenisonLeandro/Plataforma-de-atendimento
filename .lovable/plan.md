@@ -1,33 +1,40 @@
-## Objetivo
-Recuperar (quando possível) o telefone real por trás das conversas marcadas com `@lid` e apresentar um relatório das que não têm como ser resolvidas — começando pelas 2 do print (Márcia e "Sem nome").
+## Diagnóstico (Centro)
 
-## Contexto técnico
-- As 2 conversas (`64fab2be...` e `c18a26a1...`) têm `phone_number` que na verdade é um **LID interno do WhatsApp**, não telefone (confirmado em `metadata.lid`).
-- Por isso `msg_count = 0` localmente, e a UI mostra "Sem nome" / sem como ligar.
-- É a mesma limitação já registrada em `mem://integrations/evolution-lid-limitation`.
+As duas conversas em questão estão sem mensagens porque o `phone_number` salvo é um **@lid** (ID interno do WhatsApp), não um telefone real. As mensagens reais foram persistidas na conversa "gêmea" com o JID verdadeiro (`@s.whatsapp.net`):
 
-## Etapas
+| Conversa exibida | phone (lid) | msgs | Gêmea encontrada |
+|---|---|---|---|
+| "Sem nome" (170128050270242) | 170128050270242 | 0 | **Diego Onishe** — 5543996903225 (3 msgs, mesmo preview/timestamp) |
+| "Márcia" | 57724494684296 | 0 | não localizada localmente (precisa consulta na Evolution) |
 
-### 1. Relatório de diagnóstico (read-only)
-Gerar uma planilha CSV em `/mnt/documents/` com TODAS as conversas afetadas por @lid em todas as instâncias, contendo:
-- instância, conv_id, contact_name, lid armazenado, last_message_at, preview, agente, status
-- se há uma conversa "irmã" no mesmo instance com mesma preview/timestamp e número real (`@s.whatsapp.net`) — candidato a merge.
+Por isso o card abre vazio — não há nada em `whatsapp_messages` apontando para essas linhas.
 
-### 2. Tentativa de resolução via Evolution API
-Criar (ou reutilizar) uma Edge Function `resolve-lid-contacts` que, para cada conversa órfã:
-- Consulta o endpoint da Evolution para mapear `lid → jid` (`/chat/findContacts` ou `whatsappNumbers`).
-- Se encontrar telefone real, atualiza `whatsapp_contacts.phone_number` e `metadata.real_jid`.
-- Se não encontrar, marca em `metadata.lid_unresolved = true`.
+## Plano
 
-### 3. Apresentação dos resultados
-Listar para o usuário no chat:
-- Quantas conversas foram resolvidas (com número real recuperado).
-- Quais ficaram sem resolução (incluindo as 2 do print, se for o caso).
-- Recomendação de encerrar as não-resolvidas (já que sem número não dá para responder).
+### 1. Edge function `resolve-lid-conversations`
+Nova função (admin-only) que, para uma instância:
+- Lista conversas onde `phone_number` parece @lid (numérico com 14+ dígitos e sem msgs, ou flag em `metadata`).
+- Para cada uma, chama Evolution `POST /chat/whatsappNumbers/{instance}` ou `GET /chat/findContacts` para resolver `lid → jid` real.
+- Se resolvido:
+  - **Se já existe conversa gêmea** com o telefone real na mesma instância → faz merge: move `whatsapp_messages`, `whatsapp_reactions`, `conversation_assignments`, `notes`, `summaries` para a gêmea; copia `assigned_to`/`status`/`unread` se a órfã estiver mais recente; deleta a órfã e o contato lid.
+  - **Se não existe gêmea** → atualiza `whatsapp_contacts.phone_number` para o JID real e mantém a conversa (continua sem msgs, mas com número correto para responder).
+- Retorna relatório (resolvidas, merges, não-resolvidas).
 
-## Fora do escopo neste turno
-- Refatorar o webhook para evitar criar contatos por LID (mudança maior, fica para um plano futuro).
-- Excluir/mesclar automaticamente conversas duplicadas — só após sua aprovação caso a caso.
+### 2. Botão de UI (admin) no card da instância
+Em `InstanceCard.tsx` adicionar item no menu "⋮" → **"Resolver conversas @lid"** que chama a função e mostra toast com o resultado.
 
-## Pergunta antes de implementar
-Quer que eu já avance até a **Etapa 2** (chamar a Evolution e tentar resolver), ou prefere primeiro só o **relatório (Etapa 1)** para você revisar?
+### 3. Ação imediata para essas 2 conversas
+Após deploy, rodar a função para a instância "Advocacia Centro":
+- "Sem nome" 170128050270242 deve fundir em **Diego Onishe** (preview e timestamp batem) → ao abrir Diego você verá a mensagem "Obrigado pelo retorno. Sucesso." e demais.
+- "Márcia" 57724494684296 → tentar resolver via Evolution. Se a Evolution não devolver o JID real (instância nova, sem cache do lid), a conversa permanece sem msgs históricas, mas o número fica correto para responder.
+
+### 4. Prevenção (próxima fase, fora deste plano)
+Em `evolution-webhook` rejeitar/normalizar `remoteJid` terminado em `@lid` antes de criar contato — usa Evolution `whatsappNumbers` para resolver JID real na hora. (Posso incluir agora se quiser.)
+
+## Detalhes técnicos
+- Tabela afetada por merge: `whatsapp_messages` (UPDATE conversation_id), `whatsapp_reactions`, `conversation_assignments`, `whatsapp_conversation_notes`, `whatsapp_conversation_summaries`, `whatsapp_sentiment_*`, `whatsapp_message_edit_history`.
+- Conflitos de `unique(conversation_id, message_id)` resolvidos com `ON CONFLICT DO NOTHING` + delete na órfã.
+- Endpoint Evolution: `POST {url}/chat/whatsappNumbers/{instance}` com `{ numbers: [lid] }` ou `GET /chat/findChats/{instance}?where=...` — função tenta os dois fallbacks.
+- Toda lógica em service-role; UI restrita a `admin`.
+
+Confirma que prossigo, e se quero **incluir a prevenção (item 4)** no mesmo build?
