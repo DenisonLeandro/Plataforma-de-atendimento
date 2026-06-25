@@ -49,6 +49,7 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
   const mediaTypes = ['audio', 'image', 'video', 'document', 'sticker'];
   const isMissingMedia =
     mediaTypes.includes(message.message_type) && !message.media_url;
+  const mediaStatus = (message as any).media_status as string | undefined;
   // Mídia residual apontando pro CDN cru do WhatsApp (.enc) — não recuperada pelo backfill.
   // Não auto-disparamos fetch aqui (evita tempestade de chamadas ao abrir a conversa);
   // mostramos UI graciosa com "Tentar novamente" manual.
@@ -170,19 +171,23 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
         document: 'Carregando documento…',
         sticker: 'Carregando figurinha…',
       };
+      const permanentlyUnavailable = mediaStatus === 'unavailable';
+      const failed = fetchFailed || mediaStatus === 'failed' || permanentlyUnavailable || (hasRawMedia && !isFetchingMedia);
       return (
         <div className="space-y-2">
-          {(fetchFailed || (hasRawMedia && !isFetchingMedia)) ? (
+          {failed ? (
             <div className="flex items-center gap-2 text-xs">
               <AlertCircle className="w-3.5 h-3.5" />
-              <span>Mídia indisponível.</span>
-              <button
-                type="button"
-                onClick={handleFetchMedia}
-                className="underline hover:opacity-80"
-              >
-                Tentar novamente
-              </button>
+              <span>{permanentlyUnavailable ? 'Mídia expirada no WhatsApp.' : 'Mídia indisponível.'}</span>
+              {!permanentlyUnavailable && (
+                <button
+                  type="button"
+                  onClick={handleFetchMedia}
+                  className="underline hover:opacity-80"
+                >
+                  Tentar novamente
+                </button>
+              )}
             </div>
           ) : (
             <div className="flex items-center gap-2 text-xs opacity-80">
