@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.85.0';
+import { fetchWithTimeout } from '../_shared/fetch-with-timeout.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -141,7 +142,8 @@ Deno.serve(async (req) => {
     const authHeaders = getEvolutionAuthHeaders(secrets.api_key, providerType);
 
     // Call Evolution API to edit message
-    const evolutionResponse = await fetch(endpoint, {
+    const evolutionResponse = await fetchWithTimeout(endpoint, {
+      timeout: 15000,
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { fetchWithTimeout } from "../_shared/fetch-with-timeout.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -84,7 +85,7 @@ serve(async (req) => {
     // 1) Checa estado atual antes de forçar nada. Bater em /instance/connect
     //    numa instância já `open` causava status "connecting" falso no banco.
     const stateUrl = `${baseUrl}/instance/connectionState/${identifier}`;
-    const stateResp = await fetch(stateUrl, { headers: { apikey: secrets.api_key } });
+    const stateResp = await fetchWithTimeout(stateUrl, { timeout: 20000, headers: { apikey: secrets.api_key } });
     let stateData: any = {};
     if (stateResp.ok) {
       const t = await stateResp.text();
@@ -121,7 +122,8 @@ serve(async (req) => {
     const url = `${baseUrl}/instance/connect/${identifier}`;
     console.log('[reconnect-instance] Forçando reconexão:', url);
 
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
+      timeout: 20000,
       method: 'GET',
       headers: { apikey: secrets.api_key },
     });

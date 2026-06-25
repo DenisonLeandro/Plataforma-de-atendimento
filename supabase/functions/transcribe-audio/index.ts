@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { fetchWithTimeout } from "../_shared/fetch-with-timeout.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -93,7 +94,7 @@ Deno.serve(async (req) => {
     }
     // Fallback: direct fetch (works if bucket is public)
     if (!arrayBuffer) {
-      const audioRes = await fetch(message.media_url);
+      const audioRes = await fetchWithTimeout(message.media_url, { timeout: 45000 });
       if (!audioRes.ok) {
         console.error("[transcribe-audio] failed to fetch audio", audioRes.status, message.media_url);
         await supabase
@@ -129,7 +130,8 @@ Deno.serve(async (req) => {
     form.append("model", "openai/gpt-4o-mini-transcribe");
     form.append("file", audioBlob, `audio.${ext}`);
 
-    const aiRes = await fetch("https://ai.gateway.lovable.dev/v1/audio/transcriptions", {
+    const aiRes = await fetchWithTimeout("https://ai.gateway.lovable.dev/v1/audio/transcriptions", {
+      timeout: 45000,
       method: "POST",
       headers: { Authorization: `Bearer ${LOVABLE_API_KEY}` },
       body: form,

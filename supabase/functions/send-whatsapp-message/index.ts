@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.85.0';
+import { fetchWithTimeout } from '../_shared/fetch-with-timeout.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -125,7 +126,8 @@ Deno.serve(async (req) => {
     // estiver fechado, tentamos um connect leve para reabrir o socket.
     let preState: string | null = null;
     try {
-      const stateResp = await fetch(`${baseEvolutionUrl}/instance/connectionState/${instanceIdentifier}`, {
+      const stateResp = await fetchWithTimeout(`${baseEvolutionUrl}/instance/connectionState/${instanceIdentifier}`, {
+        timeout: 15000,
         headers: { apikey: secrets.api_key },
       });
       if (stateResp.ok) {
@@ -136,7 +138,8 @@ Deno.serve(async (req) => {
         console.log('[send-whatsapp-message] PRÉ-envio connectionState:', preState, 'raw:', JSON.stringify(stateData));
         if (preState === 'close' || preState === 'closed') {
           console.warn('[send-whatsapp-message] Socket fechado antes do envio, tentando reabrir');
-          await fetch(`${baseEvolutionUrl}/instance/connect/${instanceIdentifier}`, {
+          await fetchWithTimeout(`${baseEvolutionUrl}/instance/connect/${instanceIdentifier}`, {
+            timeout: 20000,
             headers: { apikey: secrets.api_key },
           }).catch(() => null);
           await new Promise((r) => setTimeout(r, 1500));
@@ -190,7 +193,8 @@ Deno.serve(async (req) => {
 
     // Função de envio (usada para o envio inicial e para o retry após recuperar o socket)
     const doSend = async () => {
-      const r = await fetch(endpoint, {
+      const r = await fetchWithTimeout(endpoint, {
+        timeout: 15000,
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify(requestBody),
@@ -210,14 +214,16 @@ Deno.serve(async (req) => {
       console.warn('[send-whatsapp-message] Connection Closed no envio, tentando recuperar socket e reenviar');
       // Log do estado pós-erro para distinguir "socket flapando" de "sessão expirada"
       try {
-        const postResp = await fetch(`${baseEvolutionUrl}/instance/connectionState/${instanceIdentifier}`, {
+        const postResp = await fetchWithTimeout(`${baseEvolutionUrl}/instance/connectionState/${instanceIdentifier}`, {
+          timeout: 15000,
           headers: { apikey: secrets.api_key },
         });
         const postTxt = postResp.ok ? await postResp.text() : '';
         console.warn('[send-whatsapp-message] PÓS-erro connectionState HTTP', postResp.status, 'body:', postTxt);
       } catch {}
       try {
-        const reconnResp = await fetch(`${baseEvolutionUrl}/instance/connect/${instanceIdentifier}`, {
+        const reconnResp = await fetchWithTimeout(`${baseEvolutionUrl}/instance/connect/${instanceIdentifier}`, {
+          timeout: 20000,
           headers: { apikey: secrets.api_key },
         });
         const reconnTxt = await reconnResp.text().catch(() => '');
@@ -388,7 +394,7 @@ async function fetchMediaAsBase64(url: string, supabase: any): Promise<string> {
     }
     bytes = new Uint8Array(await data.arrayBuffer());
   } else {
-    const res = await fetch(url);
+    const res = await fetchWithTimeout(url, { timeout: 30000 });
     if (!res.ok) {
       throw new Error(`Failed to fetch media: ${res.status}`);
     }

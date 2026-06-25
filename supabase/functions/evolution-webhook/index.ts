@@ -9,6 +9,7 @@ import {
   isEditedMessage,
   downloadAndUploadMedia,
 } from '../_shared/evolution-helpers.ts';
+import { fetchWithTimeout } from '../_shared/fetch-with-timeout.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -48,9 +49,10 @@ async function fetchAndUpdateProfilePicture(
       headers['apikey'] = apiKey;
     }
     
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `${apiUrl}/chat/fetchProfile/${instanceName}`,
       {
+        timeout: 15000,
         method: 'POST',
         headers,
         body: JSON.stringify({ number: phoneNumber }),

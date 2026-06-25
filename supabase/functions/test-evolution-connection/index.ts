@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { fetchWithTimeout } from "../_shared/fetch-with-timeout.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -53,9 +54,10 @@ serve(async (req) => {
       }
     });
 
-    const response = await fetch(fullUrl, { 
+    const response = await fetchWithTimeout(fullUrl, {
+      timeout: 15000,
       method: 'GET',
-      headers 
+      headers
     });
 
     const responseText = await response.text();

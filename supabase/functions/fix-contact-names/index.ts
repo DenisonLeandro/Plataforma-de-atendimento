@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { fetchWithTimeout } from "../_shared/fetch-with-timeout.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -160,7 +161,8 @@ Deno.serve(async (req) => {
         const fetchProfileUrl = `${secrets.api_url}/chat/fetchProfile/${instance.instance_name}`;
         console.log(`[fix-contact-names] Fetching profile from: ${fetchProfileUrl}`);
 
-        const profileResponse = await fetch(fetchProfileUrl, {
+        const profileResponse = await fetchWithTimeout(fetchProfileUrl, {
+          timeout: 15000,
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { fetchWithTimeout } from "../_shared/fetch-with-timeout.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -8,7 +9,7 @@ const corsHeaders = {
 
 async function fetchJson(url: string, headers: Record<string, string>) {
   try {
-    const r = await fetch(url, { headers });
+    const r = await fetchWithTimeout(url, { timeout: 20000, headers });
     const txt = await r.text();
     let body: any = null;
     if (txt) { try { body = JSON.parse(txt); } catch { body = txt; } }

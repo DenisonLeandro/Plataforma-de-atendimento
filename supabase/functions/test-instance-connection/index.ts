@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { fetchWithTimeout } from "../_shared/fetch-with-timeout.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -117,9 +118,9 @@ serve(async (req) => {
     console.log('[test-instance-connection] Testing connection to Evolution API with identifier:', instanceIdentifier);
     const authHeaders = getEvolutionAuthHeaders(secrets.api_key, providerType);
     
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `${secrets.api_url}/instance/connectionState/${instanceIdentifier}`,
-      { headers: authHeaders }
+      { timeout: 15000, headers: authHeaders }
     );
 
     if (!response.ok) {
