@@ -1189,6 +1189,127 @@ async function processMessageEdit(payload: EvolutionWebhookPayload, supabase: an
   }
 }
 
+// Resolve conversation IDs from a list of remoteJids for a given instance.
+async function resolveConversationIdsForJids(
+  supabase: any,
+  instanceId: string,
+  remoteJids: string[]
+): Promise<string[]> {
+  const unique = Array.from(new Set(remoteJids.filter(Boolean)));
+  if (unique.length === 0) return [];
+
+  const phones = new Set<string>();
+  for (const jid of unique) {
+    try {
+      const { phone } = normalizePhoneNumber(jid);
+      if (phone) phones.add(phone);
+    } catch (_e) {
+      // ignore malformed jid
+    }
+  }
+  if (phones.size === 0) return [];
+
+  const { data: contacts } = await supabase
+    .from('whatsapp_contacts')
+    .select('id')
+    .eq('instance_id', instanceId)
+    .in('phone_number', Array.from(phones));
+
+  const contactIds = (contacts || []).map((c: any) => c.id);
+  if (contactIds.length === 0) return [];
+
+  const { data: convs } = await supabase
+    .from('whatsapp_conversations')
+    .select('id')
+    .eq('instance_id', instanceId)
+    .in('contact_id', contactIds);
+
+  return (convs || []).map((c: any) => c.id);
+}
+
+// messages.read — agent leu mensagens fora da plataforma (no celular/web).
+// Zera o unread_count das conversas envolvidas e marca as mensagens como 'read'.
+async function processMessagesRead(payload: EvolutionWebhookPayload, supabase: any) {
+  try {
+    const { instance, data } = payload;
+    const instanceId = await findInstanceIdForWebhook(supabase, instance);
+    if (!instanceId) {
+      console.log('[evolution-webhook] messages.read: instance not found for', instance);
+      return;
+    }
+
+    // Evolution pode mandar um array de chaves ou uma única chave.
+    const rawKeys: any[] = Array.isArray(data?.keys)
+      ? data.keys
+      : Array.isArray(data?.readMessages)
+      ? data.readMessages
+      : Array.isArray(data)
+      ? data
+      : data?.key
+      ? [data.key]
+      : [];
+
+    const messageIds = rawKeys.map((k) => k?.id).filter(Boolean);
+    const remoteJids = rawKeys.map((k) => k?.remoteJid).filter(Boolean);
+
+    if (messageIds.length > 0) {
+      await supabase
+        .from('whatsapp_messages')
+        .update({ status: 'read' })
+        .in('message_id', messageIds);
+    }
+
+    const convIds = await resolveConversationIdsForJids(supabase, instanceId, remoteJids);
+    if (convIds.length > 0) {
+      await supabase
+        .from('whatsapp_conversations')
+        .update({ unread_count: 0, updated_at: new Date().toISOString() })
+        .in('id', convIds);
+      console.log('[evolution-webhook] messages.read: cleared unread for', convIds.length, 'conv(s)');
+    }
+  } catch (error) {
+    console.error('[evolution-webhook] Error in processMessagesRead:', error);
+  }
+}
+
+// chats.update — Evolution informa estado do chat (ex.: unreadCount=0 quando lido).
+async function processChatsUpdate(payload: EvolutionWebhookPayload, supabase: any) {
+  try {
+    const { instance, data } = payload;
+    const instanceId = await findInstanceIdForWebhook(supabase, instance);
+    if (!instanceId) {
+      console.log('[evolution-webhook] chats.update: instance not found for', instance);
+      return;
+    }
+
+    const chats: any[] = Array.isArray(data) ? data : data?.chats ? data.chats : [data];
+    const jidsToClear: string[] = [];
+    for (const chat of chats) {
+      if (!chat) continue;
+      const remoteJid = chat.id || chat.remoteJid || chat.jid;
+      if (!remoteJid) continue;
+      // Algumas versões mandam unreadCount, outras unread_count.
+      const unread = chat.unreadCount ?? chat.unread_count;
+      if (unread === 0 || unread === '0') {
+        jidsToClear.push(remoteJid);
+      }
+    }
+
+    if (jidsToClear.length === 0) return;
+
+    const convIds = await resolveConversationIdsForJids(supabase, instanceId, jidsToClear);
+    if (convIds.length > 0) {
+      await supabase
+        .from('whatsapp_conversations')
+        .update({ unread_count: 0, updated_at: new Date().toISOString() })
+        .in('id', convIds);
+      console.log('[evolution-webhook] chats.update: cleared unread for', convIds.length, 'conv(s)');
+    }
+  } catch (error) {
+    console.error('[evolution-webhook] Error in processChatsUpdate:', error);
+  }
+}
+
 Deno.serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
