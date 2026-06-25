@@ -1,53 +1,32 @@
-## Problema
+## Diagnóstico
 
-O filtro **"Aguardando"** mostra 734 conversas, mas inclui conversas já **encerradas/arquivadas**. Hoje a contagem só olha `last_message_is_from_me = false`, sem considerar `status`. Além disso, a plataforma não reage quando a conversa é lida/respondida fora dela (ex.: você responde direto pelo WhatsApp no celular, ou marca como lida lá).
+A Ana Clara vê todos os contatos como "Sem nome / Desconhecido" porque há uma inconsistência de RLS criada quando ampliamos a visibilidade de conversas:
 
-## Objetivos
+- `whatsapp_conversations` e `whatsapp_messages` agora usam `can_view_conversation` (permite ao atendente enxergar todas as conversas das instâncias liberadas em **Acesso a Instâncias**, mesmo as atribuídas a outros).
+- Porém a política de leitura de `whatsapp_contacts` (**"Agents can view contacts of accessible conversations"**) continua usando `can_access_conversation`, que é mais estrita (só libera quando a conversa está atribuída ao próprio agente ou não-atribuída e coberta por uma regra).
 
-1. O contador e o filtro "Aguardando" devem contar apenas conversas **abertas** (status `active`, ignorando `closed`/`archived`).
-2. A plataforma deve refletir automaticamente, em tempo quase real, quando uma conversa é **lida**, **respondida** ou **encerrada** em qualquer canal (WhatsApp celular, plataforma, web).
+Resultado: a Ana enxerga a lista de conversas da `cinco-conjuntos`, mas o `SELECT` em `whatsapp_contacts` retorna `null` para quase tudo que não está atribuído a ela. O frontend cai no fallback `contact?.name || "Desconhecido"` / `"Sem nome"`.
 
-## Mudanças
+**Os nomes não estão corrompidos no banco** — estão apenas invisíveis para ela por RLS. Não há necessidade de "recadastrar" nada.
 
-### 1. Contadores corretos (banco)
-Atualizar a função `public.get_conversation_counters` para que `waiting_count` e `unread_count` **excluam** conversas com `status IN ('closed','archived')`. `total_count` continua respeitando o filtro de status pedido pela tela.
+## Correção
 
-```text
-waiting_count  = COUNT WHERE last_message_is_from_me = false
-                 AND status NOT IN ('closed','archived')
-unread_count   = COUNT WHERE unread_count > 0
-                 AND status NOT IN ('closed','archived')
-```
+Alinhar a leitura de contatos à mesma regra de leitura de conversas:
 
-### 2. Filtro "Aguardando" na sidebar
-Em `src/components/conversations/ConversationsSidebar.tsx`, o filtro `waiting` passa a exigir também `status !== 'closed' && status !== 'archived'`. Mesma regra no filtro `unread`. Assim a lista visível bate com o número do pill.
+1. `DROP POLICY "Agents can view contacts of accessible conversations" ON public.whatsapp_contacts;`
+2. Recriar usando `can_view_conversation(auth.uid(), c.id)` no `EXISTS`, ou seja: qualquer atendente que possa **ver** a conversa também pode ler o contato dela.
+3. Manter a política de **UPDATE** como está (continua exigindo `can_access_conversation`) — escrita segue restrita a quem é dono da conversa.
+4. Não mexer em admin/supervisor (já cobertos pelas outras políticas).
+5. Não precisa migração de dados; basta pedir para a Ana recarregar.
 
-### 3. Detectar leitura/resposta vindas do WhatsApp (webhook)
-Hoje `evolution-webhook` só trata `messages.upsert`, `messages.update` e `connection.update`. Vamos adicionar:
+## Verificação
 
-- **`messages.read` / `MESSAGES_READ`**: zera `unread_count` da conversa correspondente (chave por `remoteJid` + `instance_id`). Também marca as mensagens com `status = 'read'`.
-- **`chats.update` / `CHATS_UPDATE`**: quando vier `unreadCount: 0`, zera `unread_count` da conversa correspondente.
-- **`messages.upsert` com `key.fromMe = true`** (já existe parcialmente): além de reabrir conversa fechada, garantir `unread_count = 0` e `last_message_is_from_me = true` (já é feito por trigger, manter). Isso cobre o caso "respondi pelo celular" — a conversa sai automaticamente do "Aguardando".
+- Rodar `SELECT count(*) FROM public.whatsapp_contacts` simulando o JWT da Ana (via `set role` no painel) para confirmar que agora ela vê os contatos da `cinco-conjuntos`.
+- Conferir na UI que `ConversationItem`, `ChatHeader` e `ContactItem` mostram o nome real em vez de "Sem nome / Desconhecido".
+- Garantir que ela continua **sem** ver contatos de outras instâncias (deve haver 0 vazamentos).
 
-### 4. Encerramento espelhado
-Quando a conversa é encerrada na plataforma (`status = 'closed'`), ela já some do "Aguardando" depois do item 1. Não há API do WhatsApp para "encerrar" do lado deles, então o espelho prático é:
+## Escopo do que NÃO muda
 
-- Encerrar na plataforma → some do Aguardando imediatamente (item 1+2).
-- Responder pelo WhatsApp → `fromMe` chega via webhook → `last_message_is_from_me = true` → some do Aguardando.
-- Marcar como lida pelo WhatsApp → `messages.read`/`chats.update` → `unread_count = 0` (item 3).
-
-### 5. Limpeza pontual dos 734 atuais
-Rodar um update único para sincronizar o estado: conversas com `status IN ('closed','archived')` não devem aparecer no filtro depois da correção, então nenhum backfill de dados é necessário — só recalcular os contadores (a RPC nova já resolve). Não vamos alterar `status` de nenhuma conversa.
-
-## Arquivos afetados
-
-```text
-supabase/migrations/<novo>.sql                 (RPC get_conversation_counters)
-supabase/functions/evolution-webhook/index.ts  (eventos messages.read / chats.update)
-src/components/conversations/ConversationsSidebar.tsx (filtros waiting/unread)
-```
-
-## Fora do escopo
-
-- Encerramento automático por inatividade (já existe rotina manual; podemos planejar depois).
-- Mudanças de UI nos pills além de respeitar os novos números.
+- Nenhum código de frontend.
+- Nenhuma alteração em `can_view_conversation` ou `can_access_conversation`.
+- Nenhuma política de `whatsapp_messages`, `whatsapp_conversations` ou escrita em `whatsapp_contacts`.
