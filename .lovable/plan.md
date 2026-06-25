@@ -1,91 +1,53 @@
-Entendi. A resposta honesta é: se uma mensagem antiga nunca foi entregue pela Evolution/API para a plataforma e também não aparece mais no histórico consultável da instância, não existe como “inventar” essa mensagem depois. Mas dá para fazer duas coisas importantes:
+## Problema
 
-1. tentar recuperar tudo que ainda estiver disponível na Evolution/WhatsApp;
-2. mudar a arquitetura para que, daqui pra frente, a plataforma não perca mensagens mesmo quando mídia, IA, conexão ou banco falharem temporariamente.
+O filtro **"Aguardando"** mostra 734 conversas, mas inclui conversas já **encerradas/arquivadas**. Hoje a contagem só olha `last_message_is_from_me = false`, sem considerar `status`. Além disso, a plataforma não reage quando a conversa é lida/respondida fora dela (ex.: você responde direto pelo WhatsApp no celular, ou marca como lida lá).
 
-## Plano proposto
+## Objetivos
 
-### 1. Diagnóstico de recuperação das mensagens invisíveis
-- Identificar as conversas que aparecem sem mensagens ou com histórico incompleto.
-- Para cada conversa, consultar diretamente a Evolution API usando `findMessages` com os formatos possíveis de JID:
-  - número real `@s.whatsapp.net`;
-  - `@lid`;
-  - variações com/sem nono dígito brasileiro;
-  - conversas duplicadas/twins já existentes no banco.
-- Separar o resultado em três grupos:
-  - mensagens existem na Evolution e podem ser importadas;
-  - mensagens existem só em conversa duplicada/local e podem ser fundidas;
-  - mensagens não existem mais em nenhuma fonte disponível.
+1. O contador e o filtro "Aguardando" devem contar apenas conversas **abertas** (status `active`, ignorando `closed`/`archived`).
+2. A plataforma deve refletir automaticamente, em tempo quase real, quando uma conversa é **lida**, **respondida** ou **encerrada** em qualquer canal (WhatsApp celular, plataforma, web).
 
-### 2. Recuperação do que ainda existir
-- Criar/ajustar uma função de recuperação por conversa/instância.
-- Reimportar mensagens encontradas com `upsert`, sem duplicar mensagens já salvas.
-- Resolver automaticamente casos `@lid` quando houver conversa gêmea com o número real.
-- Atualizar `last_message_at`, prévia, status e contador da conversa após a recuperação.
-- Para mídias antigas, salvar a mensagem primeiro e deixar a mídia para uma etapa separada, para não perder texto por causa de falha no download do arquivo.
+## Mudanças
 
-### 3. Blindagem do webhook para mensagens novas
-Hoje o ponto mais perigoso é que o webhook processa tudo direto. Se a função demorar, se baixar mídia falhar, se der erro antes do insert, ou se a execução cair, a mensagem pode não ser persistida corretamente.
-
-A correção estrutural será:
-- Criar uma tabela de entrada bruta, por exemplo `whatsapp_webhook_events`, para armazenar todo payload recebido da Evolution antes de qualquer processamento.
-- No webhook, gravar o evento bruto imediatamente e responder rápido.
-- Processar a mensagem em segundo plano, com controle de status:
-  - `pending`;
-  - `processing`;
-  - `processed`;
-  - `failed`;
-  - `dead_letter`.
-- Usar chave idempotente por instância + evento + message_id, evitando duplicidade.
-- Se qualquer etapa falhar, o payload original continua salvo e pode ser reprocessado.
-
-### 4. Separar mensagem de mídia
-Para garantir que texto/registro da mensagem não se perca:
-- Salvar a mensagem no banco primeiro, mesmo que seja áudio, imagem, vídeo ou documento.
-- Marcar mídia como `pending_media` quando o download falhar ou demorar.
-- Criar retry/backfill de mídia em segundo plano.
-- A tela pode mostrar “mídia em recuperação” em vez de parecer que a mensagem sumiu.
-
-### 5. Reconciliação automática
-Além do webhook, adicionar uma rotina de conferência:
-- Periodicamente consultar as últimas mensagens de cada instância/conversa ativa na Evolution.
-- Comparar com o banco local por `message_id`.
-- Importar automaticamente qualquer mensagem faltante.
-- Registrar lacunas que não puderem ser recuperadas.
-
-Isso cobre casos em que:
-- a Evolution não chamou o webhook;
-- a função recebeu mas falhou no meio;
-- a conexão caiu e voltou;
-- houve duplicidade `@lid`/número real;
-- mídia travou o processamento.
-
-### 6. Tela/log administrativo de falhas
-Adicionar visibilidade para você saber quando algo não chegou perfeito:
-- mensagens/eventos com falha de processamento;
-- tentativas de retry;
-- mídia pendente;
-- conversas com evento recebido mas sem mensagem renderizada;
-- botão de “reprocessar falhas”.
-
-## Resultado esperado
-
-Depois disso, a plataforma passa a trabalhar com um modelo mais seguro:
+### 1. Contadores corretos (banco)
+Atualizar a função `public.get_conversation_counters` para que `waiting_count` e `unread_count` **excluam** conversas com `status IN ('closed','archived')`. `total_count` continua respeitando o filtro de status pedido pela tela.
 
 ```text
-Evolution webhook recebido
-        ↓
-Evento bruto salvo imediatamente
-        ↓
-Processamento em segundo plano
-        ↓
-Mensagem salva primeiro
-        ↓
-Mídia/IA/transcrição/regras depois
-        ↓
-Retry automático se qualquer etapa falhar
+waiting_count  = COUNT WHERE last_message_is_from_me = false
+                 AND status NOT IN ('closed','archived')
+unread_count   = COUNT WHERE unread_count > 0
+                 AND status NOT IN ('closed','archived')
 ```
 
-## Limite real
+### 2. Filtro "Aguardando" na sidebar
+Em `src/components/conversations/ConversationsSidebar.tsx`, o filtro `waiting` passa a exigir também `status !== 'closed' && status !== 'archived'`. Mesma regra no filtro `unread`. Assim a lista visível bate com o número do pill.
 
-Não dá para prometer 100% de recuperação de mensagens antigas que nunca foram entregues pela Evolution e que não estão mais disponíveis no histórico dela. Mas dá para garantir que, daqui pra frente, todo evento recebido fique salvo bruto antes de qualquer processamento, reduzindo muito o risco de mensagens sumirem da plataforma.
+### 3. Detectar leitura/resposta vindas do WhatsApp (webhook)
+Hoje `evolution-webhook` só trata `messages.upsert`, `messages.update` e `connection.update`. Vamos adicionar:
+
+- **`messages.read` / `MESSAGES_READ`**: zera `unread_count` da conversa correspondente (chave por `remoteJid` + `instance_id`). Também marca as mensagens com `status = 'read'`.
+- **`chats.update` / `CHATS_UPDATE`**: quando vier `unreadCount: 0`, zera `unread_count` da conversa correspondente.
+- **`messages.upsert` com `key.fromMe = true`** (já existe parcialmente): além de reabrir conversa fechada, garantir `unread_count = 0` e `last_message_is_from_me = true` (já é feito por trigger, manter). Isso cobre o caso "respondi pelo celular" — a conversa sai automaticamente do "Aguardando".
+
+### 4. Encerramento espelhado
+Quando a conversa é encerrada na plataforma (`status = 'closed'`), ela já some do "Aguardando" depois do item 1. Não há API do WhatsApp para "encerrar" do lado deles, então o espelho prático é:
+
+- Encerrar na plataforma → some do Aguardando imediatamente (item 1+2).
+- Responder pelo WhatsApp → `fromMe` chega via webhook → `last_message_is_from_me = true` → some do Aguardando.
+- Marcar como lida pelo WhatsApp → `messages.read`/`chats.update` → `unread_count = 0` (item 3).
+
+### 5. Limpeza pontual dos 734 atuais
+Rodar um update único para sincronizar o estado: conversas com `status IN ('closed','archived')` não devem aparecer no filtro depois da correção, então nenhum backfill de dados é necessário — só recalcular os contadores (a RPC nova já resolve). Não vamos alterar `status` de nenhuma conversa.
+
+## Arquivos afetados
+
+```text
+supabase/migrations/<novo>.sql                 (RPC get_conversation_counters)
+supabase/functions/evolution-webhook/index.ts  (eventos messages.read / chats.update)
+src/components/conversations/ConversationsSidebar.tsx (filtros waiting/unread)
+```
+
+## Fora do escopo
+
+- Encerramento automático por inatividade (já existe rotina manual; podemos planejar depois).
+- Mudanças de UI nos pills além de respeitar os novos números.
