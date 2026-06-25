@@ -114,6 +114,15 @@ async function routeWebhookPayload(payload: EvolutionWebhookPayload, supabase: a
     case 'messages.update':
       await processMessageUpdate(payload, supabase);
       break;
+    case 'messages.read':
+    case 'message.read':
+    case 'send.message.read':
+      await processMessagesRead(payload, supabase);
+      break;
+    case 'chats.update':
+    case 'chat.update':
+      await processChatsUpdate(payload, supabase);
+      break;
     case 'connection.update':
       await processConnectionUpdate(payload, supabase);
       break;
