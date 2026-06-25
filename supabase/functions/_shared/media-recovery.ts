@@ -69,7 +69,7 @@ export async function recoverMessageMedia(
     const { data: message, error: msgError } = await supabase
       .from("whatsapp_messages")
       .select(
-        "id, message_id, remote_jid, is_from_me, message_type, media_mimetype, conversation_id",
+        "id, message_id, remote_jid, is_from_me, message_type, media_mimetype, media_retry_count, conversation_id",
       )
       .eq("id", messageId)
       .single();
