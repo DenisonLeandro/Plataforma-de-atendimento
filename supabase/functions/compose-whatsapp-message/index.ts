@@ -28,7 +28,10 @@ serve(async (req) => {
     }
 
     if (!lovableApiKey) {
-      throw new Error('LOVABLE_API_KEY not configured');
+      return new Response(
+        JSON.stringify({ error: 'LOVABLE_API_KEY não configurada' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     const supabase = createClient(supabaseUrl, supabaseKey);
