@@ -95,9 +95,19 @@ const ConversationsSidebar = ({ selectedId, onSelect, instanceId, isCollapsed, o
 
     // Filtros rápidos (pills)
     if (filter === "unread") {
-      result = result.filter(conv => (conv.unread_count || 0) > 0);
+      result = result.filter(
+        conv =>
+          (conv.unread_count || 0) > 0 &&
+          conv.status !== "closed" &&
+          conv.status !== "archived"
+      );
     } else if (filter === "waiting") {
-      result = result.filter(conv => conv.isLastMessageFromMe === false);
+      result = result.filter(
+        conv =>
+          conv.isLastMessageFromMe === false &&
+          conv.status !== "closed" &&
+          conv.status !== "archived"
+      );
     } else if (filter === "queue") {
       result = result.filter(conv => !conv.assigned_to);
     } else if (filter === "mine") {
