@@ -16,6 +16,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const WEBHOOK_MAX_ATTEMPTS = 5;
+const WEBHOOK_RETRY_BASE_MS = 15_000;
+const MEDIA_TYPES = ['audio', 'image', 'video', 'document', 'sticker'];
+
 // Auto sentiment analysis threshold (number of client messages to trigger analysis)
 const AUTO_SENTIMENT_THRESHOLD = 5;
 
@@ -26,6 +30,188 @@ interface EvolutionWebhookPayload {
   event: string;
   instance: string;
   data: any;
+}
+
+async function sha256(value: string): Promise<string> {
+  const data = new TextEncoder().encode(value);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(hashBuffer))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+function getWebhookMessageId(payload: EvolutionWebhookPayload): string | null {
+  return payload?.data?.key?.id
+    || payload?.data?.update?.key?.id
+    || payload?.data?.message?.key?.id
+    || payload?.data?.message?.protocolMessage?.key?.id
+    || null;
+}
+
+async function findInstanceIdForWebhook(supabase: any, instanceIdentifier: string): Promise<string | null> {
+  const { data: byName } = await supabase
+    .from('whatsapp_instances')
+    .select('id')
+    .eq('instance_name', instanceIdentifier)
+    .maybeSingle();
+
+  if (byName?.id) return byName.id;
+
+  const { data: byExternalId } = await supabase
+    .from('whatsapp_instances')
+    .select('id')
+    .eq('instance_id_external', instanceIdentifier)
+    .maybeSingle();
+
+  return byExternalId?.id ?? null;
+}
+
+async function enqueueWebhookEvent(supabase: any, payload: EvolutionWebhookPayload) {
+  const raw = JSON.stringify(payload);
+  const messageId = getWebhookMessageId(payload);
+  const eventKey = `${payload.event}:${payload.instance}:${messageId ?? 'no-message'}:${await sha256(raw)}`;
+  const instanceId = await findInstanceIdForWebhook(supabase, payload.instance);
+
+  const { data, error } = await supabase
+    .from('whatsapp_webhook_events')
+    .insert({
+      instance_id: instanceId,
+      instance_identifier: payload.instance,
+      event: payload.event,
+      message_id: messageId,
+      event_key: eventKey,
+      payload,
+      status: 'pending',
+    })
+    .select('id, status')
+    .single();
+
+  if (!error && data) return data;
+
+  // Evolution can retry the same webhook. Keep the first raw event and avoid
+  // duplicate message writes, but return its id so a pending/failed event can be kicked again.
+  if (error?.code === '23505') {
+    const { data: existing } = await supabase
+      .from('whatsapp_webhook_events')
+      .select('id, status')
+      .eq('event_key', eventKey)
+      .maybeSingle();
+    if (existing) return existing;
+  }
+
+  throw new Error(error?.message || 'failed to enqueue webhook event');
+}
+
+async function routeWebhookPayload(payload: EvolutionWebhookPayload, supabase: any) {
+  switch (payload.event) {
+    case 'messages.upsert':
+      if (isEditedMessage(payload.data?.message)) {
+        await processMessageEdit(payload, supabase);
+      } else {
+        await processMessageUpsert(payload, supabase);
+      }
+      break;
+    case 'messages.update':
+      await processMessageUpdate(payload, supabase);
+      break;
+    case 'connection.update':
+      await processConnectionUpdate(payload, supabase);
+      break;
+    default:
+      console.log('[evolution-webhook] Unhandled event type:', payload.event);
+  }
+}
+
+async function scheduleWebhookRetry(eventId: string, delayMs: number) {
+  await new Promise((resolve) => setTimeout(resolve, delayMs));
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const res = await fetch(`${supabaseUrl}/functions/v1/evolution-webhook`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: serviceRoleKey,
+      Authorization: `Bearer ${serviceRoleKey}`,
+    },
+    body: JSON.stringify({ internal: true, event_id: eventId }),
+  });
+  if (!res.ok) {
+    console.error('[evolution-webhook] webhook retry self-call failed:', res.status, await res.text().catch(() => ''));
+  }
+}
+
+async function processStoredWebhookEvent(supabase: any, eventId: string) {
+  const { data: locked, error: lockError } = await supabase
+    .from('whatsapp_webhook_events')
+    .update({ status: 'processing', locked_at: new Date().toISOString() })
+    .eq('id', eventId)
+    .in('status', ['pending', 'failed'])
+    .select('id, payload, attempts')
+    .maybeSingle();
+
+  if (lockError) throw new Error(lockError.message);
+  if (!locked) return;
+
+  const nextAttempt = (locked.attempts || 0) + 1;
+  await supabase
+    .from('whatsapp_webhook_events')
+    .update({ attempts: nextAttempt })
+    .eq('id', eventId);
+
+  try {
+    await routeWebhookPayload(locked.payload as EvolutionWebhookPayload, supabase);
+    await supabase
+      .from('whatsapp_webhook_events')
+      .update({
+        status: 'processed',
+        processed_at: new Date().toISOString(),
+        locked_at: null,
+        last_error: null,
+        next_retry_at: null,
+      })
+      .eq('id', eventId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const isDead = nextAttempt >= WEBHOOK_MAX_ATTEMPTS;
+    const retryDelay = WEBHOOK_RETRY_BASE_MS * Math.pow(2, Math.max(0, nextAttempt - 1));
+    const nextRetryAt = new Date(Date.now() + retryDelay).toISOString();
+
+    await supabase
+      .from('whatsapp_webhook_events')
+      .update({
+        status: isDead ? 'dead_letter' : 'failed',
+        last_error: message,
+        locked_at: null,
+        next_retry_at: isDead ? null : nextRetryAt,
+      })
+      .eq('id', eventId);
+
+    console.error('[evolution-webhook] Stored event processing failed:', eventId, message);
+    if (!isDead) {
+      // @ts-ignore EdgeRuntime is provided by Supabase Edge Runtime
+      EdgeRuntime.waitUntil(scheduleWebhookRetry(eventId, retryDelay));
+    }
+  }
+}
+
+async function drainWebhookQueue(supabase: any, preferredEventId?: string) {
+  if (preferredEventId) {
+    await processStoredWebhookEvent(supabase, preferredEventId);
+  }
+
+  const now = new Date().toISOString();
+  const { data: events } = await supabase
+    .from('whatsapp_webhook_events')
+    .select('id')
+    .in('status', ['pending', 'failed'])
+    .or(`next_retry_at.is.null,next_retry_at.lte.${now}`)
+    .order('created_at', { ascending: true })
+    .limit(5);
+
+  for (const event of events || []) {
+    if (event.id === preferredEventId) continue;
+    await processStoredWebhookEvent(supabase, event.id);
+  }
 }
 
 // Fetch and update profile picture in background
@@ -525,6 +711,88 @@ async function processReaction(payload: EvolutionWebhookPayload, supabase: any) 
   }
 }
 
+async function downloadAndAttachWebhookMedia(
+  supabase: any,
+  params: {
+    secrets: { api_url: string; api_key: string };
+    instanceData: any;
+    evolutionInstanceId: string;
+    key: any;
+    message: any;
+    messageRowId: string;
+    conversationId: string;
+    mediaMimetype: string;
+    messageType: string;
+  },
+) {
+  const { secrets, instanceData, evolutionInstanceId, key, message, messageRowId, conversationId, mediaMimetype, messageType } = params;
+  const delays = [0, 5_000, 20_000];
+  let lastError = 'media download failed';
+
+  for (let attempt = 1; attempt <= delays.length; attempt++) {
+    if (delays[attempt - 1] > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delays[attempt - 1]));
+    }
+
+    try {
+      const mediaUrl = await downloadAndUploadMedia(
+        secrets.api_url,
+        secrets.api_key,
+        evolutionInstanceId,
+        { key, message },
+        supabase,
+        mediaMimetype,
+        instanceData.provider_type || 'self_hosted',
+        15_000,
+      );
+
+      if (mediaUrl) {
+        await supabase
+          .from('whatsapp_messages')
+          .update({
+            media_url: mediaUrl,
+            media_mimetype: mediaMimetype,
+            media_status: 'available',
+            media_error: null,
+            media_retry_count: attempt,
+          })
+          .eq('id', messageRowId);
+
+        console.log('[evolution-webhook] Background media saved:', messageRowId);
+
+        if (messageType === 'audio') {
+          const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+          const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+          fetch(`${supabaseUrl}/functions/v1/transcribe-audio`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${serviceRoleKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ messageId: messageRowId }),
+          }).catch(err => console.error('[evolution-webhook] Error triggering auto-transcription:', err));
+        }
+
+        return;
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+      console.error('[evolution-webhook] Background media attempt failed:', attempt, lastError);
+    }
+
+    await supabase
+      .from('whatsapp_messages')
+      .update({
+        media_status: attempt >= delays.length ? 'failed' : 'pending',
+        media_error: lastError,
+        media_retry_count: attempt,
+      })
+      .eq('id', messageRowId);
+  }
+
+  console.error('[evolution-webhook] Background media failed after retries:', { messageRowId, conversationId, messageType });
+}
+
 // Process message upsert event
 async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: any) {
   try {
@@ -552,7 +820,7 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
 
     if (!instanceData) {
       console.error('[evolution-webhook] Instance not found:', instance);
-      return;
+      throw new Error(`Instance not found: ${instance}`);
     }
     
     // Determine which identifier to use for Evolution API calls
@@ -582,7 +850,7 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
 
     if (secretsError || !secrets) {
       console.error('[evolution-webhook] Failed to fetch instance secrets:', secretsError);
-      return;
+      throw new Error(`Failed to fetch instance secrets: ${secretsError?.message || 'not found'}`);
     }
 
     // Normalize phone number.
@@ -614,7 +882,7 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
 
     if (!contactId) {
       console.error('[evolution-webhook] Failed to create/find contact');
-      return;
+      throw new Error('Failed to create/find contact');
     }
 
     // Find or create conversation
@@ -627,7 +895,7 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
 
     if (!conversationId) {
       console.error('[evolution-webhook] Failed to create/find conversation');
-      return;
+      throw new Error('Failed to create/find conversation');
     }
 
     // Detect message type and content
@@ -642,11 +910,13 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
     const content = getMessageContent(message, messageType);
     console.log('[evolution-webhook] Message type:', messageType, 'Content preview:', content.substring(0, 50));
 
-    // Process media if present
-    let mediaUrl: string | null = null;
+    // Detect media metadata only. The actual download runs after the message row
+    // is already saved, in background, so a slow/failed audio/image never makes
+    // the whole webhook disappear.
     let mediaMimetype: string | null = null;
+    let shouldFetchMedia = false;
 
-    if (messageType !== 'text') {
+    if (MEDIA_TYPES.includes(messageType)) {
       const mediaMessage = message[`${messageType}Message`];
       if (mediaMessage) {
         mediaMimetype = mediaMessage.mimetype || null;
@@ -655,34 +925,7 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
           if (messageType === 'audio') mediaMimetype = 'audio/ogg; codecs=opus';
           else mediaMimetype = `${messageType}/*`;
         }
-        if (mediaMimetype) {
-          mediaUrl = await downloadAndUploadMedia(
-            secrets.api_url,
-            secrets.api_key,
-            evolutionInstanceId,
-            { key, message },
-            supabase,
-            mediaMimetype,
-            instanceData.provider_type || 'self_hosted'
-          );
-          // Retry once after a short delay if first attempt failed (Evolution API can be flaky)
-          if (!mediaUrl) {
-            console.warn('[evolution-webhook] First media download failed, retrying in 800ms...', { messageId: key.id, messageType });
-            await new Promise((r) => setTimeout(r, 800));
-            mediaUrl = await downloadAndUploadMedia(
-              secrets.api_url,
-              secrets.api_key,
-              evolutionInstanceId,
-              { key, message },
-              supabase,
-              mediaMimetype,
-              instanceData.provider_type || 'self_hosted'
-            );
-            if (!mediaUrl) {
-              console.error('[evolution-webhook] Media download failed after retry. Message will be saved without media_url; user can fetch it via fetch-message-media.', { messageId: key.id, messageType });
-            }
-          }
-        }
+        shouldFetchMedia = !!mediaMimetype;
       }
     }
 
@@ -692,12 +935,11 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
     // Create message timestamp
     const timestamp = new Date(messageTimestamp * 1000).toISOString();
 
-    // Save message. Para mensagens enviadas por nós (fromMe), o
-    // send-whatsapp-message também grava a mesma linha (que usa UPSERT). Se essa
-    // gravação chegou primeiro, este INSERT bate na UNIQUE(conversation_id,
-    // message_id) e é apenas ignorado/logado — a linha original (com a media_url
-    // correta enviada pela plataforma) é preservada.
-    const { error: messageError } = await supabase
+    // Save message first. Media is intentionally marked as pending and fetched
+    // after the row exists, avoiding data loss when Evolution/media/storage is slow.
+    const mediaStatus = shouldFetchMedia ? 'pending' : 'none';
+    let insertedMessage: any = null;
+    const { data: inserted, error: messageError } = await supabase
       .from('whatsapp_messages')
       .insert({
         conversation_id: conversationId,
@@ -705,55 +947,51 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
         message_id: key.id,
         content,
         message_type: messageType,
-        media_url: mediaUrl,
+        media_url: null,
         media_mimetype: mediaMimetype,
+        media_status: mediaStatus,
+        media_error: null,
         is_from_me: key.fromMe || false,
         status: 'sent',
         quoted_message_id: quotedMessageId,
         timestamp,
-      });
+      })
+      .select('id, media_url, media_status')
+      .single();
 
     if (messageError) {
-      console.error('[evolution-webhook] Error saving message:', messageError);
-      return;
+      if (messageError.code === '23505') {
+        const { data: existingMessage } = await supabase
+          .from('whatsapp_messages')
+          .select('id, media_url, media_status')
+          .eq('conversation_id', conversationId)
+          .eq('message_id', key.id)
+          .maybeSingle();
+        insertedMessage = existingMessage;
+        console.log('[evolution-webhook] Message already existed, preserving existing row:', key.id);
+      } else {
+        console.error('[evolution-webhook] Error saving message:', messageError);
+        throw new Error(`Error saving message: ${messageError.message}`);
+      }
+    } else {
+      insertedMessage = inserted;
     }
 
     console.log('[evolution-webhook] Message saved successfully');
 
-    // Trigger automatic audio transcription for audio messages (fire-and-forget)
-    if (messageType === 'audio' && mediaUrl) {
-      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-      const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-      
-      // Get the message ID that was just inserted
-      const { data: insertedMessage } = await supabase
-        .from('whatsapp_messages')
-        .select('id')
-        .eq('message_id', key.id)
-        .eq('conversation_id', conversationId)
-        .single();
-
-      if (insertedMessage) {
-        console.log('[evolution-webhook] Triggering auto-transcription for message:', insertedMessage.id);
-        
-        // Fire-and-forget: call transcription without awaiting
-        fetch(`${supabaseUrl}/functions/v1/transcribe-audio`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${serviceRoleKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ messageId: insertedMessage.id }),
-        })
-          .then(res => {
-            if (res.ok) {
-              console.log('[evolution-webhook] Auto-transcription triggered successfully');
-            } else {
-              console.error('[evolution-webhook] Failed to trigger auto-transcription:', res.status);
-            }
-          })
-          .catch(err => console.error('[evolution-webhook] Error triggering auto-transcription:', err));
-      }
+    if (shouldFetchMedia && insertedMessage?.id && !insertedMessage.media_url) {
+      // @ts-ignore EdgeRuntime is provided by Supabase Edge Runtime
+      EdgeRuntime.waitUntil(downloadAndAttachWebhookMedia(supabase, {
+        secrets,
+        instanceData,
+        evolutionInstanceId,
+        key,
+        message,
+        messageRowId: insertedMessage.id,
+        conversationId,
+        mediaMimetype: mediaMimetype!,
+        messageType,
+      }));
     }
 
     // Update conversation metadata
@@ -813,6 +1051,7 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
     }
   } catch (error) {
     console.error('[evolution-webhook] Error in processMessageUpsert:', error);
+    throw error;
   }
 }
 
@@ -951,33 +1190,31 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const authHeader = req.headers.get('Authorization') || '';
 
-    const payload: EvolutionWebhookPayload = await req.json();
-    console.log('[evolution-webhook] Event received:', payload.event, 'Instance:', payload.instance);
+    const body = await req.json();
 
-    // Route to appropriate handler
-    switch (payload.event) {
-      case 'messages.upsert':
-        // Check if it's an edited message
-        if (isEditedMessage(payload.data?.message)) {
-          await processMessageEdit(payload, supabase);
-        } else {
-          await processMessageUpsert(payload, supabase);
-        }
-        break;
-      case 'messages.update':
-        await processMessageUpdate(payload, supabase);
-        break;
-      case 'connection.update':
-        await processConnectionUpdate(payload, supabase);
-        break;
-      default:
-        console.log('[evolution-webhook] Unhandled event type:', payload.event);
+    if (body?.internal === true && authHeader === `Bearer ${supabaseServiceKey}`) {
+      // @ts-ignore EdgeRuntime is provided by Supabase Edge Runtime
+      EdgeRuntime.waitUntil(drainWebhookQueue(supabase, body.event_id));
+      return new Response(
+        JSON.stringify({ success: true, status: 'processing', event_id: body.event_id }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 202 }
+      );
     }
 
-    // Always return 200 to prevent webhook reprocessing
+    const payload = body as EvolutionWebhookPayload;
+    console.log('[evolution-webhook] Event received:', payload.event, 'Instance:', payload.instance);
+
+    const queued = await enqueueWebhookEvent(supabase, payload);
+
+    // Acknowledge Evolution immediately. The processing continues in background
+    // from the durable raw-event queue, so browser/edge timeouts don't lose messages.
+    // @ts-ignore EdgeRuntime is provided by Supabase Edge Runtime
+    EdgeRuntime.waitUntil(drainWebhookQueue(supabase, queued.id));
+
     return new Response(
-      JSON.stringify({ success: true, event: payload.event }),
+      JSON.stringify({ success: true, queued: true, event_id: queued.id, event: payload.event }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
     );
   } catch (error) {
