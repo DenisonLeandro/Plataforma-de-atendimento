@@ -1,32 +1,33 @@
-## Diagnóstico
+## Resposta
 
-A Ana Clara vê todos os contatos como "Sem nome / Desconhecido" porque há uma inconsistência de RLS criada quando ampliamos a visibilidade de conversas:
+Sim — a correção já vale para **todos os agentes**, atuais e futuros. Não precisa rodar nada por usuário.
 
-- `whatsapp_conversations` e `whatsapp_messages` agora usam `can_view_conversation` (permite ao atendente enxergar todas as conversas das instâncias liberadas em **Acesso a Instâncias**, mesmo as atribuídas a outros).
-- Porém a política de leitura de `whatsapp_contacts` (**"Agents can view contacts of accessible conversations"**) continua usando `can_access_conversation`, que é mais estrita (só libera quando a conversa está atribuída ao próprio agente ou não-atribuída e coberta por uma regra).
+## Por quê
 
-Resultado: a Ana enxerga a lista de conversas da `cinco-conjuntos`, mas o `SELECT` em `whatsapp_contacts` retorna `null` para quase tudo que não está atribuído a ela. O frontend cai no fallback `contact?.name || "Desconhecido"` / `"Sem nome"`.
+A política de RLS é avaliada por linha/usuário no momento da consulta. A nova regra de leitura em `whatsapp_contacts` é:
 
-**Os nomes não estão corrompidos no banco** — estão apenas invisíveis para ela por RLS. Não há necessidade de "recadastrar" nada.
+```
+EXISTS (
+  SELECT 1 FROM whatsapp_conversations c
+  WHERE c.contact_id = whatsapp_contacts.id
+    AND can_view_conversation(auth.uid(), c.id)
+)
+```
 
-## Correção
+Ou seja, qualquer usuário autenticado que `can_view_conversation` aprovar vê o contato. E `can_view_conversation` já libera automaticamente qualquer atendente que tenha entrada em **`agent_instance_access`** para a instância da conversa.
 
-Alinhar a leitura de contatos à mesma regra de leitura de conversas:
+Consequência prática:
+- Admin/Supervisor: continuam vendo tudo (já cobertos por outra policy).
+- Agente atual (ex.: Ana Clara): vê contatos de toda conversa da instância liberada a ele.
+- **Agente novo**: assim que for criado e receber acesso em **Configurações → Acesso a Instâncias**, passa a enxergar contatos da mesma forma — sem precisar de migração, sem precisar tocar em código.
+- Agente sem `agent_instance_access` para a instância: continua sem ver nada daquela instância (isolamento mantido).
 
-1. `DROP POLICY "Agents can view contacts of accessible conversations" ON public.whatsapp_contacts;`
-2. Recriar usando `can_view_conversation(auth.uid(), c.id)` no `EXISTS`, ou seja: qualquer atendente que possa **ver** a conversa também pode ler o contato dela.
-3. Manter a política de **UPDATE** como está (continua exigindo `can_access_conversation`) — escrita segue restrita a quem é dono da conversa.
-4. Não mexer em admin/supervisor (já cobertos pelas outras políticas).
-5. Não precisa migração de dados; basta pedir para a Ana recarregar.
+## O que NÃO muda
 
-## Verificação
+- Edição de contatos continua restrita a quem é dono da conversa (`can_access_conversation`).
+- Nenhuma alteração de frontend é necessária.
+- Não há plano de migração/backfill — os nomes nunca foram perdidos.
 
-- Rodar `SELECT count(*) FROM public.whatsapp_contacts` simulando o JWT da Ana (via `set role` no painel) para confirmar que agora ela vê os contatos da `cinco-conjuntos`.
-- Conferir na UI que `ConversationItem`, `ChatHeader` e `ContactItem` mostram o nome real em vez de "Sem nome / Desconhecido".
-- Garantir que ela continua **sem** ver contatos de outras instâncias (deve haver 0 vazamentos).
+## Plano
 
-## Escopo do que NÃO muda
-
-- Nenhum código de frontend.
-- Nenhuma alteração em `can_view_conversation` ou `can_access_conversation`.
-- Nenhuma política de `whatsapp_messages`, `whatsapp_conversations` ou escrita em `whatsapp_contacts`.
+Nenhum código ou migração adicional. Apenas confirmação de que a correção anterior é universal.
