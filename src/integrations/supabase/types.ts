@@ -639,7 +639,10 @@ export type Database = {
           edited_at: string | null
           id: string
           is_from_me: boolean | null
+          media_error: string | null
           media_mimetype: string | null
+          media_retry_count: number
+          media_status: string
           media_url: string | null
           message_id: string
           message_type: string | null
@@ -659,7 +662,10 @@ export type Database = {
           edited_at?: string | null
           id?: string
           is_from_me?: boolean | null
+          media_error?: string | null
           media_mimetype?: string | null
+          media_retry_count?: number
+          media_status?: string
           media_url?: string | null
           message_id: string
           message_type?: string | null
@@ -679,7 +685,10 @@ export type Database = {
           edited_at?: string | null
           id?: string
           is_from_me?: boolean | null
+          media_error?: string | null
           media_mimetype?: string | null
+          media_retry_count?: number
+          media_status?: string
           media_url?: string | null
           message_id?: string
           message_type?: string | null
@@ -929,6 +938,68 @@ export type Database = {
           topics?: string[]
         }
         Relationships: []
+      }
+      whatsapp_webhook_events: {
+        Row: {
+          attempts: number
+          created_at: string
+          event: string
+          event_key: string
+          id: string
+          instance_id: string | null
+          instance_identifier: string
+          last_error: string | null
+          locked_at: string | null
+          message_id: string | null
+          next_retry_at: string | null
+          payload: Json
+          processed_at: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          created_at?: string
+          event: string
+          event_key: string
+          id?: string
+          instance_id?: string | null
+          instance_identifier: string
+          last_error?: string | null
+          locked_at?: string | null
+          message_id?: string | null
+          next_retry_at?: string | null
+          payload: Json
+          processed_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          created_at?: string
+          event?: string
+          event_key?: string
+          id?: string
+          instance_id?: string | null
+          instance_identifier?: string
+          last_error?: string | null
+          locked_at?: string | null
+          message_id?: string | null
+          next_retry_at?: string | null
+          payload?: Json
+          processed_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_webhook_events_instance_id_fkey"
+            columns: ["instance_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_instances"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
