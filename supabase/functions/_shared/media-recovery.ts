@@ -83,6 +83,11 @@ export async function recoverMessageMedia(
       return { status: "not_media", error: "message has no media" };
     }
 
+    await supabase
+      .from("whatsapp_messages")
+      .update({ media_status: "pending", media_error: null })
+      .eq("id", messageId);
+
     // 2. Resolve instance via conversation
     const { data: conversation } = await supabase
       .from("whatsapp_conversations")
@@ -167,6 +172,13 @@ export async function recoverMessageMedia(
         lastRaw.slice(0, 200),
       );
       // WhatsApp likely purged the media from the server.
+      await supabase
+        .from("whatsapp_messages")
+        .update({
+          media_status: "unavailable",
+          media_error: "Mídia não está mais disponível no WhatsApp",
+        })
+        .eq("id", message.id);
       return {
         status: "unavailable",
         error: "Mídia não está mais disponível no WhatsApp",
@@ -188,6 +200,14 @@ export async function recoverMessageMedia(
 
     if (!mediaRes.ok || !mediaRes.parsed?.base64) {
       console.error("[media-recovery] getBase64 failed", mediaRes.status, mediaRes.raw.slice(0, 300));
+      await supabase
+        .from("whatsapp_messages")
+        .update({
+          media_status: "failed",
+          media_error: `media download failed (${mediaRes.status})`,
+          media_retry_count: (message.media_retry_count || 0) + 1,
+        })
+        .eq("id", message.id);
       return { status: "failed", error: `media download failed (${mediaRes.status})`, httpStatus: 502 };
     }
 
@@ -214,6 +234,10 @@ export async function recoverMessageMedia(
 
     if (uploadError) {
       console.error("[media-recovery] upload failed", uploadError);
+      await supabase
+        .from("whatsapp_messages")
+        .update({ media_status: "failed", media_error: "storage upload failed" })
+        .eq("id", message.id);
       return { status: "failed", error: "storage upload failed", httpStatus: 500 };
     }
 
@@ -225,7 +249,12 @@ export async function recoverMessageMedia(
 
     const { error: updateError } = await supabase
       .from("whatsapp_messages")
-      .update({ media_url: mediaUrl, media_mimetype: mimetype })
+      .update({
+        media_url: mediaUrl,
+        media_mimetype: mimetype,
+        media_status: "available",
+        media_error: null,
+      })
       .eq("id", message.id);
 
     if (updateError) {
