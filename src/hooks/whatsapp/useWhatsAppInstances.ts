@@ -186,6 +186,21 @@ export const useWhatsAppInstances = () => {
     },
   });
 
+  const resolveLidConversations = useMutation({
+    mutationFn: async ({ id, dryRun }: { id: string; dryRun?: boolean }) => {
+      const { data, error } = await supabase.functions.invoke(
+        'resolve-lid-conversations',
+        { body: { instanceId: id, dryRun: !!dryRun } }
+      );
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['whatsapp', 'conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['whatsapp', 'contacts'] });
+    },
+  });
+
   return {
     instances,
     isLoading,
@@ -196,5 +211,6 @@ export const useWhatsAppInstances = () => {
     testConnection,
     reconnectInstance,
     diagnoseInstance,
+    resolveLidConversations,
   };
 };
