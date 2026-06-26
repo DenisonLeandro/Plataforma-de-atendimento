@@ -21,6 +21,7 @@ type Conversation = Tables<"whatsapp_conversations"> & {
   assigned_profile?: {
     id: string;
     full_name: string;
+    display_name?: string | null;
     avatar_url: string | null;
   } | null;
   instance?: { instance_name: string; name: string } | null;
@@ -210,7 +211,8 @@ const ConversationItem = ({
               <span className="inline-flex items-center gap-1 h-5 px-2 rounded-full bg-muted text-muted-foreground text-[11px] font-medium max-w-[160px]">
                 <User className="h-2.5 w-2.5 shrink-0" />
                 <span className="truncate">
-                  {conversation.assigned_profile.full_name.split(" ")[0]}
+                  {conversation.assigned_profile.display_name?.trim() ||
+                    conversation.assigned_profile.full_name.split(" ")[0]}
                 </span>
               </span>
             )}

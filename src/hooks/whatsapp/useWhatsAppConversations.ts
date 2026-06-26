@@ -73,7 +73,7 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
         .select(`
           *,
           contact:whatsapp_contacts(*),
-          assigned_profile:profiles(id, full_name, avatar_url),
+          assigned_profile:profiles(id, full_name, display_name, avatar_url),
           instance:whatsapp_instances(instance_name, name)
         `, { count: 'planned' })
         .order('last_message_at', { ascending: false, nullsFirst: false })
