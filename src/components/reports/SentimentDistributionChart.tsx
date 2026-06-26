@@ -52,7 +52,7 @@ export function SentimentDistributionChart({ data }: SentimentDistributionChartP
                 cx="50%"
                 cy="50%"
                 labelLine={false}
-                label={(entry) => `${entry.percentage.toFixed(1)}%`}
+                label={(entry: any) => `${entry.percentage.toFixed(1)}%`}
                 outerRadius={100}
                 innerRadius={60}
                 fill="#8884d8"

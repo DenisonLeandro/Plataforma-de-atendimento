@@ -131,7 +131,7 @@ export const useWhatsAppActions = () => {
       contactId: string;
       data: { name: string; notes: string | null; phone_number?: string; markManualEdit?: boolean };
     }) => {
-      const updates: Record<string, unknown> = {
+      const updates: Record<string, any> = {
         name: data.name,
         notes: data.notes,
         updated_at: new Date().toISOString(),
@@ -159,7 +159,7 @@ export const useWhatsAppActions = () => {
 
       const { error } = await supabase
         .from('whatsapp_contacts')
-        .update(updates)
+        .update(updates as any)
         .eq('id', contactId);
       if (error) throw error;
     },
