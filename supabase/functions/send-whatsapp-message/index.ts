@@ -133,7 +133,7 @@ Deno.serve(async (req) => {
       if (stateResp.ok) {
         const stateText = await stateResp.text();
         let stateData: any = {};
-        if (stateText) { try { stateData = JSON.parse(stateText); } catch {} }
+        if (stateText) { try { stateData = JSON.parse(stateText); } catch (e) { console.warn('[send-whatsapp-message] Falha ao parsear estado da conexão:', e); } }
         preState = stateData?.state ?? stateData?.instance?.state ?? null;
         console.log('[send-whatsapp-message] PRÉ-envio connectionState:', preState, 'raw:', JSON.stringify(stateData));
         if (preState === 'close' || preState === 'closed') {
@@ -220,7 +220,7 @@ Deno.serve(async (req) => {
         });
         const postTxt = postResp.ok ? await postResp.text() : '';
         console.warn('[send-whatsapp-message] PÓS-erro connectionState HTTP', postResp.status, 'body:', postTxt);
-      } catch {}
+      } catch (e) { console.warn('[send-whatsapp-message] Falha no bloco de reconexão:', e); }
       try {
         const reconnResp = await fetchWithTimeout(`${baseEvolutionUrl}/instance/connect/${instanceIdentifier}`, {
           timeout: 20000,
