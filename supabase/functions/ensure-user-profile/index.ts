@@ -53,8 +53,6 @@ async function handleRequest(req: Request) {
       return jsonResponse({ error: 'Invalid token' }, 401);
     }
 
-    console.log('🔍 Checking profile/role for user:', user.id);
-
     let profileCreated = false;
     let roleCreated = false;
     let profileAutoApproved = false;
@@ -67,7 +65,6 @@ async function handleRequest(req: Request) {
       .maybeSingle();
 
     const requireApproval = approvalConfig?.value === 'true';
-    console.log('📋 Approval config:', { requireApproval });
 
     // Count existing profiles to determine if first user
     const { count: profileCount } = await supabaseAdmin
@@ -75,7 +72,6 @@ async function handleRequest(req: Request) {
       .select('*', { count: 'exact', head: true });
 
     const isFirstUser = profileCount === null || profileCount === 0;
-    console.log('👤 Profile count:', profileCount, 'Is first user:', isFirstUser);
 
     // Check if profile exists
     const { data: existingProfile } = await supabaseAdmin
@@ -85,12 +81,9 @@ async function handleRequest(req: Request) {
       .maybeSingle();
 
     if (!existingProfile) {
-      console.log('⚠️ Profile missing, creating...');
-      
       // First user always approved; others depend on config
       const isApproved = isFirstUser ? true : !requireApproval;
-      console.log('📝 Creating profile with is_approved:', isApproved);
-      
+
       // Create profile
       const { error: profileError } = await supabaseAdmin
         .from('profiles')
@@ -143,15 +136,12 @@ async function handleRequest(req: Request) {
       .maybeSingle();
 
     if (!existingRole) {
-      console.log('⚠️ Role missing, assigning...');
-      
       // Re-count profiles after potential creation
       const { count: currentProfileCount } = await supabaseAdmin
         .from('profiles')
         .select('*', { count: 'exact', head: true });
 
       const assignedRole = (currentProfileCount === null || currentProfileCount <= 1) ? 'admin' : 'agent';
-      console.log(`📝 Assigning role: ${assignedRole} (total profiles: ${currentProfileCount})`);
 
       const { error: roleError } = await supabaseAdmin
         .from('user_roles')

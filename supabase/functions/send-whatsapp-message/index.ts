@@ -36,10 +36,6 @@ Deno.serve(async (req) => {
     );
 
     const body: SendMessageRequest = await req.json();
-    console.log('[send-whatsapp-message] Request received:', { 
-      conversationId: body.conversationId, 
-      messageType: body.messageType 
-    });
 
     // Validate request
     if (!body.conversationId || !body.messageType) {
@@ -115,8 +111,6 @@ Deno.serve(async (req) => {
       ? instanceIdExternal
       : instanceName;
 
-    console.log('[send-whatsapp-message] Sending to:', contact.phone_number, 'Provider:', providerType, 'Instance:', instanceIdentifier);
-
     const instanceRowId = (conversation as any).whatsapp_instances.id;
     const baseEvolutionUrl = (secrets.api_url.endsWith('/') ? secrets.api_url.slice(0, -1) : secrets.api_url).replace(/\/manager$/, '');
 
@@ -135,7 +129,6 @@ Deno.serve(async (req) => {
         let stateData: any = {};
         if (stateText) { try { stateData = JSON.parse(stateText); } catch (e) { console.warn('[send-whatsapp-message] Falha ao parsear estado da conexão:', e); } }
         preState = stateData?.state ?? stateData?.instance?.state ?? null;
-        console.log('[send-whatsapp-message] PRÉ-envio connectionState:', preState, 'raw:', JSON.stringify(stateData));
         if (preState === 'close' || preState === 'closed') {
           console.warn('[send-whatsapp-message] Socket fechado antes do envio, tentando reabrir');
           await fetchWithTimeout(`${baseEvolutionUrl}/instance/connect/${instanceIdentifier}`, {
@@ -164,7 +157,6 @@ Deno.serve(async (req) => {
     ) {
       try {
         body.mediaBase64 = await fetchMediaAsBase64(body.mediaUrl, supabase);
-        console.log('[send-whatsapp-message] Media converted to base64, length:', body.mediaBase64.length);
       } catch (mediaError) {
         // Bucket é privado: sem base64 a Evolution não consegue baixar o arquivo.
         console.error('[send-whatsapp-message] Failed to convert media to base64:', mediaError);
@@ -185,8 +177,6 @@ Deno.serve(async (req) => {
       destinationNumber,
       body
     );
-
-    console.log('[send-whatsapp-message] Evolution API endpoint:', endpoint);
 
     // Get correct auth headers based on provider type
     const authHeaders = getEvolutionAuthHeaders(secrets.api_key, providerType);
@@ -265,7 +255,6 @@ Deno.serve(async (req) => {
     }
 
     const evolutionData = attempt.text ? JSON.parse(attempt.text) : {};
-    console.log('[send-whatsapp-message] Evolution API response:', evolutionData);
 
     // Extract message ID from Evolution API response
     const messageId = evolutionData.key?.id || `msg_${Date.now()}`;
@@ -281,10 +270,6 @@ Deno.serve(async (req) => {
       extractedMediaUrl = evolutionData.message.videoMessage.url;
     } else if (body.messageType === 'document' && evolutionData.message?.documentMessage?.url) {
       extractedMediaUrl = evolutionData.message.documentMessage.url;
-    }
-
-    if (extractedMediaUrl) {
-      console.log('[send-whatsapp-message] Extracted media URL:', extractedMediaUrl);
     }
 
     // Save message to database

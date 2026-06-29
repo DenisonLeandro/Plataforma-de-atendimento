@@ -31,10 +31,6 @@ Deno.serve(async (req) => {
     );
 
     const body: EditMessageRequest = await req.json();
-    console.log('[edit-whatsapp-message] Request received:', { 
-      messageId: body.messageId, 
-      conversationId: body.conversationId 
-    });
 
     // Validate request
     if (!body.messageId || !body.conversationId || !body.newContent) {
@@ -114,8 +110,6 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log('[edit-message] Editing message via Evolution API');
-
     // Build Evolution API request
     let baseUrl = secrets.api_url.endsWith('/') ? secrets.api_url.slice(0, -1) : secrets.api_url;
     baseUrl = baseUrl.replace(/\/manager$/, '');
@@ -134,8 +128,6 @@ Deno.serve(async (req) => {
         id: body.messageId,
       },
     };
-
-    console.log('[edit-whatsapp-message] Evolution API endpoint:', endpoint);
 
     // Get correct auth headers based on provider type
     const providerType = (conversation as any).whatsapp_instances.provider_type || 'self_hosted';

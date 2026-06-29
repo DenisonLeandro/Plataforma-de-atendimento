@@ -72,8 +72,6 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    console.log(`🔍 Categorizando conversa: ${conversationId}`);
-
     // 1. Buscar mensagens da conversa
     const { data: messages, error: msgError } = await supabase
       .from('whatsapp_messages')
@@ -95,7 +93,6 @@ serve(async (req) => {
       }) || [];
 
     if (textMessages.length === 0) {
-      console.log('❌ Sem mensagens de texto para categorizar');
       return new Response(
         JSON.stringify({ 
           success: false, 
@@ -108,7 +105,6 @@ serve(async (req) => {
     // Limitar a últimas 50 mensagens para não estourar contexto
     const recentMessages = textMessages.slice(-50);
     const formattedMessages = recentMessages.join('\n');
-    console.log(`📝 ${recentMessages.length} mensagens para analisar`);
 
     // 3. Chamar Lovable AI Gateway
     const response = await fetchWithTimeout('https://ai.gateway.lovable.dev/v1/chat/completions', {

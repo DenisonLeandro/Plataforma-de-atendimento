@@ -16,8 +16,6 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    console.log('[setup-remix-infrastructure] Starting infrastructure setup...');
-
     const results = {
       bucketsCreated: [] as string[],
       bucketsExisted: [] as string[],
@@ -25,8 +23,6 @@ Deno.serve(async (req) => {
     };
 
     // Create Storage Buckets
-    console.log('[setup-remix-infrastructure] Creating storage buckets...');
-
     // Create whatsapp-media bucket
     const { data: whatsappMediaBucket } = await supabase
       .storage

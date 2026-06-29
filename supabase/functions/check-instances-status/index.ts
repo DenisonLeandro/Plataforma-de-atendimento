@@ -34,8 +34,6 @@ serve(async (req) => {
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
 
-    console.log('[check-instances-status] Starting periodic status check');
-
     // Fetch all instances including provider_type, instance_id_external, status e metadata
     const { data: instances, error: instancesError } = await supabaseAdmin
       .from('whatsapp_instances')
@@ -48,8 +46,6 @@ serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
-
-    console.log(`[check-instances-status] Checking ${instances?.length || 0} instances`);
 
     let updatedCount = 0;
     let errorCount = 0;
@@ -138,9 +134,6 @@ serve(async (req) => {
           })
           .eq('id', instance.id);
 
-        console.log(
-          `[check-instances-status] ${instance.instance_name}: evolution=${mapped} -> status=${newStatus}`
-        );
         updatedCount++;
 
       } catch (error) {

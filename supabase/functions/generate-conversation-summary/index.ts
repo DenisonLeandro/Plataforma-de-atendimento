@@ -32,8 +32,6 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    console.log('Gerando resumo para conversa:', conversationId);
-
     // 1. Buscar últimas 30 mensagens da conversa
     const { data: messages, error: messagesError } = await supabase
       .from('whatsapp_messages')
@@ -129,8 +127,6 @@ Retorne APENAS um JSON válido sem markdown:
 
     const aiData = await aiResponse.json();
     const aiContent = aiData.choices[0].message.content;
-
-    console.log('Resposta da IA:', aiContent);
 
     // Extrair JSON
     let result;

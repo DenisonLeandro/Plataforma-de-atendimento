@@ -22,13 +22,6 @@ serve(async (req) => {
   try {
     const { api_url, api_key, instance_name, instance_id_external, provider_type } = await req.json();
 
-    console.log('🔍 Testing Evolution connection:', {
-      provider_type,
-      api_url,
-      instance_name,
-      instance_id_external: instance_id_external ? `${instance_id_external.substring(0, 8)}...` : null,
-    });
-
     if (!api_url || !api_key || !instance_name) {
       return new Response(
         JSON.stringify({ error: 'Missing required fields: api_url, api_key, instance_name' }),
@@ -44,15 +37,6 @@ serve(async (req) => {
       : instance_name;
 
     const fullUrl = `${api_url}/instance/connectionState/${instanceIdentifier}`;
-    
-    console.log('📡 Calling Evolution API:', {
-      url: fullUrl,
-      headers: {
-        ...headers,
-        ...(headers.Authorization ? { Authorization: `Bearer ${api_key.substring(0, 10)}...` } : {}),
-        ...(headers.apikey ? { apikey: `${api_key.substring(0, 10)}...` } : {})
-      }
-    });
 
     const response = await fetchWithTimeout(fullUrl, {
       timeout: 15000,
@@ -61,11 +45,6 @@ serve(async (req) => {
     });
 
     const responseText = await response.text();
-    console.log('📥 Evolution API Response:', {
-      status: response.status,
-      statusText: response.statusText,
-      body: responseText.substring(0, 500)
-    });
 
     let responseData;
     try {
@@ -89,8 +68,6 @@ serve(async (req) => {
       );
     }
 
-    console.log('✅ Connection test successful:', responseData);
-    
     return new Response(
       JSON.stringify({ 
         success: true, 
