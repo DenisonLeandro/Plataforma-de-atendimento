@@ -1,18 +1,3 @@
-## Contexto
-Hoje a função `public.get_conversation_counters` conta conversas em todo o banco sem verificar se o usuário autenticado tem acesso à instância delas. Isso faz com que contadores globais (ex: "aguardando respostas") incluam conversas de instâncias inacessíveis ao usuário.
-
-## O que será feito
-Substituir a função `public.get_conversation_counters` por uma versão idêntica que inclui o filtro:
-
-```sql
-AND public.can_user_see_instance(auth.uid(), c.instance_id)
-```
-
-no `WHERE` da consulta. Isso restringe contagens apenas às instâncias visíveis ao usuário logado, respeitando a mesma lógica de permissão usada em `can_view_conversation`.
-
-## SQL exato da migração
-
-```sql
 CREATE OR REPLACE FUNCTION public.get_conversation_counters(
   _instance_id uuid DEFAULT NULL::uuid,
   _status text DEFAULT NULL::text,
@@ -43,9 +28,3 @@ AS $$
     AND (_assigned_to IS NULL OR c.assigned_to = _assigned_to)
     AND (NOT _unassigned OR c.assigned_to IS NULL);
 $$;
-```
-
-## Restrições respeitadas
-- Nenhuma alteração em `can_user_see_instance`, `can_access_conversation` ou `can_view_conversation`.
-- Nenhum bypass adicional para supervisor — apenas admin tem bypass (já existente em `can_user_see_instance`).
-- Assinatura da função mantida idêntica (mesmos parâmetros e tipo de retorno).
