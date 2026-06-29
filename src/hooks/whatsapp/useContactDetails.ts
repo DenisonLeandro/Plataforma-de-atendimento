@@ -188,8 +188,6 @@ export const useContactDetails = (contactId: string | null) => {
         }
       }
 
-      console.log('Contact details - sentimentHistory:', sentimentHistory);
-      console.log('Contact details - conversations with metadata:', conversations?.map(c => ({ id: c.id, metadata: c.metadata })));
 
       const topicsDistribution = Array.from(topicsMap.entries())
         .map(([topic, count]) => ({ topic, count }))

@@ -33,8 +33,6 @@ export const useProjectSetup = () => {
   // Run setup configuration
   const setupProject = useMutation({
     mutationFn: async () => {
-      console.log('[useProjectSetup] Calling setup-project-config edge function...');
-
       const { data, error } = await supabase.functions.invoke('setup-project-config', {
         body: {},
       });
@@ -48,7 +46,6 @@ export const useProjectSetup = () => {
       return data;
     },
     onSuccess: () => {
-      console.log('[useProjectSetup] Setup completed successfully');
       queryClient.invalidateQueries({ queryKey: ['project-setup', 'config'] });
       
       toast({

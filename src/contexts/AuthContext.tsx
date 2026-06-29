@@ -55,8 +55,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Auto-create profile and role if missing
   const ensureUserProfile = async (userId: string, accessToken: string) => {
     try {
-      console.log('🔧 [AuthContext] Attempting to auto-create profile/role...');
-
       const controller = new AbortController();
       const timeoutId = window.setTimeout(() => controller.abort(), 20_000);
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ensure-user-profile`, {
@@ -97,7 +95,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     lastLoadRef.current = { userId, at: now };
-    console.log('🔍 [AuthContext] Loading user data for:', userId);
     try {
       // Load profile
       const { data: profileData, error: profileError } = await supabase
@@ -109,7 +106,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (profileError) {
         console.error('❌ [AuthContext] Error loading profile:', profileError);
       } else if (profileData) {
-        console.log('✅ [AuthContext] Profile loaded:', profileData);
         setProfile(profileData as Profile);
       } else {
         console.warn('⚠️ [AuthContext] No profile found for user:', userId);
@@ -125,7 +121,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (roleError) {
         console.error('❌ [AuthContext] Error loading role:', roleError);
       } else if (roleData) {
-        console.log('✅ [AuthContext] Role loaded:', roleData.role);
         setRole(roleData.role as AppRole);
       } else {
         console.warn('⚠️ [AuthContext] No role found for user:', userId);
@@ -134,14 +129,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // If profile OR role is truly missing, try to auto-create them.
       // Do not call the edge function after transient DB/API errors; that can create timeout loops.
       if (!profileError && !roleError && (!profileData || !roleData)) {
-        console.log('⚠️ [AuthContext] Profile or role missing, attempting auto-creation...');
-        
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.access_token) {
           const wasCreated = await ensureUserProfile(userId, session.access_token);
           if (wasCreated) {
             // Reload user data after creation
-            console.log('🔄 [AuthContext] Reloading user data after auto-creation...');
             setTimeout(() => {
               loadUserData(userId);
             }, 500);
@@ -224,14 +216,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Auto-setup infrastructure for remix
   const setupRemixInfrastructure = async () => {
     try {
-      console.log('[AuthContext] Setting up remix infrastructure...');
-      
       const { data, error } = await supabase.functions.invoke('setup-remix-infrastructure');
       
       if (error) {
         console.error('[AuthContext] Error setting up infrastructure:', error);
       } else {
-        console.log('[AuthContext] Infrastructure setup complete:', data);
+        // success
       }
     } catch (error) {
       console.error('[AuthContext] Error in setupRemixInfrastructure:', error);
@@ -241,7 +231,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Auto-setup project for admin on first login
   useEffect(() => {
     if (role === 'admin' && !isCheckingConfig && isConfigured === false) {
-      console.log('[AuthContext] Admin detected, running auto-setup...');
       setupProject();
       // Also setup infrastructure (storage buckets, realtime)
       setupRemixInfrastructure();

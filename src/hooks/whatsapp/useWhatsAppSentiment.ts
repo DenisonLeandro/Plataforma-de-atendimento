@@ -57,7 +57,6 @@ export const useWhatsAppSentiment = (conversationId: string | null) => {
         
         if (newRecord?.conversation_id === conversationId || 
             oldRecord?.conversation_id === conversationId) {
-          console.log('[sentiment-realtime] Update detected, invalidating query');
           queryClient.invalidateQueries({ 
             queryKey: ['whatsapp', 'sentiment', conversationId] 
           });
