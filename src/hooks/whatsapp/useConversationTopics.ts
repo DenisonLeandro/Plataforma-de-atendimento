@@ -51,7 +51,6 @@ export const useConversationTopics = (conversationId: string | null) => {
           const oldMetadata = payload.old?.metadata as any;
           
           if (JSON.stringify(newMetadata?.topics) !== JSON.stringify(oldMetadata?.topics)) {
-            console.log('[topics-realtime] Topics updated, invalidating query');
             queryClient.invalidateQueries({ 
               queryKey: ['conversation-topics', conversationId] 
             });

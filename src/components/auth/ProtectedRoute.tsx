@@ -15,7 +15,6 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   // Redirect unapproved users to pending approval page
   useEffect(() => {
     if (!isLoading && user && !isApproved && location.pathname !== '/pending-approval') {
-      console.log('[ProtectedRoute] Redirecting unapproved user to pending approval...');
       navigate('/pending-approval', { replace: true });
     }
   }, [user, isLoading, isApproved, location.pathname, navigate]);
@@ -23,7 +22,6 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   // Redirect admin to setup on first login (only once per session)
   useEffect(() => {
     if (!isLoading && user && shouldRedirectToSetup && location.pathname !== '/whatsapp/settings') {
-      console.log('[ProtectedRoute] Redirecting admin to setup...');
       markSetupRedirectDone();
       navigate('/whatsapp/settings?tab=setup', { replace: true });
     }
