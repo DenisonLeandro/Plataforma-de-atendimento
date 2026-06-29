@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -65,6 +65,7 @@ export const useSyncWhatsAppHistory = () => {
  */
 export const useSyncJob = (instance_id: string | undefined) => {
   const queryClient = useQueryClient();
+  const uid = useId();
 
   const query = useQuery({
     queryKey: ['whatsapp_sync_job', instance_id],
@@ -90,7 +91,7 @@ export const useSyncJob = (instance_id: string | undefined) => {
   useEffect(() => {
     if (!instance_id) return;
     const channel = supabase
-      .channel(`sync_jobs_${instance_id}`)
+      .channel(`sync_jobs_${instance_id}_${uid}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'whatsapp_sync_jobs', filter: `instance_id=eq.${instance_id}` },
@@ -107,7 +108,7 @@ export const useSyncJob = (instance_id: string | undefined) => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [instance_id, queryClient]);
+  }, [instance_id, queryClient, uid]);
 
   useEffect(() => {
     if (query.data?.status === 'completed' || query.data?.status === 'failed') {
