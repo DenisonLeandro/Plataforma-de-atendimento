@@ -19,8 +19,6 @@ Deno.serve(async (req) => {
   }
 
   try {
-    console.log('[sync-contact-profiles] Starting batch profile picture sync');
-
     // Initialize Supabase client with service role for admin access
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -41,14 +39,11 @@ Deno.serve(async (req) => {
     }
 
     if (!contacts || contacts.length === 0) {
-      console.log('[sync-contact-profiles] No contacts without profile picture found');
       return new Response(
         JSON.stringify({ message: 'No contacts to sync', updated: 0, failed: 0 }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-
-    console.log(`[sync-contact-profiles] Found ${contacts.length} contacts without profile picture`);
 
     let updated = 0;
     let failed = 0;

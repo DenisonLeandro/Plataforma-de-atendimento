@@ -127,7 +127,7 @@ async function routeWebhookPayload(payload: EvolutionWebhookPayload, supabase: a
       await processConnectionUpdate(payload, supabase);
       break;
     default:
-      console.log('[evolution-webhook] Unhandled event type:', payload.event);
+      console.warn('[evolution-webhook] Unhandled event type:', payload.event);
   }
 }
 
@@ -255,7 +255,7 @@ async function fetchAndUpdateProfilePicture(
     );
 
     if (!response.ok) {
-      console.log(`[evolution-webhook] Failed to fetch profile for ${phoneNumber}: ${response.status}`);
+      console.warn(`[evolution-webhook] Failed to fetch profile for ${phoneNumber}: ${response.status}`);
       return;
     }
 
@@ -274,7 +274,7 @@ async function fetchAndUpdateProfilePicture(
       console.log(`[evolution-webhook] Profile picture updated for contact: ${contactId}`);
     }
   } catch (error) {
-    console.log('[evolution-webhook] Failed to fetch profile picture:', error);
+    console.warn('[evolution-webhook] Failed to fetch profile picture:', error);
     // Erro silencioso - cron job vai pegar depois
   }
 }
@@ -308,8 +308,6 @@ async function findOrCreateContact(
       const withNinth = phoneNumber.slice(0, 4) + '9' + phoneNumber.slice(4);
       phoneVariants.push(withNinth);
     }
-
-    console.log(`[evolution-webhook] Searching contacts. lid=${lid ?? '-'} variants: ${phoneVariants.join(', ')}`);
 
     // Buscar contato existente.
     // Para contatos de LID, primeiro tenta pelo metadata.lid — assim reencontramos o
@@ -407,7 +405,7 @@ async function findOrCreateContact(
     // Buscar foto de perfil em background (fire-and-forget)
     if (apiUrl && apiKey && instanceName) {
       fetchAndUpdateProfilePicture(supabase, apiUrl, apiKey, instanceName, phoneNumber, newContact.id, providerType)
-        .catch(err => console.log('[evolution-webhook] Background profile fetch error:', err));
+        .catch(err => console.warn('[evolution-webhook] Background profile fetch error:', err));
     }
     
     return newContact.id;
@@ -433,7 +431,6 @@ async function applyAutoAssignment(
       .maybeSingle();
 
     if (!rule) {
-      console.log('[auto-assignment] No active rule found for instance:', instanceId);
       return; // Sem regra, conversa fica na fila
     }
 
@@ -447,7 +444,7 @@ async function applyAutoAssignment(
       // Round-robin
       const agents = rule.round_robin_agents || [];
       if (agents.length === 0) {
-        console.log('[auto-assignment] No agents in round-robin list');
+        console.warn('[auto-assignment] No agents in round-robin list');
         return;
       }
 
@@ -506,7 +503,6 @@ async function findOrCreateConversation(
     }
 
     if (existingConversation) {
-      console.log('[evolution-webhook] Conversation found:', existingConversation.id);
       if (existingConversation.status === 'closed' && !isFromMe) {
         const { error: reopenError } = await supabase
           .from('whatsapp_conversations')
@@ -658,16 +654,14 @@ async function processReaction(payload: EvolutionWebhookPayload, supabase: any) 
     const reaction = message.reactionMessage;
     
     if (!reaction?.key?.id) {
-      console.log('[evolution-webhook] Invalid reaction data');
+      console.warn('[evolution-webhook] Invalid reaction data');
       return;
     }
     
     const targetMessageId = reaction.key.id;
     const emoji = reaction.text;
     const reactorJid = key.remoteJid;
-    
-    console.log('[evolution-webhook] Processing reaction:', emoji || '(removed)', 'on message:', targetMessageId);
-    
+
     // Find the target message to get conversation_id
     const { data: targetMessage } = await supabase
       .from('whatsapp_messages')
@@ -676,7 +670,7 @@ async function processReaction(payload: EvolutionWebhookPayload, supabase: any) 
       .maybeSingle();
     
     if (!targetMessage) {
-      console.log('[evolution-webhook] Target message not found:', targetMessageId);
+      console.warn('[evolution-webhook] Target message not found:', targetMessageId);
       return;
     }
     
@@ -808,8 +802,6 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
     const { instance, data } = payload;
     const { key, pushName, message, messageTimestamp } = data;
 
-    console.log('[evolution-webhook] Processing message:', key.id);
-
     // Get instance data - try by instance_name first (self-hosted), then by instance_id_external (Cloud)
     let { data: instanceData } = await supabase
       .from('whatsapp_instances')
@@ -871,7 +863,6 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
     const { phone, isGroup } = normalizePhoneNumber(phoneJid);
     // LID digits (kept to re-match the contact later, even after a manual phone edit).
     const lidValue = lidContact ? normalizePhoneNumber(key.remoteJid).phone : null;
-    console.log('[evolution-webhook] phone:', phone, 'isGroup:', isGroup, 'lid:', lidValue, 'realResolved:', !!realJid);
 
     // Find or create contact
     // If message is from me, use phone number instead of pushName (which would be the instance owner's name)
@@ -917,7 +908,6 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
     }
     
     const content = getMessageContent(message, messageType);
-    console.log('[evolution-webhook] Message type:', messageType, 'Content preview:', content.substring(0, 50));
 
     // Detect media metadata only. The actual download runs after the message row
     // is already saved, in background, so a slow/failed audio/image never makes
@@ -977,7 +967,6 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
           .eq('message_id', key.id)
           .maybeSingle();
         insertedMessage = existingMessage;
-        console.log('[evolution-webhook] Message already existed, preserving existing row:', key.id);
       } else {
         console.error('[evolution-webhook] Error saving message:', messageError);
         throw new Error(`Error saving message: ${messageError.message}`);

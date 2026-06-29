@@ -37,8 +37,6 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    console.log('Fetching messages for conversation:', conversationId);
-
     // Buscar últimas 10 mensagens da conversa
     const { data: messages, error: messagesError } = await supabase
       .from('whatsapp_messages')
@@ -68,7 +66,6 @@ serve(async (req) => {
     const textMessages = messages?.filter(m => m.message_type === 'text').reverse() || [];
 
     if (textMessages.length === 0) {
-      console.log('No text messages found, returning defaults');
       return new Response(
         JSON.stringify({ suggestions: defaultSuggestions, context: { contactName, lastMessage: '' } }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -79,7 +76,6 @@ serve(async (req) => {
     const lastClientMessage = textMessages.filter(m => !m.is_from_me).pop();
 
     if (!lastClientMessage) {
-      console.log('No client messages found, returning defaults');
       return new Response(
         JSON.stringify({ suggestions: defaultSuggestions, context: { contactName, lastMessage: '' } }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -90,8 +86,6 @@ serve(async (req) => {
     const recentMessages = textMessages.slice(-8).map(m => 
       `${m.is_from_me ? 'Você' : contactName}: ${m.content}`
     ).join('\n');
-
-    console.log('Calling Lovable AI for suggestions...');
 
     // Chamar Lovable AI
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
@@ -202,7 +196,6 @@ ${recentMessages}`;
     }
 
     const aiData = await aiResponse.json();
-    console.log('AI response received:', JSON.stringify(aiData));
 
     // Extrair sugestões do tool call
     const toolCall = aiData.choices?.[0]?.message?.tool_calls?.[0];
@@ -219,8 +212,6 @@ ${recentMessages}`;
 
     const suggestionsData = JSON.parse(toolCall.function.arguments);
     const suggestions = suggestionsData.suggestions || defaultSuggestions;
-
-    console.log('Returning suggestions:', suggestions);
 
     return new Response(
       JSON.stringify({

@@ -17,11 +17,7 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    console.log('[setup-project-config] Starting automatic project configuration...');
-
     // 1. Store project credentials in project_config table
-    console.log('[setup-project-config] Storing project credentials...');
-    
     const { error: configError1 } = await supabase
       .from('project_config')
       .upsert({ key: 'project_url', value: supabaseUrl }, { onConflict: 'key' });

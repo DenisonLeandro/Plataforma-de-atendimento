@@ -73,8 +73,6 @@ serve(async (req) => {
 
     const { instanceId } = await req.json();
 
-    console.log('[test-instance-connection] Testing instance:', instanceId);
-
     // Fetch secrets with service role (bypasses RLS)
     const { data: secrets, error: secretsError } = await supabaseAdmin
       .from('whatsapp_instance_secrets')
@@ -107,7 +105,6 @@ serve(async (req) => {
 
     const providerType = (instance as any).provider_type || 'self_hosted';
     const instanceIdExternal = (instance as any).instance_id_external;
-    console.log('[test-instance-connection] Provider type:', providerType, 'Instance ID External:', instanceIdExternal);
 
     // For Cloud, use instance_id_external (UUID) instead of instance_name
     const instanceIdentifier = providerType === 'cloud' && instanceIdExternal
@@ -115,7 +112,6 @@ serve(async (req) => {
       : instance.instance_name;
 
     // Test connection with Evolution API using correct auth headers
-    console.log('[test-instance-connection] Testing connection to Evolution API with identifier:', instanceIdentifier);
     const authHeaders = getEvolutionAuthHeaders(secrets.api_key, providerType);
     
     const response = await fetchWithTimeout(
@@ -141,11 +137,9 @@ serve(async (req) => {
       try {
         data = JSON.parse(responseText);
       } catch (e) {
-        console.log('[test-instance-connection] Response is not JSON:', responseText);
+        console.warn('[test-instance-connection] Response is not JSON:', responseText);
       }
     }
-
-    console.log('[test-instance-connection] Connection test successful, data:', JSON.stringify(data));
 
     const mapped = mapEvolutionState(data, !!responseText);
     const currentStatus = (instance as any).status as string | undefined;
@@ -157,7 +151,6 @@ serve(async (req) => {
     let newStatus: string;
     if (mapped === 'connecting' && currentStatus === 'connected') {
       newStatus = 'connected';
-      console.log('[test-instance-connection] Mantendo status connected (Evolution está em connecting transitório)');
     } else {
       newStatus = mapped;
     }

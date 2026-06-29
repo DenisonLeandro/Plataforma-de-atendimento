@@ -139,8 +139,6 @@ Responda apenas com a tradução.`;
         throw new Error(`Unknown action: ${action}`);
     }
 
-    console.log('Calling Lovable AI with action:', action);
-
     // Chamar Lovable AI Gateway
     const aiResponse = await fetchWithTimeout('https://ai.gateway.lovable.dev/v1/chat/completions', {
       timeout: 30000,
@@ -176,8 +174,6 @@ Responda apenas com a tradução.`;
     if (!composedText) {
       throw new Error('No response from AI');
     }
-
-    console.log('AI composition successful for action:', action);
 
     return new Response(
       JSON.stringify({

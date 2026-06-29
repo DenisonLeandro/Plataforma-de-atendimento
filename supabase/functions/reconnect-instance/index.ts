@@ -92,7 +92,6 @@ serve(async (req) => {
       if (t) { try { stateData = JSON.parse(t); } catch {} }
     }
     const currentState = stateData?.state ?? stateData?.instance?.state;
-    console.log('[reconnect-instance] Estado atual no Evolution:', currentState);
 
     if (currentState === 'open' || currentState === 'connected') {
       // Já está conectada — só sincronizamos o banco e saímos.
@@ -120,7 +119,6 @@ serve(async (req) => {
 
     // 2) Só agora força o reconnect (estado close/closed/desconhecido).
     const url = `${baseUrl}/instance/connect/${identifier}`;
-    console.log('[reconnect-instance] Forçando reconexão:', url);
 
     const response = await fetchWithTimeout(url, {
       timeout: 20000,

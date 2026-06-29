@@ -72,8 +72,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    console.log('[fix-contact-names] Starting contact name correction process');
-
     // Fetch all affected contacts
     const { data: allContacts, error: fetchError } = await supabaseAdmin
       .from('whatsapp_contacts')
@@ -93,7 +91,6 @@ Deno.serve(async (req) => {
     ) || [];
     
     if (contactsToFix.length === 0) {
-      console.log('[fix-contact-names] No contacts to fix');
       return new Response(
         JSON.stringify({ 
           message: 'No contacts with incorrect names found',
@@ -115,8 +112,6 @@ Deno.serve(async (req) => {
     // Process each contact
     for (const contact of contactsToFix) {
       try {
-        console.log(`[fix-contact-names] Processing contact ${contact.id} - ${contact.phone_number}`);
-        
         // Get instance details
         const { data: instance, error: instanceError } = await supabaseAdmin
           .from('whatsapp_instances')
@@ -159,7 +154,6 @@ Deno.serve(async (req) => {
 
         // Call Evolution API to fetch profile
         const fetchProfileUrl = `${secrets.api_url}/chat/fetchProfile/${instance.instance_name}`;
-        console.log(`[fix-contact-names] Fetching profile from: ${fetchProfileUrl}`);
 
         const profileResponse = await fetchWithTimeout(fetchProfileUrl, {
           timeout: 15000,
@@ -188,7 +182,6 @@ Deno.serve(async (req) => {
         }
 
         const profileData = await profileResponse.json();
-        console.log(`[fix-contact-names] Profile data received:`, profileData);
 
         // Extract name from profile data (Evolution API returns it in different formats)
         const newName = profileData.name || profileData.pushName || profileData.notify || contact.phone_number;

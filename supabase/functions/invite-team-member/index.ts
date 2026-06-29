@@ -30,8 +30,6 @@ Deno.serve(async (req) => {
 
     const { email, fullName, role }: InviteRequest = await req.json();
 
-    console.log('Creating user:', { email, fullName, role });
-
     // Create user via Admin API
     const { data: userData, error: createError } = await supabaseAdmin.auth.admin.createUser({
       email,

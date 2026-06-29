@@ -158,8 +158,6 @@ export async function downloadAndUploadMedia(
   timeoutMs: number = 20000,
 ): Promise<string | null> {
   try {
-    console.log('[media-helpers] Downloading media from Evolution API...');
-
     // Determine correct auth header based on provider type
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -222,8 +220,6 @@ export async function downloadAndUploadMedia(
     const extension = (mimetype.split('/')[1] || 'bin').split(';')[0].trim();
     const filename = `${Date.now()}-${messageData.key.id}.${extension}`;
     const filePath = `${instanceName}/${filename}`;
-
-    console.log('[media-helpers] Uploading to Supabase Storage:', filePath);
 
     // Upload to Supabase Storage (bounded by withTimeout — the client has no AbortSignal).
     const { error: uploadError } = await withTimeout(

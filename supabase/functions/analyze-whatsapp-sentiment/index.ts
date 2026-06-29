@@ -46,8 +46,6 @@ serve(async (req) => {
       );
     }
 
-    console.log(`Analyzing sentiment for conversation: ${conversationId}`);
-
     // Fetch last 10 messages from contact (is_from_me = false)
     const { data: messages, error: messagesError } = await supabase
       .from('whatsapp_messages')
@@ -67,7 +65,6 @@ serve(async (req) => {
 
     // Check minimum messages requirement
     if (!messages || messages.length < 3) {
-      console.log(`Insufficient messages: ${messages?.length || 0}`);
       return new Response(
         JSON.stringify({ 
           success: false, 
@@ -120,8 +117,6 @@ ${messagesText}
 - **negative**: Frustrado, insatisfeito, reclamando, impaciente
 
 Analise o contexto geral e determine o sentimento predominante.`;
-
-    console.log('Calling Lovable AI Gateway...');
 
     // Call Lovable AI Gateway with tool calling for structured output
     const aiResponse = await fetchWithTimeout('https://ai.gateway.lovable.dev/v1/chat/completions', {
@@ -202,7 +197,6 @@ Analise o contexto geral e determine o sentimento predominante.`;
     }
 
     const aiData = await aiResponse.json();
-    console.log('AI response received:', JSON.stringify(aiData));
 
     // Extract sentiment result from tool call
     const toolCall = aiData.choices?.[0]?.message?.tool_calls?.[0];
@@ -215,7 +209,6 @@ Analise o contexto geral e determine o sentimento predominante.`;
     }
 
     const result: SentimentResult = JSON.parse(toolCall.function.arguments);
-    console.log('Parsed sentiment result:', result);
 
     // Validate sentiment value
     if (!['positive', 'neutral', 'negative'].includes(result.sentiment)) {

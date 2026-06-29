@@ -88,8 +88,8 @@ function getTotalPages(payload: any, recordsLength: number): number {
   return recordsLength < PAGE_SIZE ? 1 : Number.MAX_SAFE_INTEGER;
 }
 
-function scheduleNextChunk(instanceId: string, cursor: SyncCursor) {
-  console.log('[sync-whatsapp-history] chunk paused for client continuation', { instanceId, cursor });
+function scheduleNextChunk(_instanceId: string, _cursor: SyncCursor) {
+  // Chunk paused for client continuation; no-op.
 }
 
 async function fetchWithDiagnostics(
@@ -97,7 +97,6 @@ async function fetchWithDiagnostics(
   url: string,
   init: RequestInit,
 ): Promise<{ status: number; contentType: string; rawSample: string; parsed: any; raw: string }> {
-  console.log('[sync] ->', step, url, init.body);
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), EVOLUTION_FETCH_TIMEOUT_MS);
   let res: Response;
@@ -112,7 +111,6 @@ async function fetchWithDiagnostics(
   const contentType = res.headers.get('content-type') || '';
   const raw = await res.text().catch(() => '');
   const rawSample = raw.slice(0, 800);
-  console.log(`[sync] <- ${step} status=${res.status} ct=${contentType} body[0..800]=${rawSample}`);
   let parsed: any = null;
   try {
     parsed = raw ? JSON.parse(raw) : null;
@@ -483,8 +481,6 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
   const startedAt = Date.now();
 
   try {
-    console.log('[sync-whatsapp-history] Starting sync for instance:', instanceId);
-
     const { data: instance, error: instanceErr } = await supabase
       .from('whatsapp_instances')
       .select('id, instance_name, provider_type, instance_id_external')
@@ -827,9 +823,6 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
             if (batch.length >= UPSERT_BATCH) {
               const inserted = await flushBatch(supabase, batch);
               messages_synced += inserted;
-              console.log(
-                `[sync-whatsapp-history] chat=${remoteJid} batch flushed (${inserted}); total=${messages_synced}`,
-              );
               batch = [];
             }
           } catch (e) {
