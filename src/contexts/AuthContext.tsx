@@ -77,7 +77,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (data?.profileCreated || data?.roleCreated) {
-        console.log('✅ [AuthContext] Profile/role auto-created:', data);
         return true;
       }
       
