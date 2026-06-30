@@ -128,10 +128,10 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
               size="sm"
               onClick={handleAssumeFromQueue}
               title="Assumir conversa"
-              className="h-8 flex-shrink-0 px-2 2xl:px-3"
+              className="h-8 flex-shrink-0 px-3"
             >
-              <UserPlus className="h-4 w-4 2xl:mr-2" />
-              <span className="hidden 2xl:inline">Assumir</span>
+              <UserPlus className="h-4 w-4 mr-2" />
+              <span>Assumir</span>
             </Button>
           )}
 
@@ -141,10 +141,10 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
               size="sm"
               onClick={() => setIsAssignDialogOpen(true)}
               title="Transferir conversa"
-              className="h-8 flex-shrink-0 px-2 2xl:px-3"
+              className="h-8 flex-shrink-0 px-3"
             >
-              <Repeat className="h-4 w-4 2xl:mr-2" />
-              <span className="hidden 2xl:inline">Transferir</span>
+              <Repeat className="h-4 w-4 mr-2" />
+              <span>Transferir</span>
             </Button>
           )}
 
