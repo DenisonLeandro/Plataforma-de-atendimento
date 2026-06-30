@@ -52,6 +52,8 @@ const ConversationsSidebar = ({ selectedId, onSelect, instanceId, isCollapsed, o
     pageSize,
     assignedTo: filter === "mine" ? user?.id : undefined,
     unassigned: filter === "queue" ? true : undefined,
+    unreadOnly: filter === "unread" ? true : undefined,
+    waitingOnly: filter === "waiting" ? true : undefined,
     search: debouncedSearchQuery.trim() || undefined,
   };
 

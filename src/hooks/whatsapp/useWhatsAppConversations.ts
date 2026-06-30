@@ -19,6 +19,8 @@ interface ConversationsFilters {
   statusIn?: string[];
   assignedTo?: string;
   unassigned?: boolean;
+  unreadOnly?: boolean;
+  waitingOnly?: boolean;
   page?: number;
   pageSize?: number;
 }
@@ -75,7 +77,7 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
           contact:whatsapp_contacts(*),
           assigned_profile:profiles(id, full_name, display_name, avatar_url),
           instance:whatsapp_instances(instance_name, name)
-        `, { count: 'planned' })
+        `, { count: 'exact' })
         .order('last_message_at', { ascending: false, nullsFirst: false })
         .range(from, to);
 
@@ -97,6 +99,18 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
 
       if (filters?.unassigned) {
         query = query.is('assigned_to', null);
+      }
+
+      if (filters?.unreadOnly) {
+        query = query
+          .gt('unread_count', 0)
+          .not('status', 'in', '("closed","archived")');
+      }
+
+      if (filters?.waitingOnly) {
+        query = query
+          .eq('last_message_is_from_me', false)
+          .not('status', 'in', '("closed","archived")');
       }
 
       query = applySearch(query as any) as typeof query;
@@ -161,9 +175,12 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
         });
         const row = Array.isArray(counters) ? counters[0] : counters;
         if (row) {
-          unreadCount = Number(row.unread_count) || 0;
-          waitingCount = Number(row.waiting_count) || 0;
-          totalCount = Number(row.total_count) || totalCount;
+          unreadCount = Number(row.unread_count) ?? 0;
+          waitingCount = Number(row.waiting_count) ?? 0;
+          // A RPC não conhece unreadOnly/waitingOnly; nesses casos listCount (exact) já é correto.
+          if (!filters?.unreadOnly && !filters?.waitingOnly) {
+            totalCount = row.total_count != null ? Number(row.total_count) : totalCount;
+          }
         }
       }
 
