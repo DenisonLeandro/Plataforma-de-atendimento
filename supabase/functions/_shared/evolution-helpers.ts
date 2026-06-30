@@ -78,6 +78,8 @@ export function getMessageType(message: any): string {
   if (!message) return 'text';
   if (message.reactionMessage) return 'reaction';
   if (message.conversation || message.extendedTextMessage) return 'text';
+  if (message.buttonsResponseMessage || message.listResponseMessage || message.templateButtonReplyMessage) return 'text';
+  if (message.editedMessage || message.protocolMessage?.editedMessage) return 'text';
   if (message.imageMessage) return 'image';
   if (message.audioMessage) return 'audio';
   if (message.videoMessage) return 'video';
@@ -96,8 +98,24 @@ export function isEditedMessage(message: any): boolean {
 // Extract content/caption from message
 export function getMessageContent(message: any, type: string): string {
   if (!message) return 'Mensagem';
-  if (message.conversation) return message.conversation;
-  if (message.extendedTextMessage?.text) return message.extendedTextMessage.text;
+  const editedMessage = message.editedMessage || message.protocolMessage?.editedMessage;
+
+  const textCandidates = [
+    message.conversation,
+    message.extendedTextMessage?.text,
+    message.buttonsResponseMessage?.selectedDisplayText,
+    message.buttonsResponseMessage?.selectedButtonId,
+    message.listResponseMessage?.title,
+    message.listResponseMessage?.singleSelectReply?.selectedRowId,
+    message.templateButtonReplyMessage?.selectedDisplayText,
+    message.templateButtonReplyMessage?.selectedId,
+    editedMessage?.conversation,
+    editedMessage?.extendedTextMessage?.text,
+  ];
+
+  for (const candidate of textCandidates) {
+    if (typeof candidate === 'string' && candidate.trim()) return candidate;
+  }
 
   if (message.contactMessage) {
     return message.contactMessage.displayName || '📇 Contato';
@@ -109,6 +127,8 @@ export function getMessageContent(message: any, type: string): string {
 
   const mediaMessage = message[`${type}Message`];
   if (mediaMessage?.caption) return mediaMessage.caption;
+  if (mediaMessage?.title) return mediaMessage.title;
+  if (mediaMessage?.fileName) return mediaMessage.fileName;
 
   const descriptions: Record<string, string> = {
     image: '📷 Imagem',
