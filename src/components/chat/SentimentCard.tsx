@@ -14,8 +14,9 @@ interface SentimentCardProps {
 export const SentimentCard = ({ sentiment }: SentimentCardProps) => {
   if (!sentiment) {
     return (
-      <Badge variant="outline" className="text-xs">
-        Sem análise
+      <Badge variant="outline" className="text-xs whitespace-nowrap" title="Sem análise">
+        <span className="hidden xl:inline">Sem análise</span>
+        <span className="xl:hidden">—</span>
       </Badge>
     );
   }
@@ -70,7 +71,7 @@ export const SentimentCard = ({ sentiment }: SentimentCardProps) => {
             )}
           >
             <span className="text-base">{getEmoji()}</span>
-            <span>{getLabel()}</span>
+            <span className="hidden xl:inline">{getLabel()}</span>
           </Badge>
         </TooltipTrigger>
         <TooltipContent>
