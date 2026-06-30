@@ -80,7 +80,7 @@ export function ChatHeaderMenu({ conversation, onRefresh }: ChatHeaderMenuProps)
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon">
+          <Button variant="ghost" size="icon" className="h-7 w-7">
             <MoreVertical className="h-4 w-4" />
           </Button>
         </DropdownMenuTrigger>
