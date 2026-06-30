@@ -208,7 +208,7 @@ const ConversationsSidebar = ({ selectedId, onSelect, instanceId, isCollapsed, o
   }
 
   return (
-    <div className="flex flex-col h-full w-80 bg-sidebar">
+    <div className="flex h-full w-full min-w-0 flex-col bg-sidebar">
       {/* Title Header */}
       <div className="p-3 border-b border-sidebar-border">
         <div className="flex items-center justify-between mb-3">
