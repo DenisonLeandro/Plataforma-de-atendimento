@@ -1,17 +1,42 @@
-## Causa
+## Problema
 
-A página quebra com `cannot add 'postgres_changes' callbacks for realtime:sync_jobs_<id> after 'subscribe()'` lançado em `useSyncWhatsAppHistory.ts:92`. Cada `InstanceCard` chama `useSyncJob` **duas vezes** (direto e via `useSyncJobCompletion`), e ambas tentam criar o canal Realtime com o **mesmo nome** `sync_jobs_${instance_id}`. Na versão atual do `@supabase/supabase-js` (recém-atualizada para resolver o aviso de segurança de dependências), `supabase.channel(name)` devolve o canal já existente; como o primeiro `useEffect` já chamou `.subscribe()`, o segundo `.on('postgres_changes', ...)` é rejeitado e derruba o ErrorBoundary.
+No notebook (~1008px) com as duas barras laterais abertas, a coluna central do chat fica com ~330px. Os botões `Assumir`, `Transferir`, badge `Neutro`, `Analisar`, kebab e engrenagem consomem toda a linha, e o `min-w-0 + truncate` do nome reduz a área do contato a 0px — por isso só o telefone aparece. Esconder labels (feito antes) ajudou em 1280px, mas em 1008px ainda não cabe.
 
-## Correção
+## Solução
 
-Arquivo: `src/hooks/whatsapp/useSyncWhatsAppHistory.ts`
+Reorganizar o `ChatHeader` em **duas linhas** quando o espaço é apertado, sem precisar fechar as barras:
 
-1. Dar a cada assinatura do canal um nome único por instância de hook usando `React.useId()` — `sync_jobs_${instance_id}_${uid}` — para que duas montagens (ou StrictMode) não compartilhem o mesmo canal.
-2. Manter o `removeChannel` no cleanup.
+```text
+┌──────────────────────────────────────────────┐
+│ [avatar] Dani Cristina           [⋮] [⚙]    │  ← linha 1: identidade sempre legível
+│          5543996264779                       │
+├──────────────────────────────────────────────┤
+│ [Assumir] [Transferir] [😐 Neutro] [Analisar]│  ← linha 2: ações, com scroll-x se faltar
+└──────────────────────────────────────────────┘
+```
 
-Nenhuma mudança de lógica de negócio, nenhuma alteração de schema. É só uma correção de compatibilidade com a nova versão do supabase-js.
+### Mudanças (apenas `src/components/chat/ChatHeader.tsx`)
 
-## Validação
+1. **Linha 1 (sempre visível):**
+   - Avatar + bloco do nome/telefone/tópicos/QueueIndicator ocupam todo o espaço (`flex-1 min-w-0`).
+   - À direita, somente os controles "globais": `ChatHeaderMenu` (kebab) e link de configurações.
+   - O nome do contato deixa de competir com botões de ação → não some mais.
 
-- Recarregar `/whatsapp/settings?tab=instances` e confirmar que os cards renderizam sem o ErrorBoundary.
-- Disparar uma sincronização e verificar que o progresso continua atualizando em tempo real (o canal único por hook ainda recebe os eventos).
+2. **Linha 2 (ações da conversa):**
+   - Nova faixa abaixo da linha 1 com `Assumir`, `Transferir`, `SentimentCard`, `Analisar`.
+   - Container com `flex flex-wrap gap-2` em telas pequenas e `flex-nowrap overflow-x-auto` em notebook (1024–1280px) para permitir rolar lateralmente sem cortar nada.
+   - Mantém os labels já existentes (`hidden xl:inline`) — em telas grandes continua tudo numa única faixa horizontal.
+
+3. **A partir de `xl` (≥1280px):** opcionalmente colapsar de volta para layout de uma linha (nome à esquerda, ações à direita), já que aí cabe sem cortar. Implementado com classes responsivas (`xl:flex-row xl:items-center`) no wrapper externo, sem JS.
+
+### Fora do escopo
+
+- Não mexer em `ConversationsSidebar`, `ConversationDetailsSidebar` nem `WhatsApp.tsx`. As barras permanecem como o usuário quer.
+- Sem alteração de lógica/estado/permissões — apenas reorganização visual.
+- Sem mudar comportamento dos botões.
+
+### Validação
+
+- Conferir em 1008×577 (atual) com as duas sidebars abertas: nome "Dani Cristina" visível acima do telefone, ações em segunda linha rolável.
+- Conferir em ≥1280px: layout volta a ser de linha única, igual ao desktop original.
+- Conferir mobile: ações já caem em segunda linha via `flex-wrap`.
