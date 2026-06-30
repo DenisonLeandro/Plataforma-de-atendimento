@@ -23,7 +23,7 @@ export function ConversationDetailsSidebar({
 
   if (isCollapsed) {
     return (
-      <div className="w-14 border-l bg-background flex flex-col items-center p-2 gap-2">
+      <div className="w-14 border-l bg-background flex flex-col items-center p-2 gap-2 flex-shrink-0">
         <Button variant="ghost" size="icon" onClick={onToggleCollapse}>
           <ChevronLeft className="h-4 w-4" />
         </Button>
@@ -34,7 +34,7 @@ export function ConversationDetailsSidebar({
 
   if (!conversationId) {
     return (
-      <div className="w-[350px] border-l bg-background flex flex-col">
+      <div className="w-[350px] border-l bg-background flex flex-col flex-shrink-0">
         <div className="p-4 border-b flex items-center justify-between">
           <h3 className="font-semibold">Detalhes da Conversa</h3>
           <Button variant="ghost" size="icon" onClick={onToggleCollapse}>
@@ -51,7 +51,7 @@ export function ConversationDetailsSidebar({
   }
 
   return (
-    <div className="w-[350px] border-l bg-background flex flex-col">
+    <div className="w-[350px] border-l bg-background flex flex-col flex-shrink-0">
       {/* Header */}
       <div className="p-4 border-b flex items-center justify-between">
         <div>
