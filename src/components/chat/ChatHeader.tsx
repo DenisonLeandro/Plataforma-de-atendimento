@@ -156,10 +156,10 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
             onClick={onAnalyze}
             disabled={isAnalyzing}
             title="Analisar conversa"
-            className="h-8 flex-shrink-0 px-2 2xl:px-3"
+            className="h-8 flex-shrink-0 px-3"
           >
             <RefreshCw className={`w-4 h-4 ${isAnalyzing ? 'animate-spin' : ''}`} />
-            <span className="ml-2 hidden 2xl:inline">Analisar</span>
+            <span className="ml-2">Analisar</span>
           </Button>
 
           <div className="ml-auto flex flex-shrink-0 items-center gap-1">

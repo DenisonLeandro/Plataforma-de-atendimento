@@ -1,9 +1,6 @@
-## Mostrar sempre ícone + texto nos botões Assumir/Transferir
+Mostrar sempre o label nos botões **Analisar** e **Sentimento**, como antes:
 
-No `src/components/chat/ChatHeader.tsx`, remover o `hidden 2xl:inline` dos labels dos botões **Assumir** e **Transferir**, deixando-os sempre visíveis ao lado do ícone (como na segunda imagem).
+- `src/components/chat/ChatHeader.tsx`: no botão Analisar, remover `hidden 2xl:inline` do span "Analisar" e usar padding fixo `px-3`.
+- `src/components/chat/SentimentCard.tsx`: remover os spans `hidden 2xl:inline` / `2xl:hidden` para exibir sempre "Positivo/Negativo/Neutro" (e "Sem análise" no estado vazio) ao lado do emoji.
 
-- Botão **Assumir**: ícone `UserPlus` + texto "Assumir" sempre visíveis.
-- Botão **Transferir**: ícone `Repeat` + texto "Transferir" sempre visíveis.
-- Ajustar padding para o padrão (`px-3`) em vez de `px-2 2xl:px-3`.
-
-Os botões continuam na faixa de ações (segunda linha) com scroll horizontal já existente, garantindo que mesmo em telas estreitas o conteúdo não corte — apenas role. Os botões **Sentimento** e **Analisar** permanecem como estão (sentimento já mostra label, analisar continua só ícone, conforme já estava antes da última alteração também).
+A faixa de ações já tem scroll horizontal, então em telas estreitas os botões rolam sem cortar nome/número do contato.

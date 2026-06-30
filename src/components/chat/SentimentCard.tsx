@@ -15,8 +15,7 @@ export const SentimentCard = ({ sentiment }: SentimentCardProps) => {
   if (!sentiment) {
     return (
       <Badge variant="outline" className="text-xs whitespace-nowrap" title="Sem análise">
-        <span className="hidden 2xl:inline">Sem análise</span>
-        <span className="2xl:hidden">—</span>
+        <span>Sem análise</span>
       </Badge>
     );
   }
@@ -71,7 +70,7 @@ export const SentimentCard = ({ sentiment }: SentimentCardProps) => {
             )}
           >
             <span className="text-base">{getEmoji()}</span>
-            <span className="hidden 2xl:inline">{getLabel()}</span>
+            <span>{getLabel()}</span>
           </Badge>
         </TooltipTrigger>
         <TooltipContent>
