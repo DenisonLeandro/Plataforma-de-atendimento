@@ -58,6 +58,8 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
     !!message.media_url &&
     isRawWhatsAppMediaUrl(message.media_url);
 
+  const messageTextClass = "min-w-0 max-w-full whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word]";
+
   const handleFetchMedia = async () => {
     setIsFetchingMedia(true);
     setFetchFailed(false);
@@ -197,7 +199,7 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
             </div>
           )}
           {message.content && message.content !== '🎵 Áudio' && (
-            <p className="text-xs opacity-80">{message.content}</p>
+            <p className={cn("text-xs opacity-80", messageTextClass)}>{message.content}</p>
           )}
         </div>
       );
@@ -211,11 +213,11 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
               <img
                 src={signedMediaUrl}
                 alt="Imagem"
-                className="max-w-xs rounded-md cursor-pointer hover:opacity-90 transition-opacity"
+                className="max-w-full sm:max-w-xs rounded-md cursor-pointer hover:opacity-90 transition-opacity"
                 onClick={() => setViewerImage(signedMediaUrl ?? null)}
               />
             )}
-            {message.content && <p className="text-sm">{message.content}</p>}
+            {message.content && <p className={cn("text-sm", messageTextClass)}>{message.content}</p>}
           </div>
         );
       
@@ -252,11 +254,11 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
         return (
           <div className="space-y-2">
             {message.media_url && (
-              <video controls className="max-w-xs rounded-md">
+              <video controls className="w-full max-w-xs rounded-md">
                 <source src={signedMediaUrl} type={message.media_mimetype || 'video/mp4'} />
               </video>
             )}
-            {message.content && <p className="text-sm">{message.content}</p>}
+            {message.content && <p className={cn("text-sm", messageTextClass)}>{message.content}</p>}
           </div>
         );
       
@@ -268,7 +270,7 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
                 href={signedMediaUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-2 text-sm underline"
+                className="flex min-w-0 max-w-full items-start gap-2 text-sm underline [overflow-wrap:anywhere] [word-break:break-word]"
               >
                 📄 {message.content || 'Documento'}
               </a>
@@ -279,7 +281,7 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
       case 'contact':
       case 'contacts':
         return (
-          <div className="flex items-center gap-3 p-2 bg-muted/50 rounded-md min-w-[200px]">
+          <div className="flex min-w-0 max-w-full items-center gap-3 p-2 bg-muted/50 rounded-md sm:min-w-[200px]">
             <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
               <User className="h-5 w-5 text-primary" />
             </div>
@@ -292,7 +294,7 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
       
       default:
         return (
-          <p className="text-sm whitespace-pre-wrap break-words">
+          <p className={cn("text-sm", messageTextClass)}>
             {message.content}
           </p>
         );
@@ -302,13 +304,13 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
   return (
     <div
       className={cn(
-        'flex group relative',
+        'flex group relative w-full min-w-0',
         isFromMe ? 'justify-end' : 'justify-start'
       )}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      <div className="max-w-[70%] relative">
+      <div className="relative w-fit max-w-[min(86%,44rem)] min-w-0">
         {isHovered && (
           <div className={cn(
             "absolute top-1/2 -translate-y-1/2 flex items-center gap-1 z-10",
@@ -345,7 +347,7 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
         )}
         <Card
           className={cn(
-            'p-3 space-y-1',
+            'max-w-full min-w-0 overflow-visible p-3 space-y-1',
             message.message_type === 'sticker' && 'bg-transparent border-none shadow-none p-0',
             isFromMe
               ? 'bg-primary text-primary-foreground'

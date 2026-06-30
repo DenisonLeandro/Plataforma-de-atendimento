@@ -92,18 +92,18 @@ export const MessagesContainer = ({ messages, isLoading, conversationId, onReply
   }
 
   return (
-    <div className="flex-1 relative min-h-0">
-      <ScrollArea className="h-full p-4" viewportRef={scrollRef} onScroll={handleScroll}>
-        <div className="space-y-4">
+    <div className="flex-1 relative min-h-0 min-w-0 overflow-hidden">
+      <ScrollArea className="h-full min-w-0 p-4" viewportRef={scrollRef} onScroll={handleScroll}>
+        <div className="w-full min-w-0 space-y-4">
           {messageGroups.map((group, idx) => (
-            <div key={idx}>
+            <div key={idx} className="min-w-0">
               <div className="flex justify-center my-4">
                 <span className="text-xs px-3 py-1 rounded-full bg-muted text-muted-foreground">
                   {getDateSeparator(group.date)}
                 </span>
               </div>
               
-              <div className="space-y-2">
+              <div className="min-w-0 space-y-2">
                 {group.messages.map((message) => (
                   <MessageBubble 
                     key={message.id} 
