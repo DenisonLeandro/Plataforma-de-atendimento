@@ -68,7 +68,7 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
   return (
     <div className="p-4 border-b border-border bg-card">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
           <Avatar className="w-10 h-10">
             <AvatarImage src={avatarUrl} />
             <AvatarFallback className="bg-primary/10 text-primary">
@@ -116,7 +116,7 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-shrink-0">
           {/* Assignment buttons */}
           {conversation && showAssumir && (
             <Button
