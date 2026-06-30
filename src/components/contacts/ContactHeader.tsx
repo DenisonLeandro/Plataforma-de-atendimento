@@ -9,6 +9,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
+import { useContactAvatar } from '@/hooks/useContactAvatar';
 
 interface ContactHeaderProps {
   contact: Tables<'whatsapp_contacts'>;
@@ -20,6 +21,7 @@ export function ContactHeader({ contact }: ContactHeaderProps) {
   const [isSaving, setIsSaving] = useState(false);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const avatarUrl = useContactAvatar(contact.profile_picture_url);
 
   const initials = contact.name
     .split(' ')
@@ -59,7 +61,7 @@ export function ContactHeader({ contact }: ContactHeaderProps) {
       <CardContent className="p-6">
         <div className="flex items-start gap-6">
           <Avatar className="h-24 w-24">
-            <AvatarImage src={contact.profile_picture_url || undefined} />
+            <AvatarImage src={avatarUrl} />
             <AvatarFallback className="text-2xl">{initials}</AvatarFallback>
           </Avatar>
 

@@ -14,6 +14,7 @@ import { isContactNameMissing } from "@/utils/contactUtils";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { User } from "lucide-react";
+import { useContactAvatar } from "@/hooks/useContactAvatar";
 
 type Conversation = Tables<"whatsapp_conversations"> & {
   contact?: Tables<"whatsapp_contacts"> | null;
@@ -87,6 +88,7 @@ const ConversationItem = ({
   const nameIsMissing = contact ? isContactNameMissing(contact.name, contact.phone_number) : false;
   const contactName = nameIsMissing ? "Sem nome" : (contact?.name || "Desconhecido");
   const profilePicture = conversation.contact?.profile_picture_url;
+  const avatarUrl = useContactAvatar(profilePicture);
   const lastMessage = conversation.last_message_preview || "";
   const lastMessageTime = conversation.last_message_at;
   const unreadCount = conversation.unread_count || 0;
@@ -120,7 +122,7 @@ const ConversationItem = ({
         >
           {/* Avatar */}
           <Avatar className="h-10 w-10 shrink-0">
-            <AvatarImage src={profilePicture || undefined} alt={contactName} />
+            <AvatarImage src={avatarUrl} alt={contactName} />
             <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
               {getInitials(contactName)}
             </AvatarFallback>

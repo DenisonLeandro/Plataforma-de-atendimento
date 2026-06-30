@@ -2,6 +2,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ContactWithMetrics } from '@/hooks/whatsapp/useWhatsAppContacts';
 import { cn } from '@/lib/utils';
 import { isContactNameMissing } from '@/utils/contactUtils';
+import { useContactAvatar } from '@/hooks/useContactAvatar';
 
 interface ContactItemProps {
   contact: ContactWithMetrics;
@@ -12,6 +13,7 @@ interface ContactItemProps {
 export function ContactItem({ contact, isSelected, onClick }: ContactItemProps) {
   const nameIsMissing = isContactNameMissing(contact.name, contact.phone_number);
   const displayName = nameIsMissing ? 'Sem nome' : contact.name;
+  const avatarUrl = useContactAvatar(contact.profile_picture_url);
   
   const initials = contact.name
     .split(' ')
@@ -31,7 +33,7 @@ export function ContactItem({ contact, isSelected, onClick }: ContactItemProps) 
     >
       <div className="flex items-center gap-3">
         <Avatar className="h-10 w-10">
-          <AvatarImage src={contact.profile_picture_url || undefined} />
+          <AvatarImage src={avatarUrl} />
           <AvatarFallback className="bg-primary/10 text-primary">{initials}</AvatarFallback>
         </Avatar>
 

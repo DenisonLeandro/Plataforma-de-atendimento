@@ -14,6 +14,7 @@ import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useConversationAssignment } from "@/hooks/whatsapp/useConversationAssignment";
 import { isContactNameMissing, isLidValue } from "@/utils/contactUtils";
+import { useContactAvatar } from "@/hooks/useContactAvatar";
 import { cn } from "@/lib/utils";
 
 type Contact = Tables<'whatsapp_contacts'>;
@@ -35,7 +36,8 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
   const [isEditContactModalOpen, setIsEditContactModalOpen] = useState(false);
   const { user, isAdmin, isSupervisor } = useAuth();
   const { assignConversation } = useConversationAssignment();
-  
+  const avatarUrl = useContactAvatar(contact?.profile_picture_url ?? null);
+
   if (!contact) return null;
   
   const nameIsMissing = isContactNameMissing(contact.name, contact.phone_number);
@@ -68,7 +70,7 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Avatar className="w-10 h-10">
-            <AvatarImage src={contact.profile_picture_url || undefined} />
+            <AvatarImage src={avatarUrl} />
             <AvatarFallback className="bg-primary/10 text-primary">
               {getInitials(contact.name)}
             </AvatarFallback>

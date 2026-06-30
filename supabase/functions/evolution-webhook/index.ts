@@ -231,6 +231,7 @@ async function fetchAndUpdateProfilePicture(
   instanceName: string,
   phoneNumber: string,
   contactId: string,
+  instanceId: string,
   providerType: string = 'self_hosted'
 ): Promise<void> {
   try {
@@ -263,15 +264,41 @@ async function fetchAndUpdateProfilePicture(
     const profilePictureUrl = data.profilePictureUrl || data.picture;
 
     if (profilePictureUrl) {
+      // As URLs do CDN do Facebook (scontent.*.fbcdn.net) expiram e passam a dar
+      // 403 depois de alguns dias. Baixamos a imagem e guardamos no Storage,
+      // gravando o PATH local em vez da URL externa. Se o download falhar,
+      // gravamos null (avatar genérico) — nunca uma URL quebrada.
+      let storedPath: string | null = null;
+      try {
+        const imgResp = await fetchWithTimeout(profilePictureUrl, { timeout: 10000 });
+        if (imgResp.ok) {
+          const contentType = imgResp.headers.get('content-type') || 'image/jpeg';
+          const bytes = new Uint8Array(await imgResp.arrayBuffer());
+          const path = `${instanceId}/profiles/${phoneNumber}.jpg`;
+          const { error: uploadError } = await supabase.storage
+            .from('whatsapp-media')
+            .upload(path, bytes, { contentType, upsert: true });
+          if (uploadError) {
+            console.warn(`[evolution-webhook] Falha ao subir foto de perfil pro Storage (${phoneNumber}):`, uploadError.message);
+            return; // erro transitório de upload — não sobrescreve o valor atual
+          }
+          storedPath = path;
+        } else {
+          console.warn(`[evolution-webhook] Foto de perfil retornou ${imgResp.status} para ${phoneNumber} — gravando sem foto`);
+        }
+      } catch (e) {
+        console.warn(`[evolution-webhook] Falha ao baixar foto de perfil de ${phoneNumber}:`, e instanceof Error ? e.message : e);
+      }
+
       await supabase
         .from('whatsapp_contacts')
-        .update({ 
-          profile_picture_url: profilePictureUrl,
-          updated_at: new Date().toISOString()
+        .update({
+          profile_picture_url: storedPath,
+          updated_at: new Date().toISOString(),
         })
         .eq('id', contactId);
-      
-      console.log(`[evolution-webhook] Profile picture updated for contact: ${contactId}`);
+
+      console.log(`[evolution-webhook] Profile picture ${storedPath ? 'stored in Storage' : 'cleared (download failed)'} for contact: ${contactId}`);
     }
   } catch (error) {
     console.warn('[evolution-webhook] Failed to fetch profile picture:', error);
@@ -404,7 +431,7 @@ async function findOrCreateContact(
     
     // Buscar foto de perfil em background (fire-and-forget)
     if (apiUrl && apiKey && instanceName) {
-      fetchAndUpdateProfilePicture(supabase, apiUrl, apiKey, instanceName, phoneNumber, newContact.id, providerType)
+      fetchAndUpdateProfilePicture(supabase, apiUrl, apiKey, instanceName, phoneNumber, newContact.id, instanceId, providerType)
         .catch(err => console.warn('[evolution-webhook] Background profile fetch error:', err));
     }
     
