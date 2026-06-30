@@ -76,10 +76,10 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
             </AvatarFallback>
           </Avatar>
           
-          <div className="flex-1">
-            <div className="flex items-center gap-2">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 min-w-0">
               <h2 className={cn(
-                "text-base font-semibold",
+                "text-base font-semibold truncate min-w-0",
                 nameIsMissing ? "text-muted-foreground italic" : "text-foreground"
               )}>
                 {displayName}

@@ -133,7 +133,7 @@ const ConversationItem = ({
             {/* Name row */}
             <div className="flex items-center gap-1.5 min-w-0">
               <span className={cn(
-                "font-medium text-sm truncate",
+                "font-medium text-sm truncate min-w-0",
                 nameIsMissing && "text-muted-foreground italic"
               )}>
                 {contactName}
