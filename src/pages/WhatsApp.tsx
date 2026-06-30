@@ -13,7 +13,9 @@ import { Link, useSearchParams } from "react-router-dom";
 const WhatsApp = () => {
   const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
   const { setSelectedConversationId } = useNotifications();
-  const [isDetailsSidebarCollapsed, setIsDetailsSidebarCollapsed] = useState(false);
+  const [isDetailsSidebarCollapsed, setIsDetailsSidebarCollapsed] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(max-width: 1279px)").matches,
+  );
   const [isConversationsSidebarCollapsed, setIsConversationsSidebarCollapsed] = useState(false);
   const { instances } = useWhatsAppInstances();
   const { disconnectedInstances } = useInstanceStatusMonitor();

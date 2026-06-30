@@ -123,9 +123,10 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
               variant="outline"
               size="sm"
               onClick={handleAssumeFromQueue}
+              title="Assumir conversa"
             >
-              <UserPlus className="w-4 h-4 mr-2" />
-              Assumir
+              <UserPlus className="w-4 h-4 xl:mr-2" />
+              <span className="hidden xl:inline">Assumir</span>
             </Button>
           )}
 
@@ -134,9 +135,10 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
               variant="outline"
               size="sm"
               onClick={() => setIsAssignDialogOpen(true)}
+              title="Transferir conversa"
             >
-              <Repeat className="w-4 h-4 mr-2" />
-              Transferir
+              <Repeat className="w-4 h-4 xl:mr-2" />
+              <span className="hidden xl:inline">Transferir</span>
             </Button>
           )}
 
@@ -147,9 +149,10 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
             size="sm"
             onClick={onAnalyze}
             disabled={isAnalyzing}
+            title="Analisar conversa"
           >
             <RefreshCw className={`w-4 h-4 ${isAnalyzing ? 'animate-spin' : ''}`} />
-            <span className="ml-2">Analisar</span>
+            <span className="hidden xl:inline ml-2">Analisar</span>
           </Button>
 
           {conversation && (
