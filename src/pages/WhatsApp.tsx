@@ -91,7 +91,7 @@ const WhatsApp = () => {
 
       {/* Chat Area */}
       {showChat && (
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
           {/* Mobile back button */}
           {isMobile && selectedConversation && (
             <div className="border-b border-border p-2">
