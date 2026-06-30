@@ -67,7 +67,8 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
 
   return (
     <div className="p-4 border-b border-border bg-card">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between xl:gap-4">
+        {/* Linha 1: identidade do contato (sempre legível) + controles globais */}
         <div className="flex items-center gap-3 flex-1 min-w-0">
           <Avatar className="w-10 h-10">
             <AvatarImage src={avatarUrl} />
@@ -114,9 +115,22 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
               </div>
             )}
           </div>
+
+          {/* Controles globais — ficam na linha 1 em todos os tamanhos */}
+          <div className="flex items-center gap-1 flex-shrink-0 xl:hidden">
+            {conversation && (
+              <ChatHeaderMenu conversation={conversation} onRefresh={onRefresh} />
+            )}
+            <Link to="/whatsapp/settings">
+              <Button variant="ghost" size="icon">
+                <Settings className="h-5 w-5" />
+              </Button>
+            </Link>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2 flex-shrink-0">
+        {/* Linha 2: ações da conversa (vira linha única em xl) */}
+        <div className="flex items-center gap-2 flex-nowrap overflow-x-auto xl:flex-shrink-0 xl:overflow-visible -mx-1 px-1 xl:mx-0 xl:px-0">
           {/* Assignment buttons */}
           {conversation && showAssumir && (
             <Button
@@ -124,6 +138,7 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
               size="sm"
               onClick={handleAssumeFromQueue}
               title="Assumir conversa"
+              className="flex-shrink-0"
             >
               <UserPlus className="w-4 h-4 xl:mr-2" />
               <span className="hidden xl:inline">Assumir</span>
@@ -136,6 +151,7 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
               size="sm"
               onClick={() => setIsAssignDialogOpen(true)}
               title="Transferir conversa"
+              className="flex-shrink-0"
             >
               <Repeat className="w-4 h-4 xl:mr-2" />
               <span className="hidden xl:inline">Transferir</span>
@@ -150,20 +166,23 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
             onClick={onAnalyze}
             disabled={isAnalyzing}
             title="Analisar conversa"
+            className="flex-shrink-0"
           >
             <RefreshCw className={`w-4 h-4 ${isAnalyzing ? 'animate-spin' : ''}`} />
             <span className="hidden xl:inline ml-2">Analisar</span>
           </Button>
 
-          {conversation && (
-            <ChatHeaderMenu conversation={conversation} onRefresh={onRefresh} />
-          )}
-
-          <Link to="/whatsapp/settings">
-            <Button variant="ghost" size="icon">
-              <Settings className="h-5 w-5" />
-            </Button>
-          </Link>
+          {/* Em xl, os controles globais voltam para o final da linha única */}
+          <div className="hidden xl:flex items-center gap-1 flex-shrink-0">
+            {conversation && (
+              <ChatHeaderMenu conversation={conversation} onRefresh={onRefresh} />
+            )}
+            <Link to="/whatsapp/settings">
+              <Button variant="ghost" size="icon">
+                <Settings className="h-5 w-5" />
+              </Button>
+            </Link>
+          </div>
         </div>
       </div>
 
