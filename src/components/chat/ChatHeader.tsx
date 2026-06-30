@@ -120,7 +120,7 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
         </div>
 
         {/* Ações da conversa em faixa própria para não cobrir nome/número */}
-        <div className="-mx-1 flex min-w-0 flex-nowrap items-center gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+        <div className="-mx-1 flex min-w-0 flex-nowrap items-center justify-end gap-1.5 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
           {/* Assignment buttons */}
           {conversation && showAssumir && (
             <Button
@@ -128,9 +128,9 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
               size="sm"
               onClick={handleAssumeFromQueue}
               title="Assumir conversa"
-              className="h-8 flex-shrink-0 px-3"
+              className="h-7 flex-shrink-0 px-2.5 text-xs"
             >
-              <UserPlus className="h-4 w-4 mr-2" />
+              <UserPlus className="h-3.5 w-3.5 mr-1.5" />
               <span>Assumir</span>
             </Button>
           )}
@@ -141,9 +141,9 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
               size="sm"
               onClick={() => setIsAssignDialogOpen(true)}
               title="Transferir conversa"
-              className="h-8 flex-shrink-0 px-3"
+              className="h-7 flex-shrink-0 px-2.5 text-xs"
             >
-              <Repeat className="h-4 w-4 mr-2" />
+              <Repeat className="h-3.5 w-3.5 mr-1.5" />
               <span>Transferir</span>
             </Button>
           )}
@@ -156,19 +156,19 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
             onClick={onAnalyze}
             disabled={isAnalyzing}
             title="Analisar conversa"
-            className="h-8 flex-shrink-0 px-3"
+            className="h-7 flex-shrink-0 px-2.5 text-xs"
           >
-            <RefreshCw className={`w-4 h-4 ${isAnalyzing ? 'animate-spin' : ''}`} />
-            <span className="ml-2">Analisar</span>
+            <RefreshCw className={`h-3.5 w-3.5 ${isAnalyzing ? 'animate-spin' : ''}`} />
+            <span className="ml-1.5">Analisar</span>
           </Button>
 
-          <div className="ml-auto flex flex-shrink-0 items-center gap-1">
+          <div className="flex flex-shrink-0 items-center gap-0.5">
             {conversation && (
               <ChatHeaderMenu conversation={conversation} onRefresh={onRefresh} />
             )}
             <Link to="/whatsapp/settings">
-              <Button variant="ghost" size="icon">
-                <Settings className="h-5 w-5" />
+              <Button variant="ghost" size="icon" className="h-7 w-7">
+                <Settings className="h-4 w-4" />
               </Button>
             </Link>
           </div>

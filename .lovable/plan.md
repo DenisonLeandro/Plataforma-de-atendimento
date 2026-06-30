@@ -1,6 +1,16 @@
-Mostrar sempre o label nos botões **Analisar** e **Sentimento**, como antes:
+Alinhar todas as ações à direita, com tamanho reduzido:
 
-- `src/components/chat/ChatHeader.tsx`: no botão Analisar, remover `hidden 2xl:inline` do span "Analisar" e usar padding fixo `px-3`.
-- `src/components/chat/SentimentCard.tsx`: remover os spans `hidden 2xl:inline` / `2xl:hidden` para exibir sempre "Positivo/Negativo/Neutro" (e "Sem análise" no estado vazio) ao lado do emoji.
+Em `src/components/chat/ChatHeader.tsx`, na faixa de ações (segunda linha):
 
-A faixa de ações já tem scroll horizontal, então em telas estreitas os botões rolam sem cortar nome/número do contato.
+- Adicionar `justify-end` ao container e remover o `ml-auto` do bloco do kebab/settings (já ficará à direita por padrão).
+- Reduzir os botões **Assumir**, **Transferir** e **Analisar**:
+  - `h-7` em vez de `h-8`
+  - `px-2.5` em vez de `px-3`
+  - `text-xs`
+  - Ícones em `h-3.5 w-3.5` com `mr-1.5`
+- Reduzir o `SentimentCard` em `src/components/chat/SentimentCard.tsx`:
+  - Badge com `px-2 py-0.5 text-[11px]`
+  - Emoji em `text-sm`
+- Ícones do kebab/settings com `size="sm"` (h-8 w-8) em vez de `size="icon"` (h-10 w-10), para combinar com a nova altura.
+
+Resultado: Assumir | Transferir | Sentimento | Analisar | ⋮ ⚙ — tudo alinhado à direita, compacto, sem cortar o nome do contato na linha de cima.
