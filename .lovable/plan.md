@@ -1,19 +1,9 @@
-Plano para corrigir o corte/sobreposição do nome e número no cabeçalho da conversa:
+## Mostrar sempre ícone + texto nos botões Assumir/Transferir
 
-1. **Reorganizar a área do contato no ChatHeader**
-   - Separar visualmente avatar, botão de editar, nome e número para evitar que o botão de editar fique “em cima” do telefone.
-   - Garantir que o nome do contato fique sempre acima do número, sem depender de ocultar barras laterais.
-   - Se o nome estiver ausente de verdade no banco, manter “Sem nome”; se existir, exibir normalmente.
+No `src/components/chat/ChatHeader.tsx`, remover o `hidden 2xl:inline` dos labels dos botões **Assumir** e **Transferir**, deixando-os sempre visíveis ao lado do ícone (como na segunda imagem).
 
-2. **Mover ações para uma faixa própria**
-   - Manter Assumir, Transferir, Sentimento, Analisar, menu e configurações fora da área do nome/número.
-   - Em telas com pouco espaço, essa faixa de ações poderá rolar horizontalmente sem empurrar ou cobrir os dados do contato.
+- Botão **Assumir**: ícone `UserPlus` + texto "Assumir" sempre visíveis.
+- Botão **Transferir**: ícone `Repeat` + texto "Transferir" sempre visíveis.
+- Ajustar padding para o padrão (`px-3`) em vez de `px-2 2xl:px-3`.
 
-3. **Ajustar largura responsiva das colunas**
-   - Preservar a barra esquerda de conversas e a barra direita de detalhes abertas.
-   - Reduzir larguras fixas excessivas onde necessário para notebook/PC menor, sem quebrar desktop, tablet e celular.
-   - Manter a área central do chat com `min-w-0` e overflow controlado para não cortar seções.
-
-4. **Validar visualmente nos tamanhos críticos**
-   - Conferir no tamanho atual do usuário (~1008x577), notebook/PC intermediário, desktop maior e mobile.
-   - Confirmar que avatar, nome, número, status atribuído e botões não ficam sobrepostos.
+Os botões continuam na faixa de ações (segunda linha) com scroll horizontal já existente, garantindo que mesmo em telas estreitas o conteúdo não corte — apenas role. Os botões **Sentimento** e **Analisar** permanecem como estão (sentimento já mostra label, analisar continua só ícone, conforme já estava antes da última alteração também).
