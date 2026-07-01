@@ -1,32 +1,48 @@
-## Correção: `create-company-admin` — 401 "invalid token"
+## Objetivo
+Adicionar botão "Excluir" em cada card de empresa no Painel Super Admin (`/super-admin`), com validações de proteção.
 
-Aplicar exatamente 2 trocas em `supabase/functions/create-company-admin/index.ts` e redeployar a função. Nenhum outro arquivo é tocado.
+## Arquivo alterado
+- `src/pages/SuperAdminPage.tsx` (único arquivo)
 
-### Diff
+## Mudanças
 
-```diff
-- import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
-+ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+### 1. Imports
+- Adicionar `Trash2` no import do `lucide-react`.
+
+### 2. Estados novos
+```ts
+const [deleteTarget, setDeleteTarget] = useState<CompanyEnriched | null>(null);
+const [isDeleting, setIsDeleting] = useState(false);
+```
+Constante `PROTECTED_COMPANY_ID = '00000000-0000-0000-0000-000000000001'`.
+
+### 3. Handler `handleDeleteCompany`
+- Se `deleteTarget.id === PROTECTED_COMPANY_ID` → toast destructive: "Esta empresa não pode ser excluída."
+- Se `deleteTarget.userCount > 0` → toast: "Remova todos os usuários desta empresa antes de excluí-la."
+- Se `deleteTarget.instanceCount > 0` → toast: "Remova todas as instâncias desta empresa antes de excluí-la."
+- Caso contrário: `DELETE FROM companies WHERE id = deleteTarget.id`.
+- Sucesso: toast, `setDeleteTarget(null)`, atualiza cache via `queryClient.setQueryData(['super-admin','companies'], prev => prev.filter(c => c.id !== id))` (remoção sem recarregar) e chama `refetch()` no background.
+
+### 4. Botão no card
+Ao lado do botão Suspender/Ativar (mesma linha horizontal com `flex gap-2`), botão `variant="destructive"` `size="sm"` com ícone `Trash2` e label "Excluir". Desabilitado quando `company.id === PROTECTED_COMPANY_ID` (tooltip via `title="Empresa protegida"`).
+
+Layout final do rodapé do card:
+```
+[Entrar como]  [Criar Admin]
+[Suspender/Ativar]  [Excluir]
 ```
 
-```diff
--     const ANON = Deno.env.get("SUPABASE_ANON_KEY")!;
-+     const PUBLISHABLE_KEY = Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!;
-@@
--     const userClient = createClient(SUPABASE_URL, ANON, {
-+     const userClient = createClient(SUPABASE_URL, PUBLISHABLE_KEY, {
-        global: { headers: { Authorization: authHeader } },
-      });
-```
+### 5. AlertDialog de confirmação
+Novo `<AlertDialog open={!!deleteTarget} onOpenChange={...}>` com:
+- Título: "Excluir empresa"
+- Descrição: `Tem certeza? Esta ação não pode ser desfeita. A empresa ${deleteTarget?.name} será permanentemente removida.`
+- Cancel + Action (destructive) chamando `handleDeleteCompany`, com loader durante `isDeleting`.
 
-### Passos
+## Fora do escopo (respeitando restrições)
+- Nenhuma migration, RLS ou edge function.
+- Nenhuma outra página tocada.
+- Cor laranja intocada; usa apenas tokens shadcn `destructive`.
+- Validações redundantes ao RLS servem para UX/mensagens claras — o `DELETE` real depende da policy já existente em `companies`.
 
-1. Aplicar as 2 substituições acima em `supabase/functions/create-company-admin/index.ts`.
-2. Redeploy da função `create-company-admin`.
-3. Teste via curl com o token do super_admin logado — esperado: sair do 401 `"invalid token"` e alcançar os `console.log('Step 1…')` em diante.
-
-### Fora do escopo
-
-- Não altero mais nada no arquivo (lógica, roles, upsert de profile permanecem).
-- Não mexo em banco, RLS, migrations, config.toml ou frontend.
-- Sem commit / sem push — aguardo seu OK após validar.
+## Validação
+- `npm run build` roda automaticamente pelo harness após a edição; confirmo tipos e retorno o diff.
