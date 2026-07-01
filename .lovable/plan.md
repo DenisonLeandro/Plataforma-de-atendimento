@@ -1,51 +1,48 @@
-## Objetivo
+## Problema
 
-Manter a regra atual — o **admin supremo** (Denison) só visualiza dados das outras empresas, sem poder alterar nada — e abrir uma exceção: na empresa **Piscinas Ibiporã** (a "Dom Piscinas"), Denison passa a ter permissão total (enviar mensagens, editar, gerenciar instâncias etc.), como se fosse admin dessa empresa.
+O banner e os botões usam apenas `isViewingAsCompany` para decidir se o modo é somente-leitura. Como Denison agora tem permissão de escrita em Piscinas Ibiporã (via `super_admin_company_access`), o backend aceita as ações, mas a interface continua bloqueando tudo e mostrando "MODO SOMENTE LEITURA".
 
-## Como será feito
+## Solução
 
-### 1. Nova tabela de exceções (banco)
+Introduzir um segundo sinal — `canWriteViewedCompany` — que consulta a nova tabela de exceções e é combinado com `isViewingAsCompany` para gerar um único flag de UI: `isReadOnlyView`.
 
-`public.super_admin_company_access`
-- `super_admin_id` (dono da permissão)
-- `company_id` (empresa liberada)
-- chave primária composta
+### 1. Novo hook `useSuperAdminWriteAccess`
 
-Só o próprio super admin lê/escreve nessa tabela (via RLS + `service_role` para migrações). Isso deixa a regra explícita e auditável — no futuro basta adicionar/remover uma linha para liberar ou revogar outra empresa.
+- Query no `super_admin_company_access` filtrando por `super_admin_id = user.id` e `company_id = viewingAsCompanyId`.
+- Habilitada só quando `isSuperAdmin && isViewingAsCompany`.
+- Retorna `{ canWrite: boolean, isLoading }`.
+- Cache longo (staleTime 10 min).
 
-**Seed inicial:** liberar Denison em Piscinas Ibiporã.
+### 2. `AuthContext`
 
-### 2. Função auxiliar
+Expor dois novos valores derivados:
+- `canWriteViewedCompany: boolean` — vem do hook acima.
+- `isReadOnlyView: boolean` = `isViewingAsCompany && !canWriteViewedCompany`.
 
-`public.super_admin_can_write_company(_uid, _company_id)` retorna `true` quando existe linha correspondente na tabela acima. `SECURITY DEFINER`, `STABLE`.
+`isViewingAsCompany` continua existindo para casos que precisem saber "estou vendo como outra empresa" independentemente da permissão (ex.: mostrar o banner).
 
-### 3. Ajuste das RLS (o núcleo da mudança)
+### 3. Banner (`ViewAsBanner.tsx`)
 
-Hoje o super admin já enxerga tudo (via `can_user_see_instance` e `can_view_conversation`). Isso continua igual — **nenhuma leitura muda**.
+- Continua aparecendo sempre que `isViewingAsCompany`.
+- Quando `canWriteViewedCompany = true`: cor verde, texto "Acesso total como admin" e ícone de escudo/edit.
+- Quando `false`: mantém o visual amarelo atual e o rótulo "Modo somente leitura".
+- Botão "Sair do modo visualização" permanece.
 
-O que muda é a escrita:
+### 4. Substituir bloqueios de UI
 
-| Política | Antes | Depois |
-|---|---|---|
-| `whatsapp_conversations` INSERT/UPDATE `WITH CHECK` | `is_super_admin OR company_id = minha_empresa` | `super_admin_can_write_company(company_id) OR company_id = minha_empresa` |
-| `whatsapp_messages` INSERT/UPDATE (via `can_access_conversation`) | Super admin não passa | `can_access_conversation` também retorna `true` quando `super_admin_can_write_company(conversa.company_id)` |
-| `whatsapp_contacts` UPDATE (via `can_access_conversation`) | Idem | Idem (herda do ajuste acima) |
-| `whatsapp_contacts` "Supervisors can manage contacts" | Qualquer admin/supervisor global | Restrito à empresa do usuário **ou** super admin com permissão explícita na empresa do contato |
-| `whatsapp_instances` "Only admins can manage instances" | `is_super_admin` global | `super_admin_can_write_company(company_id) OR (admin da minha empresa)` |
+Trocar `isViewingAsCompany` por `isReadOnlyView` nas ações que envolvem escrita:
+- `src/components/chat/ChatHeader.tsx` (assumir, transferir, análise, menu)
+- `src/components/chat/ChatArea.tsx` (input desabilitado + aviso)
 
-Resultado: para todas as outras empresas, Denison continua com acesso somente-leitura (comportamento atual preservado). Para Piscinas Ibiporã, ele age como admin pleno.
+Componentes que só refletem contexto (labels, título) continuam usando `isViewingAsCompany`.
 
-### 4. Frontend
+## Resultado esperado
 
-Nenhuma mudança de código necessária. Denison já usa o seletor "Ver como empresa" (`viewingAsCompanyId` no `AuthContext`) — ao selecionar Piscinas Ibiporã, os componentes de envio/edição chamam as mesmas funções e as novas RLS aceitam a operação. Nas demais empresas continuam bloqueadas com a mensagem de permissão que já existe.
+- Denison entra "Ver como Piscinas Ibiporã" → banner verde "Acesso total", pode enviar mensagens, editar, transferir.
+- Denison entra "Ver como Denison Advocacia" (ou outra empresa sem exceção) → banner amarelo, tudo somente-leitura (comportamento atual).
+- Admin normal / agentes → nada muda.
 
-### 5. Validação
+## Sem alterações necessárias
 
-- Denison logado, "vendo como" Piscinas Ibiporã → consegue abrir conversa, enviar texto/mídia, editar contato, editar instância.
-- Denison logado, "vendo como" qualquer outra empresa → tudo continua somente-leitura (botões de envio dão erro de RLS, como hoje).
-- Admin da própria Piscinas Ibiporã (Lucas) → sem alteração de comportamento.
-
-## Observações
-
-- Se amanhã você quiser liberar outra empresa (ou revogar Piscinas), basta inserir/remover uma linha em `super_admin_company_access` — sem novo deploy.
-- Se aparecer uma segunda pessoa com papel de super admin no futuro, ela **não** herda essas permissões automaticamente: precisa ter a linha correspondente na tabela.
+- Banco de dados (já feito no passo anterior).
+- Edge functions (RLS trata).

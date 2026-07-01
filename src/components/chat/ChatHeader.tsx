@@ -34,7 +34,7 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
   const { data: topicsData } = useConversationTopics(conversationId || null);
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
   const [isEditContactModalOpen, setIsEditContactModalOpen] = useState(false);
-  const { user, isAdmin, isSupervisor, isViewingAsCompany } = useAuth();
+  const { user, isAdmin, isSupervisor, isReadOnlyView } = useAuth();
   const { assignConversation } = useConversationAssignment();
   const avatarUrl = useContactAvatar(contact?.profile_picture_url ?? null);
 
@@ -98,7 +98,7 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
                 size="sm" 
                 className="h-6 w-6 flex-shrink-0 p-0" 
                 onClick={() => setIsEditContactModalOpen(true)}
-                disabled={isViewingAsCompany}
+                disabled={isReadOnlyView}
                 title="Editar contato"
               >
                 <Pencil className="h-3 w-3 text-muted-foreground" />
@@ -128,7 +128,7 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
               variant="outline"
               size="sm"
               onClick={handleAssumeFromQueue}
-              disabled={isViewingAsCompany}
+              disabled={isReadOnlyView}
               title="Assumir conversa"
               className="h-7 flex-shrink-0 px-2.5 text-xs"
             >
@@ -142,7 +142,7 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
               variant="outline"
               size="sm"
               onClick={() => setIsAssignDialogOpen(true)}
-              disabled={isViewingAsCompany}
+              disabled={isReadOnlyView}
               title="Transferir conversa"
               className="h-7 flex-shrink-0 px-2.5 text-xs"
             >
@@ -157,7 +157,7 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
             variant="ghost"
             size="sm"
             onClick={onAnalyze}
-            disabled={isAnalyzing || isViewingAsCompany}
+            disabled={isAnalyzing || isReadOnlyView}
             title="Analisar conversa"
             className="h-7 flex-shrink-0 px-2.5 text-xs"
           >
@@ -167,7 +167,7 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
 
           <div className="flex flex-shrink-0 items-center gap-0.5">
             {conversation && (
-              <ChatHeaderMenu conversation={conversation} onRefresh={onRefresh} disabled={isViewingAsCompany} />
+              <ChatHeaderMenu conversation={conversation} onRefresh={onRefresh} disabled={isReadOnlyView} />
             )}
             <Link to="/whatsapp/settings">
               <Button variant="ghost" size="icon" className="h-7 w-7">

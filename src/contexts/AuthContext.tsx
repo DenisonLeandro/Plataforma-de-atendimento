@@ -37,6 +37,8 @@ interface AuthContextType {
   viewingAsCompanyId: string | null;
   setViewAsCompany: (companyId: string | null) => void;
   isViewingAsCompany: boolean;
+  canWriteViewedCompany: boolean;
+  isReadOnlyView: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -52,6 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [viewingAsCompanyId, setViewingAsCompanyIdState] = useState<string | null>(
     typeof window !== 'undefined' ? sessionStorage.getItem('viewingAsCompanyId') : null
   );
+  const [canWriteViewedCompany, setCanWriteViewedCompany] = useState(false);
   const { toast } = useToast();
   const { setupProject, isConfigured, isCheckingConfig } = useProjectSetup();
   const lastLoadRef = useRef<{ userId: string; at: number } | null>(null);
@@ -70,6 +73,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const isViewingAsCompany = !!viewingAsCompanyId;
+
+  // Super admin write exceptions: if the current user (super admin) has an
+  // explicit row in super_admin_company_access for the company being viewed,
+  // the UI unlocks the write actions for that company.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!user || !isSuperAdmin || !viewingAsCompanyId) {
+        if (!cancelled) setCanWriteViewedCompany(false);
+        return;
+      }
+      const { data, error } = await (supabase as any)
+        .from('super_admin_company_access')
+        .select('company_id')
+        .eq('super_admin_id', user.id)
+        .eq('company_id', viewingAsCompanyId)
+        .maybeSingle();
+      if (!cancelled) setCanWriteViewedCompany(!error && !!data);
+    })();
+    return () => { cancelled = true; };
+  }, [user, isSuperAdmin, viewingAsCompanyId]);
+
+  const isReadOnlyView = isViewingAsCompany && !canWriteViewedCompany;
 
   // Auto-create profile and role if missing
   const ensureUserProfile = async (userId: string, accessToken: string) => {
@@ -375,6 +401,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     viewingAsCompanyId,
     setViewAsCompany,
     isViewingAsCompany,
+    canWriteViewedCompany,
+    isReadOnlyView,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
