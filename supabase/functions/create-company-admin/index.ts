@@ -20,6 +20,7 @@ Deno.serve(async (req) => {
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
+      console.error('Error: missing authorization header');
       return new Response(JSON.stringify({ error: "missing authorization" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -36,23 +37,31 @@ Deno.serve(async (req) => {
     });
     const { data: userData, error: userErr } = await userClient.auth.getUser();
     if (userErr || !userData?.user) {
+      console.error('Error: invalid authentication token', userErr);
       return new Response(JSON.stringify({ error: "invalid token" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
+    console.log('Step 1: Auth verified', userData.user.id);
+
     const adminClient = createClient(SUPABASE_URL, SERVICE_ROLE);
 
     // 2. Check if caller is super_admin
-    const { data: superAdminRole, error: roleError } = await adminClient
+    const { data: roles, error: rolesError } = await adminClient
       .from("user_roles")
       .select("role")
-      .eq("user_id", userData.user.id)
-      .eq("role", "super_admin")
-      .maybeSingle();
+      .eq("user_id", userData.user.id);
 
-    if (roleError || !superAdminRole) {
+    if (rolesError) {
+      console.error('Error fetching user roles:', rolesError);
+    }
+
+    const isSuperAdmin = roles?.some(r => r.role === 'super_admin');
+    console.log('Step 2: super_admin check', isSuperAdmin);
+
+    if (!isSuperAdmin) {
       return new Response(JSON.stringify({ error: "Unauthorized: only super_admins can perform this action" }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -64,11 +73,14 @@ Deno.serve(async (req) => {
     const { company_id, name, email, password } = body;
 
     if (!company_id || !name || !email || !password) {
+      console.error('Error: missing required fields');
       return new Response(JSON.stringify({ error: "missing required fields (company_id, name, email, password)" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    console.log('Step 3: creating user', email);
 
     // 4. Create new user in Auth
     const { data: newUser, error: createError } = await adminClient.auth.admin.createUser({
@@ -82,18 +94,24 @@ Deno.serve(async (req) => {
     });
 
     if (createError) {
+      console.error('Error creating user in Auth:', createError);
       return new Response(JSON.stringify({ error: createError.message }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // 5. Update user_roles and profiles to ensure they are correct (override default agent role from trigger)
-    // Delete any default roles created by trigger for this user
+    console.log('Step 4: user created', newUser?.user?.id);
+
+    // 5. Update user_roles (override default agent role from trigger)
+    console.log('Step 5: assigning role');
     await adminClient
       .from("user_roles")
       .delete()
       .eq("user_id", newUser.user.id);
+
+    // Aguarda 500ms para garantir consistência
+    await new Promise(resolve => setTimeout(resolve, 500));
 
     // Insert admin role
     const { error: insertRoleErr } = await adminClient
@@ -105,33 +123,43 @@ Deno.serve(async (req) => {
       });
 
     if (insertRoleErr) {
+      console.error('Error assigning admin role:', insertRoleErr);
       return new Response(JSON.stringify({ error: `User created but failed to assign role: ${insertRoleErr.message}` }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Update profile to be active and approved
+    // 6. Update profile (upsert to prevent race conditions from handle_new_user trigger)
+    console.log('Step 6: updating profile');
+    // Aguarda 1 segundo para garantir que o trigger handle_new_user já tenha finalizado
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
     const { error: profileErr } = await adminClient
       .from("profiles")
-      .update({
-        is_approved: true,
+      .upsert({
+        id: newUser.user.id,
         full_name: name,
-        company_id: company_id
-      })
-      .eq("id", newUser.user.id);
+        company_id: company_id,
+        is_approved: true,
+        is_active: true
+      }, { onConflict: 'id' });
 
     if (profileErr) {
+      console.error('Error updating/upserting profile:', profileErr);
       return new Response(JSON.stringify({ error: `User created but failed to approve profile: ${profileErr.message}` }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
+    console.log('Admin user provisioned successfully');
+
     return new Response(JSON.stringify({ success: true, userId: newUser.user.id }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
+    console.error('Unhandled edge function exception:', e);
     return new Response(JSON.stringify({ error: (e as Error).message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
