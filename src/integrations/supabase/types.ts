@@ -1072,7 +1072,7 @@ export type Database = {
       is_first_user: { Args: never; Returns: boolean }
     }
     Enums: {
-      app_role: "admin" | "supervisor" | "agent"
+      app_role: "admin" | "supervisor" | "agent" | "super_admin"
       sentiment_type: "positive" | "neutral" | "negative"
     }
     CompositeTypes: {
@@ -1201,7 +1201,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "supervisor", "agent"],
+      app_role: ["admin", "supervisor", "agent", "super_admin"],
       sentiment_type: ["positive", "neutral", "negative"],
     },
   },
