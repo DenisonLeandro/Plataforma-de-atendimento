@@ -40,27 +40,29 @@ export function SignupForm() {
     setIsLoading(true);
 
     try {
-      // Verificar restrição de domínio e aprovação antes de criar conta
-      const { data: configs } = await supabase
-        .from('project_config')
-        .select('key, value')
-        .in('key', ['restrict_signup_by_domain', 'allowed_email_domains', 'require_account_approval']);
+      // Validação server-side de domínio permitido e política de aprovação
+      const { data: eligibility, error: eligibilityError } = await supabase.functions.invoke(
+        'check-signup-eligibility',
+        { body: { email: data.email } }
+      );
 
-      const isRestrictionEnabled = configs?.find(c => c.key === 'restrict_signup_by_domain')?.value === 'true';
-      const requireApproval = configs?.find(c => c.key === 'require_account_approval')?.value === 'true';
-      const allowedDomainsString = configs?.find(c => c.key === 'allowed_email_domains')?.value || '';
-      const allowedDomains = allowedDomainsString
-        .split(',')
-        .map(d => d.trim())
-        .filter(Boolean);
+      if (eligibilityError || !eligibility) {
+        toast({
+          variant: 'destructive',
+          title: 'Não foi possível validar o cadastro',
+          description: 'Tente novamente em instantes.',
+        });
+        setIsLoading(false);
+        return;
+      }
 
-      // Validar domínio do email
-      if (!isDomainAllowed(data.email, allowedDomains, isRestrictionEnabled)) {
-        const domainsText = allowedDomains.map(d => `@${d}`).join(', ');
+      const requireApproval = !!eligibility.requireApproval;
+
+      if (!eligibility.allowed) {
         toast({
           variant: 'destructive',
           title: 'Domínio não permitido',
-          description: `Apenas emails com os seguintes domínios podem se cadastrar: ${domainsText}`,
+          description: 'O domínio do seu email não está autorizado a se cadastrar. Fale com o administrador.',
         });
         setIsLoading(false);
         return;
