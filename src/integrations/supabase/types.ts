@@ -301,6 +301,35 @@ export type Database = {
         }
         Relationships: []
       }
+      super_admin_company_access: {
+        Row: {
+          company_id: string
+          created_at: string
+          created_by: string | null
+          super_admin_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          created_by?: string | null
+          super_admin_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          super_admin_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "super_admin_company_access_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       system_settings: {
         Row: {
           created_at: string
@@ -1200,6 +1229,10 @@ export type Database = {
       }
       is_first_user: { Args: never; Returns: boolean }
       is_super_admin: { Args: { _user_id?: string }; Returns: boolean }
+      super_admin_can_write_company: {
+        Args: { _company_id: string; _uid: string }
+        Returns: boolean
+      }
     }
     Enums: {
       app_role: "admin" | "supervisor" | "agent" | "super_admin"
