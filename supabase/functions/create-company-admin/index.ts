@@ -33,10 +33,9 @@ Deno.serve(async (req) => {
       ?? Deno.env.get("SUPABASE_ANON_KEY")!;
 
     // 1. Authenticate caller
-    const userClient = createClient(SUPABASE_URL, PUBLISHABLE_KEY, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const { data: userData, error: userErr } = await userClient.auth.getUser();
+    const jwt = authHeader.replace(/^Bearer\s+/i, "");
+    const userClient = createClient(SUPABASE_URL, PUBLISHABLE_KEY);
+    const { data: userData, error: userErr } = await userClient.auth.getUser(jwt);
     if (userErr || !userData?.user) {
       console.error('Error: invalid authentication token', userErr);
       return new Response(JSON.stringify({ error: "invalid token" }), {
