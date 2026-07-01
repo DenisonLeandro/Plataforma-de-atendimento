@@ -39,10 +39,12 @@ export function SignupForm() {
     setIsLoading(true);
 
     try {
+      const companyCode = data.companyCode.trim().toUpperCase();
+
       // Validação server-side de domínio permitido e política de aprovação
       const { data: eligibility, error: eligibilityError } = await supabase.functions.invoke(
         'check-signup-eligibility',
-        { body: { email: data.email } }
+        { body: { email: data.email, companyCode } }
       );
 
       if (eligibilityError || !eligibility) {
@@ -67,14 +69,8 @@ export function SignupForm() {
         return;
       }
 
-      // Validar código da empresa
-      const companyCode = data.companyCode.trim().toUpperCase();
-      const { data: company, error: companyError } = await (supabase.from as any)('companies')
-        .select('id, name, status')
-        .eq('code', companyCode)
-        .maybeSingle();
-
-      if (companyError || !company) {
+      const company = eligibility.company;
+      if (!company) {
         toast({
           variant: 'destructive',
           title: 'Código de empresa inválido',
