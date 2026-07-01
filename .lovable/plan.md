@@ -1,39 +1,31 @@
-## Causa raiz
+## Diagnóstico
 
-O `SignupForm.tsx` valida o código da empresa fazendo `supabase.from('companies').select(...).eq('code', ...)` direto do navegador — **sem usuário autenticado ainda**. A tabela `public.companies` só tem policies de SELECT para (a) super_admin e (b) "usuários da própria empresa". Como o visitante do signup é anônimo, o RLS filtra 100% das linhas e o resultado vem vazio → o form mostra "Código de empresa inválido", mesmo quando o código existe.
+O erro **"Password is known to be weak and easy to guess"** vem do **HIBP (Have I Been Pwned) Check** ativo no Lovable Cloud Auth. A senha digitada (8 caracteres) consta na base de senhas vazadas do HIBP e é rejeitada pelo servidor de auth — não é bug da plataforma, é uma proteção de segurança funcionando.
 
-Não é bug do código digitado nem dado ruim — é bloqueio de RLS na consulta pré-signup.
+Hoje o `SignupForm.tsx` só valida:
+- mínimo 6 caracteres
+- confirmação igual
 
-## Correção proposta (mínima, sem abrir a tabela `companies` para o público)
+Não avisa o usuário sobre força de senha nem sobre a checagem HIBP, então quando o backend rejeita, a mensagem aparece em inglês e confunde.
 
-Mover a validação do código para o backend, reutilizando a Edge Function `check-signup-eligibility` (já é chamada nesse mesmo fluxo, roda com service role e ignora RLS com segurança).
+## Plano de correção
 
-### 1. `supabase/functions/check-signup-eligibility/index.ts`
-- Aceitar campo opcional `companyCode` no body.
-- Quando presente: normalizar (`trim().toUpperCase()`), buscar `id, name, status` em `public.companies` pelo `code` usando o client service-role.
-- Retornar no JSON:
-  - `company: { id, name, status } | null`
-  - `companyCodeValid: boolean`
-  - `companyStatus: 'active' | 'suspended' | null`
-- Manter comportamento atual (`allowed`, `requireApproval`) intacto para não quebrar outros consumidores.
+**1. Melhorar validação client-side em `src/components/auth/SignupForm.tsx`:**
+- Aumentar mínimo para **8 caracteres**
+- Exigir pelo menos: 1 letra maiúscula, 1 minúscula, 1 número
+- Mostrar indicador visual de força da senha em tempo real
+- Texto de ajuda abaixo do campo: "Use 8+ caracteres com letras, números e símbolos. Evite senhas comuns."
 
-### 2. `src/components/auth/SignupForm.tsx`
-- Enviar `companyCode` já no `functions.invoke('check-signup-eligibility', { body: { email, companyCode } })`.
-- Remover o bloco que faz `supabase.from('companies').select(...)` no cliente.
-- Usar `eligibility.company` / `eligibility.companyStatus` para as mensagens de erro existentes:
-  - Sem empresa → "Código de empresa inválido".
-  - `status === 'suspended'` → "Empresa suspensa".
-  - Caso ok → seguir com `signUp(..., company.id)` como hoje.
+**2. Traduzir/tratar o erro HIBP:**
+- Interceptar `error.message` contendo `"weak"` ou `"pwned"` e exibir toast amigável em português:  
+  *"Esta senha é muito comum e foi encontrada em vazamentos de dados. Escolha uma senha mais forte e única."*
 
-Nenhuma outra tela, RLS, migration ou função é tocada. A policy pública de `companies` **não** é adicionada (mantém a superfície segura).
+**3. Manter o HIBP Check ativado** (é boa prática de segurança — não recomendo desabilitar).
 
-## Validação
-- `npm run build` deve passar.
-- Cadastrar uma conta nova com código válido → deve prosseguir para criação de conta.
-- Cadastrar com código inexistente → mensagem "Código de empresa inválido".
-- Cadastrar com código de empresa suspensa → mensagem "Empresa suspensa".
+## Ação imediata para a Estela
 
-## Fora de escopo
-- Não altero RLS de `companies`.
-- Não altero `create-company-admin`, super admin, nem fluxo de login.
-- Não mudo estilo/cor de nada.
+Ela precisa escolher uma senha mais forte e única (não usar variações de "12345678", "senha123", nome+ano, etc.). Sugerir algo como uma frase com símbolos: `DomPiscinas@2026!`.
+
+## Arquivos afetados
+
+- `src/components/auth/SignupForm.tsx` — validação + mensagem traduzida + medidor de força

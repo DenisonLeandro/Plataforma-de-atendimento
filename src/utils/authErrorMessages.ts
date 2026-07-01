@@ -2,6 +2,10 @@
  * Translates common Supabase authentication error messages to Portuguese
  */
 export function translateAuthError(errorMessage: string): string {
+  const lower = errorMessage.toLowerCase();
+  if (lower.includes('weak') || lower.includes('pwned') || lower.includes('known to be')) {
+    return 'Esta senha é muito comum e foi encontrada em vazamentos de dados. Escolha uma senha mais forte e única (ex: DomPiscinas@2026!).';
+  }
   const translations: Record<string, string> = {
     'Email not confirmed': 'Email não confirmado. Verifique sua caixa de entrada e clique no link de confirmação.',
     'Invalid login credentials': 'Email ou senha incorretos',
