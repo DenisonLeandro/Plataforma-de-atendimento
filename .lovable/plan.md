@@ -1,48 +1,39 @@
-## Objetivo
-Adicionar botão "Excluir" em cada card de empresa no Painel Super Admin (`/super-admin`), com validações de proteção.
+## Causa raiz
 
-## Arquivo alterado
-- `src/pages/SuperAdminPage.tsx` (único arquivo)
+O `SignupForm.tsx` valida o código da empresa fazendo `supabase.from('companies').select(...).eq('code', ...)` direto do navegador — **sem usuário autenticado ainda**. A tabela `public.companies` só tem policies de SELECT para (a) super_admin e (b) "usuários da própria empresa". Como o visitante do signup é anônimo, o RLS filtra 100% das linhas e o resultado vem vazio → o form mostra "Código de empresa inválido", mesmo quando o código existe.
 
-## Mudanças
+Não é bug do código digitado nem dado ruim — é bloqueio de RLS na consulta pré-signup.
 
-### 1. Imports
-- Adicionar `Trash2` no import do `lucide-react`.
+## Correção proposta (mínima, sem abrir a tabela `companies` para o público)
 
-### 2. Estados novos
-```ts
-const [deleteTarget, setDeleteTarget] = useState<CompanyEnriched | null>(null);
-const [isDeleting, setIsDeleting] = useState(false);
-```
-Constante `PROTECTED_COMPANY_ID = '00000000-0000-0000-0000-000000000001'`.
+Mover a validação do código para o backend, reutilizando a Edge Function `check-signup-eligibility` (já é chamada nesse mesmo fluxo, roda com service role e ignora RLS com segurança).
 
-### 3. Handler `handleDeleteCompany`
-- Se `deleteTarget.id === PROTECTED_COMPANY_ID` → toast destructive: "Esta empresa não pode ser excluída."
-- Se `deleteTarget.userCount > 0` → toast: "Remova todos os usuários desta empresa antes de excluí-la."
-- Se `deleteTarget.instanceCount > 0` → toast: "Remova todas as instâncias desta empresa antes de excluí-la."
-- Caso contrário: `DELETE FROM companies WHERE id = deleteTarget.id`.
-- Sucesso: toast, `setDeleteTarget(null)`, atualiza cache via `queryClient.setQueryData(['super-admin','companies'], prev => prev.filter(c => c.id !== id))` (remoção sem recarregar) e chama `refetch()` no background.
+### 1. `supabase/functions/check-signup-eligibility/index.ts`
+- Aceitar campo opcional `companyCode` no body.
+- Quando presente: normalizar (`trim().toUpperCase()`), buscar `id, name, status` em `public.companies` pelo `code` usando o client service-role.
+- Retornar no JSON:
+  - `company: { id, name, status } | null`
+  - `companyCodeValid: boolean`
+  - `companyStatus: 'active' | 'suspended' | null`
+- Manter comportamento atual (`allowed`, `requireApproval`) intacto para não quebrar outros consumidores.
 
-### 4. Botão no card
-Ao lado do botão Suspender/Ativar (mesma linha horizontal com `flex gap-2`), botão `variant="destructive"` `size="sm"` com ícone `Trash2` e label "Excluir". Desabilitado quando `company.id === PROTECTED_COMPANY_ID` (tooltip via `title="Empresa protegida"`).
+### 2. `src/components/auth/SignupForm.tsx`
+- Enviar `companyCode` já no `functions.invoke('check-signup-eligibility', { body: { email, companyCode } })`.
+- Remover o bloco que faz `supabase.from('companies').select(...)` no cliente.
+- Usar `eligibility.company` / `eligibility.companyStatus` para as mensagens de erro existentes:
+  - Sem empresa → "Código de empresa inválido".
+  - `status === 'suspended'` → "Empresa suspensa".
+  - Caso ok → seguir com `signUp(..., company.id)` como hoje.
 
-Layout final do rodapé do card:
-```
-[Entrar como]  [Criar Admin]
-[Suspender/Ativar]  [Excluir]
-```
-
-### 5. AlertDialog de confirmação
-Novo `<AlertDialog open={!!deleteTarget} onOpenChange={...}>` com:
-- Título: "Excluir empresa"
-- Descrição: `Tem certeza? Esta ação não pode ser desfeita. A empresa ${deleteTarget?.name} será permanentemente removida.`
-- Cancel + Action (destructive) chamando `handleDeleteCompany`, com loader durante `isDeleting`.
-
-## Fora do escopo (respeitando restrições)
-- Nenhuma migration, RLS ou edge function.
-- Nenhuma outra página tocada.
-- Cor laranja intocada; usa apenas tokens shadcn `destructive`.
-- Validações redundantes ao RLS servem para UX/mensagens claras — o `DELETE` real depende da policy já existente em `companies`.
+Nenhuma outra tela, RLS, migration ou função é tocada. A policy pública de `companies` **não** é adicionada (mantém a superfície segura).
 
 ## Validação
-- `npm run build` roda automaticamente pelo harness após a edição; confirmo tipos e retorno o diff.
+- `npm run build` deve passar.
+- Cadastrar uma conta nova com código válido → deve prosseguir para criação de conta.
+- Cadastrar com código inexistente → mensagem "Código de empresa inválido".
+- Cadastrar com código de empresa suspensa → mensagem "Empresa suspensa".
+
+## Fora de escopo
+- Não altero RLS de `companies`.
+- Não altero `create-company-admin`, super admin, nem fluxo de login.
+- Não mudo estilo/cor de nada.
