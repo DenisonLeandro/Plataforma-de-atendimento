@@ -88,7 +88,7 @@ Deno.serve(async (req) => {
     console.log('Step 3: creating user', email);
 
     // 4. Create new user in Auth
-    const { data: newUser, error: createError } = await adminClient.auth.admin.createUser({
+    let { data: newUser, error: createError } = await adminClient.auth.admin.createUser({
       email,
       password,
       email_confirm: true,
@@ -99,11 +99,46 @@ Deno.serve(async (req) => {
     });
 
     if (createError) {
-      console.error('Error creating user in Auth:', createError);
-      return new Response(JSON.stringify({ error: createError.message }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      const alreadyExists = (createError as any).code === 'email_exists'
+        || /already been registered|already exists/i.test(createError.message);
+
+      if (!alreadyExists) {
+        console.error('Error creating user in Auth:', createError);
+        return new Response(JSON.stringify({ error: createError.message }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Reuse existing auth user — look up by email via admin listUsers
+      console.log('User already exists, linking existing account as admin');
+      let existing: any = null;
+      let page = 1;
+      while (page <= 20 && !existing) {
+        const { data: list, error: listErr } = await adminClient.auth.admin.listUsers({ page, perPage: 200 });
+        if (listErr) {
+          console.error('Error listing users:', listErr);
+          return new Response(JSON.stringify({ error: listErr.message }), {
+            status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        existing = list.users.find(u => (u.email || '').toLowerCase() === email.toLowerCase()) || null;
+        if (list.users.length < 200) break;
+        page++;
+      }
+      if (!existing) {
+        return new Response(JSON.stringify({ error: "Email já cadastrado, mas usuário não encontrado" }), {
+          status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Optionally reset password if one was provided
+      if (password) {
+        const { error: updErr } = await adminClient.auth.admin.updateUserById(existing.id, { password });
+        if (updErr) console.warn('Could not reset password for existing user:', updErr.message);
+      }
+
+      newUser = { user: existing } as any;
     }
 
     console.log('Step 4: user created', newUser?.user?.id);
