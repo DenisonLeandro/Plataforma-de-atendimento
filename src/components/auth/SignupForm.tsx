@@ -11,7 +11,6 @@ import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 import { translateAuthError } from '@/utils/authErrorMessages';
 import { supabase } from '@/integrations/supabase/client';
-import { isDomainAllowed } from '@/utils/domainValidation';
 
 const signupSchema = z.object({
   fullName: z.string().min(3, 'Nome deve ter no mínimo 3 caracteres'),
