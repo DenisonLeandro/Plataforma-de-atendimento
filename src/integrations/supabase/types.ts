@@ -16,6 +16,7 @@ export type Database = {
     Tables: {
       agent_instance_access: {
         Row: {
+          company_id: string | null
           created_at: string
           created_by: string | null
           id: string
@@ -23,6 +24,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          company_id?: string | null
           created_at?: string
           created_by?: string | null
           id?: string
@@ -30,6 +32,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          company_id?: string | null
           created_at?: string
           created_by?: string | null
           id?: string
@@ -37,6 +40,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "agent_instance_access_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "agent_instance_access_created_by_fkey"
             columns: ["created_by"]
@@ -62,6 +72,7 @@ export type Database = {
       }
       assignment_rules: {
         Row: {
+          company_id: string | null
           created_at: string | null
           fixed_agent_id: string | null
           id: string
@@ -74,6 +85,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          company_id?: string | null
           created_at?: string | null
           fixed_agent_id?: string | null
           id?: string
@@ -86,6 +98,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          company_id?: string | null
           created_at?: string | null
           fixed_agent_id?: string | null
           id?: string
@@ -98,6 +111,13 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "assignment_rules_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "assignment_rules_fixed_agent_id_fkey"
             columns: ["fixed_agent_id"]
@@ -114,11 +134,36 @@ export type Database = {
           },
         ]
       }
+      companies: {
+        Row: {
+          code: string
+          created_at: string | null
+          id: string
+          name: string
+          status: string
+        }
+        Insert: {
+          code: string
+          created_at?: string | null
+          id?: string
+          name: string
+          status?: string
+        }
+        Update: {
+          code?: string
+          created_at?: string | null
+          id?: string
+          name?: string
+          status?: string
+        }
+        Relationships: []
+      }
       conversation_assignments: {
         Row: {
           assigned_by: string | null
           assigned_from: string | null
           assigned_to: string
+          company_id: string | null
           conversation_id: string
           created_at: string | null
           id: string
@@ -128,6 +173,7 @@ export type Database = {
           assigned_by?: string | null
           assigned_from?: string | null
           assigned_to: string
+          company_id?: string | null
           conversation_id: string
           created_at?: string | null
           id?: string
@@ -137,6 +183,7 @@ export type Database = {
           assigned_by?: string | null
           assigned_from?: string | null
           assigned_to?: string
+          company_id?: string | null
           conversation_id?: string
           created_at?: string | null
           id?: string
@@ -165,6 +212,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "conversation_assignments_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "conversation_assignments_conversation_id_fkey"
             columns: ["conversation_id"]
             isOneToOne: false
@@ -176,6 +230,7 @@ export type Database = {
       profiles: {
         Row: {
           avatar_url: string | null
+          company_id: string | null
           created_at: string | null
           display_name: string | null
           email: string | null
@@ -188,6 +243,7 @@ export type Database = {
         }
         Insert: {
           avatar_url?: string | null
+          company_id?: string | null
           created_at?: string | null
           display_name?: string | null
           email?: string | null
@@ -200,6 +256,7 @@ export type Database = {
         }
         Update: {
           avatar_url?: string | null
+          company_id?: string | null
           created_at?: string | null
           display_name?: string | null
           email?: string | null
@@ -210,7 +267,15 @@ export type Database = {
           status?: string | null
           updated_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       project_config: {
         Row: {
@@ -259,27 +324,39 @@ export type Database = {
       }
       user_roles: {
         Row: {
+          company_id: string | null
           created_at: string | null
           id: string
           role: Database["public"]["Enums"]["app_role"]
           user_id: string
         }
         Insert: {
+          company_id?: string | null
           created_at?: string | null
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
           user_id: string
         }
         Update: {
+          company_id?: string | null
           created_at?: string | null
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "user_roles_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       whatsapp_contacts: {
         Row: {
+          company_id: string | null
           created_at: string
           id: string
           instance_id: string
@@ -292,6 +369,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          company_id?: string | null
           created_at?: string
           id?: string
           instance_id: string
@@ -304,6 +382,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          company_id?: string | null
           created_at?: string
           id?: string
           instance_id?: string
@@ -316,6 +395,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "whatsapp_contacts_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "whatsapp_contacts_instance_id_fkey"
             columns: ["instance_id"]
@@ -410,6 +496,7 @@ export type Database = {
       whatsapp_conversations: {
         Row: {
           assigned_to: string | null
+          company_id: string | null
           contact_id: string
           created_at: string
           id: string
@@ -424,6 +511,7 @@ export type Database = {
         }
         Insert: {
           assigned_to?: string | null
+          company_id?: string | null
           contact_id: string
           created_at?: string
           id?: string
@@ -438,6 +526,7 @@ export type Database = {
         }
         Update: {
           assigned_to?: string | null
+          company_id?: string | null
           contact_id?: string
           created_at?: string
           id?: string
@@ -456,6 +545,13 @@ export type Database = {
             columns: ["assigned_to"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_conversations_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
@@ -511,6 +607,7 @@ export type Database = {
       }
       whatsapp_instances: {
         Row: {
+          company_id: string | null
           created_at: string
           id: string
           instance_id_external: string | null
@@ -523,6 +620,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          company_id?: string | null
           created_at?: string
           id?: string
           instance_id_external?: string | null
@@ -535,6 +633,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          company_id?: string | null
           created_at?: string
           id?: string
           instance_id_external?: string | null
@@ -546,11 +645,20 @@ export type Database = {
           status?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_instances_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       whatsapp_macros: {
         Row: {
           category: string | null
+          company_id: string | null
           content: string
           created_at: string | null
           description: string | null
@@ -564,6 +672,7 @@ export type Database = {
         }
         Insert: {
           category?: string | null
+          company_id?: string | null
           content: string
           created_at?: string | null
           description?: string | null
@@ -577,6 +686,7 @@ export type Database = {
         }
         Update: {
           category?: string | null
+          company_id?: string | null
           content?: string
           created_at?: string | null
           description?: string | null
@@ -589,6 +699,13 @@ export type Database = {
           usage_count?: number | null
         }
         Relationships: [
+          {
+            foreignKeyName: "whatsapp_macros_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "whatsapp_macros_instance_id_fkey"
             columns: ["instance_id"]
@@ -636,6 +753,7 @@ export type Database = {
       whatsapp_messages: {
         Row: {
           audio_transcription: string | null
+          company_id: string | null
           content: string
           conversation_id: string
           created_at: string
@@ -659,6 +777,7 @@ export type Database = {
         }
         Insert: {
           audio_transcription?: string | null
+          company_id?: string | null
           content: string
           conversation_id: string
           created_at?: string
@@ -682,6 +801,7 @@ export type Database = {
         }
         Update: {
           audio_transcription?: string | null
+          company_id?: string | null
           content?: string
           conversation_id?: string
           created_at?: string
@@ -704,6 +824,13 @@ export type Database = {
           transcription_status?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "whatsapp_messages_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "whatsapp_messages_conversation_id_fkey"
             columns: ["conversation_id"]
@@ -1029,6 +1156,7 @@ export type Database = {
         Args: { _conversation_id: string; _user_id: string }
         Returns: boolean
       }
+      generate_company_code: { Args: never; Returns: string }
       get_assignable_agents: {
         Args: { _instance_id: string }
         Returns: {
@@ -1062,6 +1190,7 @@ export type Database = {
           name: string
         }[]
       }
+      get_user_company_id: { Args: { _user_id?: string }; Returns: string }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -1070,9 +1199,10 @@ export type Database = {
         Returns: boolean
       }
       is_first_user: { Args: never; Returns: boolean }
+      is_super_admin: { Args: { _user_id?: string }; Returns: boolean }
     }
     Enums: {
-      app_role: "admin" | "supervisor" | "agent"
+      app_role: "admin" | "supervisor" | "agent" | "super_admin"
       sentiment_type: "positive" | "neutral" | "negative"
     }
     CompositeTypes: {
@@ -1201,7 +1331,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "supervisor", "agent"],
+      app_role: ["admin", "supervisor", "agent", "super_admin"],
       sentiment_type: ["positive", "neutral", "negative"],
     },
   },

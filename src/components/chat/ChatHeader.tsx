@@ -66,40 +66,43 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
   };
 
   return (
-    <div className="p-4 border-b border-border bg-card">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3 flex-1 min-w-0">
-          <Avatar className="w-10 h-10">
+    <div className="border-b border-border bg-card px-3 py-3 sm:px-4">
+      <div className="flex min-w-0 flex-col gap-2">
+        {/* Identidade do contato: nome e número nunca disputam espaço com ações */}
+        <div className="flex min-w-0 items-start gap-3">
+          <Avatar className="h-10 w-10 flex-shrink-0">
             <AvatarImage src={avatarUrl} />
             <AvatarFallback className="bg-primary/10 text-primary">
-              {getInitials(contact.name)}
+              {getInitials(displayName)}
             </AvatarFallback>
           </Avatar>
           
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 min-w-0">
-              <h2 className={cn(
-                "text-base font-semibold truncate min-w-0",
-                nameIsMissing ? "text-muted-foreground italic" : "text-foreground"
-              )}>
-                {displayName}
-              </h2>
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-start gap-1.5">
+              <div className="min-w-0 flex-1">
+                <h2 className={cn(
+                  "block truncate text-base font-semibold leading-tight",
+                  nameIsMissing ? "text-muted-foreground italic" : "text-foreground"
+                )}>
+                  {displayName}
+                </h2>
+                <p className={cn(
+                  "mt-0.5 block truncate text-xs leading-tight text-muted-foreground",
+                  phoneIsLid && "italic"
+                )}>
+                  {phoneIsLid ? 'Telefone não identificado' : contact.phone_number}
+                </p>
+              </div>
               <Button 
                 variant="ghost" 
                 size="sm" 
-                className="h-6 w-6 p-0" 
+                className="h-6 w-6 flex-shrink-0 p-0" 
                 onClick={() => setIsEditContactModalOpen(true)}
                 title="Editar contato"
               >
                 <Pencil className="h-3 w-3 text-muted-foreground" />
               </Button>
             </div>
-            <p className={cn(
-              "text-xs text-muted-foreground",
-              phoneIsLid && "italic"
-            )}>
-              {phoneIsLid ? 'Telefone não identificado' : contact.phone_number}
-            </p>
             {topicsData?.topics && topicsData.topics.length > 0 && (
               <div className="mt-1">
                 <TopicBadges topics={topicsData.topics} size="sm" showIcon={true} maxTopics={3} />
@@ -116,16 +119,19 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
           </div>
         </div>
 
-        <div className="flex items-center gap-2 flex-shrink-0">
+        {/* Ações da conversa em faixa própria para não cobrir nome/número */}
+        <div className="-mx-1 flex min-w-0 flex-nowrap items-center justify-end gap-1.5 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
           {/* Assignment buttons */}
           {conversation && showAssumir && (
             <Button
               variant="outline"
               size="sm"
               onClick={handleAssumeFromQueue}
+              title="Assumir conversa"
+              className="h-7 flex-shrink-0 px-2.5 text-xs"
             >
-              <UserPlus className="w-4 h-4 mr-2" />
-              Assumir
+              <UserPlus className="h-3.5 w-3.5 mr-1.5" />
+              <span>Assumir</span>
             </Button>
           )}
 
@@ -134,9 +140,11 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
               variant="outline"
               size="sm"
               onClick={() => setIsAssignDialogOpen(true)}
+              title="Transferir conversa"
+              className="h-7 flex-shrink-0 px-2.5 text-xs"
             >
-              <Repeat className="w-4 h-4 mr-2" />
-              Transferir
+              <Repeat className="h-3.5 w-3.5 mr-1.5" />
+              <span>Transferir</span>
             </Button>
           )}
 
@@ -147,20 +155,23 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
             size="sm"
             onClick={onAnalyze}
             disabled={isAnalyzing}
+            title="Analisar conversa"
+            className="h-7 flex-shrink-0 px-2.5 text-xs"
           >
-            <RefreshCw className={`w-4 h-4 ${isAnalyzing ? 'animate-spin' : ''}`} />
-            <span className="ml-2">Analisar</span>
+            <RefreshCw className={`h-3.5 w-3.5 ${isAnalyzing ? 'animate-spin' : ''}`} />
+            <span className="ml-1.5">Analisar</span>
           </Button>
 
-          {conversation && (
-            <ChatHeaderMenu conversation={conversation} onRefresh={onRefresh} />
-          )}
-
-          <Link to="/whatsapp/settings">
-            <Button variant="ghost" size="icon">
-              <Settings className="h-5 w-5" />
-            </Button>
-          </Link>
+          <div className="flex flex-shrink-0 items-center gap-0.5">
+            {conversation && (
+              <ChatHeaderMenu conversation={conversation} onRefresh={onRefresh} />
+            )}
+            <Link to="/whatsapp/settings">
+              <Button variant="ghost" size="icon" className="h-7 w-7">
+                <Settings className="h-4 w-4" />
+              </Button>
+            </Link>
+          </div>
         </div>
       </div>
 

@@ -78,7 +78,7 @@ const WhatsApp = () => {
       <div className="flex flex-1 overflow-hidden">
       {/* Sidebar */}
       {showSidebar && (
-        <div className={`${isMobile ? "w-full" : isConversationsSidebarCollapsed ? "w-14" : "w-[350px]"} border-r border-border`}>
+        <div className={`${isMobile ? "w-full" : isConversationsSidebarCollapsed ? "w-14" : "w-[240px] lg:w-[280px] xl:w-[320px] 2xl:w-[350px]"} flex-shrink-0 border-r border-border`}>
           <ConversationsSidebar
             selectedId={selectedConversation}
             onSelect={handleSelectConversation}
