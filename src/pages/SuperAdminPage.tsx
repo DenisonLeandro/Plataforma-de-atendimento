@@ -11,7 +11,9 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Building2, Plus, ArrowLeft, Loader2, Copy, Check, Users, Info, ShieldAlert, Ban, CheckCircle } from 'lucide-react';
+import { Building2, Plus, ArrowLeft, Loader2, Copy, Check, Users, Info, ShieldAlert, Ban, CheckCircle, Trash2 } from 'lucide-react';
+
+const PROTECTED_COMPANY_ID = '00000000-0000-0000-0000-000000000001';
 
 interface CompanyEnriched {
   id: string;
@@ -47,6 +49,10 @@ export default function SuperAdminPage() {
   // Alert Dialog States (Suspend/Activate)
   const [statusTarget, setStatusTarget] = useState<CompanyEnriched | null>(null);
   const [isStatusChanging, setIsStatusChanging] = useState(false);
+
+  // Delete company states
+  const [deleteTarget, setDeleteTarget] = useState<CompanyEnriched | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Fetch Companies & Counts
   const { data: companies = [], isLoading, refetch } = useQuery<CompanyEnriched[]>({
@@ -219,6 +225,71 @@ export default function SuperAdminPage() {
       description: `Entrando no contexto da empresa: ${company.name}`,
     });
     navigate('/');
+  };
+
+  // Handle Delete Company
+  const handleDeleteCompany = async () => {
+    if (!deleteTarget) return;
+
+    if (deleteTarget.id === PROTECTED_COMPANY_ID) {
+      toast({
+        variant: 'destructive',
+        title: 'Empresa protegida',
+        description: 'Esta empresa não pode ser excluída.',
+      });
+      setDeleteTarget(null);
+      return;
+    }
+
+    if (deleteTarget.userCount > 0) {
+      toast({
+        variant: 'destructive',
+        title: 'Não é possível excluir',
+        description: 'Remova todos os usuários desta empresa antes de excluí-la.',
+      });
+      setDeleteTarget(null);
+      return;
+    }
+
+    if (deleteTarget.instanceCount > 0) {
+      toast({
+        variant: 'destructive',
+        title: 'Não é possível excluir',
+        description: 'Remova todas as instâncias desta empresa antes de excluí-la.',
+      });
+      setDeleteTarget(null);
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      const { error } = await (supabase.from as any)('companies')
+        .delete()
+        .eq('id', deleteTarget.id);
+
+      if (error) throw error;
+
+      // Optimistic remove from cache
+      queryClient.setQueryData<CompanyEnriched[]>(
+        ['super-admin', 'companies'],
+        (prev) => (prev ? prev.filter((c) => c.id !== deleteTarget.id) : prev)
+      );
+
+      toast({
+        title: 'Empresa excluída',
+        description: `A empresa ${deleteTarget.name} foi removida.`,
+      });
+      setDeleteTarget(null);
+      refetch();
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao excluir empresa',
+        description: error.message,
+      });
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   return (
@@ -397,26 +468,38 @@ export default function SuperAdminPage() {
                       Criar Admin
                     </Button>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className={`w-full text-xs font-semibold ${
-                      company.status === 'active' 
-                        ? 'text-destructive hover:bg-destructive/10' 
-                        : 'text-green-600 hover:bg-green-50'
-                    }`}
-                    onClick={() => setStatusTarget(company)}
-                  >
-                    {company.status === 'active' ? (
-                      <>
-                        <Ban className="mr-1 h-3.5 w-3.5" /> Suspender
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle className="mr-1 h-3.5 w-3.5" /> Ativar
-                      </>
-                    )}
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className={`flex-1 text-xs font-semibold ${
+                        company.status === 'active'
+                          ? 'text-destructive hover:bg-destructive/10'
+                          : 'text-green-600 hover:bg-green-50'
+                      }`}
+                      onClick={() => setStatusTarget(company)}
+                    >
+                      {company.status === 'active' ? (
+                        <>
+                          <Ban className="mr-1 h-3.5 w-3.5" /> Suspender
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle className="mr-1 h-3.5 w-3.5" /> Ativar
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      className="flex-1 text-xs font-semibold"
+                      onClick={() => setDeleteTarget(company)}
+                      disabled={company.id === PROTECTED_COMPANY_ID}
+                      title={company.id === PROTECTED_COMPANY_ID ? 'Empresa protegida' : 'Excluir empresa'}
+                    >
+                      <Trash2 className="mr-1 h-3.5 w-3.5" /> Excluir
+                    </Button>
+                  </div>
                 </div>
               </Card>
             ))}
@@ -531,6 +614,39 @@ export default function SuperAdminPage() {
                   </>
                 ) : (
                   statusTarget?.status === 'active' ? 'Suspender' : 'Ativar'
+                )}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* AlertDialog for Delete Confirmation */}
+        <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open && !isDeleting) setDeleteTarget(null); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Excluir empresa</AlertDialogTitle>
+              <AlertDialogDescription>
+                Tem certeza? Esta ação não pode ser desfeita. A empresa{' '}
+                <strong className="text-foreground">{deleteTarget?.name}</strong> será permanentemente removida.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isDeleting}>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  handleDeleteCompany();
+                }}
+                disabled={isDeleting}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Excluindo...
+                  </>
+                ) : (
+                  'Excluir'
                 )}
               </AlertDialogAction>
             </AlertDialogFooter>
