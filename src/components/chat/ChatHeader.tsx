@@ -34,7 +34,7 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
   const { data: topicsData } = useConversationTopics(conversationId || null);
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
   const [isEditContactModalOpen, setIsEditContactModalOpen] = useState(false);
-  const { user, isAdmin, isSupervisor, isViewingAsCompany } = useAuth();
+  const { user, isAdmin, isSupervisor, isReadOnlyView } = useAuth();
   const { assignConversation } = useConversationAssignment();
   const avatarUrl = useContactAvatar(contact?.profile_picture_url ?? null);
 
