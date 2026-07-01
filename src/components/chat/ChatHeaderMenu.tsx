@@ -30,7 +30,7 @@ interface ChatHeaderMenuProps {
   disabled?: boolean;
 }
 
-export function ChatHeaderMenu({ conversation, onRefresh }: ChatHeaderMenuProps) {
+export function ChatHeaderMenu({ conversation, onRefresh, disabled }: ChatHeaderMenuProps) {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [showCloseDialog, setShowCloseDialog] = useState(false);
   const [generateSummary, setGenerateSummary] = useState(true);
