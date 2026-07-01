@@ -1,4 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -29,20 +29,25 @@ Deno.serve(async (req) => {
 
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const ANON = Deno.env.get("SUPABASE_ANON_KEY")!;
 
-    // 1. Authenticate caller
-    const userClient = createClient(SUPABASE_URL, ANON, {
-      global: { headers: { Authorization: authHeader } },
+    // 1. Authenticate caller — validate JWT via GoTrue REST directly
+    const jwt = authHeader.replace(/^Bearer\s+/i, "").trim();
+    const userResp = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      headers: {
+        apikey: SERVICE_ROLE,
+        Authorization: `Bearer ${jwt}`,
+      },
     });
-    const { data: userData, error: userErr } = await userClient.auth.getUser();
-    if (userErr || !userData?.user) {
-      console.error('Error: invalid authentication token', userErr);
+    if (!userResp.ok) {
+      const bodyTxt = await userResp.text();
+      console.error('Error: invalid authentication token', userResp.status, bodyTxt);
       return new Response(JSON.stringify({ error: "invalid token" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    const authUser = await userResp.json();
+    const userData = { user: authUser };
 
     console.log('Step 1: Auth verified', userData.user.id);
 
