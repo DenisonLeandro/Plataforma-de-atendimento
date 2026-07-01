@@ -16,7 +16,11 @@ const signupSchema = z.object({
   fullName: z.string().min(3, 'Nome deve ter no mínimo 3 caracteres'),
   email: z.string().email('Email inválido'),
   companyCode: z.string().min(1, 'Código da empresa é obrigatório'),
-  password: z.string().min(6, 'Senha deve ter no mínimo 6 caracteres'),
+  password: z.string()
+    .min(8, 'Senha deve ter no mínimo 8 caracteres')
+    .regex(/[A-Z]/, 'Inclua ao menos uma letra maiúscula')
+    .regex(/[a-z]/, 'Inclua ao menos uma letra minúscula')
+    .regex(/[0-9]/, 'Inclua ao menos um número'),
   confirmPassword: z.string(),
 }).refine((data) => data.password === data.confirmPassword, {
   message: 'As senhas não coincidem',
@@ -27,6 +31,7 @@ type SignupFormData = z.infer<typeof signupSchema>;
 
 export function SignupForm() {
   const [isLoading, setIsLoading] = useState(false);
+  const [passwordValue, setPasswordValue] = useState('');
   const { signUp } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -34,6 +39,18 @@ export function SignupForm() {
   const { register, handleSubmit, formState: { errors } } = useForm<SignupFormData>({
     resolver: zodResolver(signupSchema),
   });
+
+  const passwordStrength = (() => {
+    let score = 0;
+    if (passwordValue.length >= 8) score++;
+    if (/[A-Z]/.test(passwordValue) && /[a-z]/.test(passwordValue)) score++;
+    if (/[0-9]/.test(passwordValue)) score++;
+    if (/[^A-Za-z0-9]/.test(passwordValue)) score++;
+    if (passwordValue.length >= 12) score++;
+    return score;
+  })();
+  const strengthLabel = ['Muito fraca', 'Fraca', 'Razoável', 'Boa', 'Forte', 'Muito forte'][passwordStrength];
+  const strengthColor = ['bg-destructive', 'bg-destructive', 'bg-orange-500', 'bg-yellow-500', 'bg-green-500', 'bg-green-600'][passwordStrength];
 
   const onSubmit = async (data: SignupFormData) => {
     setIsLoading(true);
@@ -173,7 +190,25 @@ export function SignupForm() {
           placeholder="••••••••"
           {...register('password')}
           disabled={isLoading}
+          onChange={(e) => {
+            setPasswordValue(e.target.value);
+            register('password').onChange(e);
+          }}
         />
+        {passwordValue && (
+          <div className="space-y-1">
+            <div className="h-1.5 w-full rounded bg-muted overflow-hidden">
+              <div
+                className={`h-full transition-all ${strengthColor}`}
+                style={{ width: `${(passwordStrength / 5) * 100}%` }}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">Força: {strengthLabel}</p>
+          </div>
+        )}
+        <p className="text-xs text-muted-foreground">
+          Use 8+ caracteres com maiúsculas, minúsculas e números. Evite senhas comuns ou já vazadas.
+        </p>
         {errors.password && (
           <p className="text-sm text-destructive">{errors.password.message}</p>
         )}
