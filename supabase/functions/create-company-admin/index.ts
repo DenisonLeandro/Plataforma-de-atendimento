@@ -32,18 +32,24 @@ Deno.serve(async (req) => {
     const PUBLISHABLE_KEY = Deno.env.get("SUPABASE_PUBLISHABLE_KEY")
       ?? Deno.env.get("SUPABASE_ANON_KEY")!;
 
-    // 1. Authenticate caller
+    // 1. Authenticate caller — validate JWT via GoTrue REST directly
     const jwt = authHeader.replace(/^Bearer\s+/i, "").trim();
-    console.log('Auth header present, jwt length:', jwt.length);
-    const adminClient0 = createClient(SUPABASE_URL, SERVICE_ROLE);
-    const { data: userData, error: userErr } = await adminClient0.auth.getUser(jwt);
-    if (userErr || !userData?.user) {
-      console.error('Error: invalid authentication token', userErr);
+    const userResp = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      headers: {
+        apikey: SERVICE_ROLE,
+        Authorization: `Bearer ${jwt}`,
+      },
+    });
+    if (!userResp.ok) {
+      const bodyTxt = await userResp.text();
+      console.error('Error: invalid authentication token', userResp.status, bodyTxt);
       return new Response(JSON.stringify({ error: "invalid token" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    const authUser = await userResp.json();
+    const userData = { user: authUser };
 
     console.log('Step 1: Auth verified', userData.user.id);
 
