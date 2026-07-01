@@ -9,6 +9,7 @@ import { DisconnectedInstancesBanner } from "@/components/notifications/Disconne
 import { Button } from "@/components/ui/button";
 import { Settings, ArrowLeft } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
+import { ViewAsBanner } from "@/components/auth";
 
 const WhatsApp = () => {
   const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
@@ -72,6 +73,7 @@ const WhatsApp = () => {
 
   return (
     <div className="flex flex-col h-screen w-full overflow-hidden bg-background">
+      <ViewAsBanner />
       {/* Disconnected Instances Banner */}
       <DisconnectedInstancesBanner instances={disconnectedInstances} />
       

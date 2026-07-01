@@ -19,13 +19,18 @@ export interface CompanyContext {
 }
 
 export function useCompanyContext(): CompanyContext {
-  const { user, isSuperAdmin } = useAuth();
+  const { user, isSuperAdmin, viewingAsCompanyId } = useAuth();
 
   const { data, isLoading } = useQuery({
-    queryKey: ['company-context', user?.id],
+    queryKey: ['company-context', user?.id, viewingAsCompanyId],
     queryFn: async (): Promise<Company | null> => {
-      const { data: companyId, error } = await (supabase.rpc as any)('get_user_company_id');
-      if (error || !companyId) return null;
+      let companyId = viewingAsCompanyId;
+
+      if (!companyId) {
+        const { data: userCompanyId, error } = await (supabase.rpc as any)('get_user_company_id');
+        if (error || !userCompanyId) return null;
+        companyId = userCompanyId;
+      }
 
       const { data: company } = await (supabase.from as any)('companies')
         .select('id, name, code, status, created_at')

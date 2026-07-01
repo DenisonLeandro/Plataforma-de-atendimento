@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { useCompanyContext } from "@/hooks/useCompanyContext";
 
 export interface AssignmentRule {
   id: string;
@@ -17,18 +18,23 @@ export interface AssignmentRule {
 
 export const useAssignmentRules = () => {
   const queryClient = useQueryClient();
+  const { companyId } = useCompanyContext();
 
   const { data: rules = [], isLoading } = useQuery({
-    queryKey: ['assignment-rules'],
+    queryKey: ['assignment-rules', companyId],
     queryFn: async () => {
+      if (!companyId) return [];
+
       const { data, error } = await supabase
         .from('assignment_rules')
         .select('*')
+        .eq('company_id', companyId)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
       return data as AssignmentRule[];
     },
+    enabled: !!companyId,
   });
 
   const createRule = useMutation({
@@ -36,7 +42,10 @@ export const useAssignmentRules = () => {
       // INSERT e SELECT separados para evitar o quirk de RLS no RETURNING.
       const { error } = await supabase
         .from('assignment_rules')
-        .insert(rule);
+        .insert({
+          ...rule,
+          company_id: companyId
+        });
 
       if (error) throw error;
 

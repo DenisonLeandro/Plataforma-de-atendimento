@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Tables } from '@/integrations/supabase/types';
+import { useCompanyContext } from '@/hooks/useCompanyContext';
 
 type Conversation = Tables<'whatsapp_conversations'>;
 type Contact = Tables<'whatsapp_contacts'>;
@@ -35,14 +36,24 @@ export interface ConversationsResult {
 
 export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
   const queryClient = useQueryClient();
+  const { companyId } = useCompanyContext();
   const page = filters?.page || 1;
   const pageSize = filters?.pageSize || 20;
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['whatsapp', 'conversations', filters],
+    queryKey: ['whatsapp', 'conversations', filters, companyId],
     queryFn: async () => {
+      if (!companyId) {
+        return {
+          conversations: [],
+          totalCount: 0,
+          totalPages: 0,
+          unreadCount: 0,
+          waitingCount: 0,
+        };
+      }
       // Quando há termo de busca, primeiro descobrimos quais contact_ids casam
       // por nome ou telefone, para filtrar conversas globalmente (não só na página).
       let searchContactIds: string[] | null = null;
@@ -52,6 +63,7 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
         const { data: matchingContacts } = await supabase
           .from('whatsapp_contacts')
           .select('id')
+          .eq('company_id', companyId)
           .or(`name.ilike.%${escaped}%,phone_number.ilike.%${escaped}%`)
           .limit(500);
         searchContactIds = (matchingContacts || []).map((c: { id: string }) => c.id);
@@ -78,6 +90,7 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
           assigned_profile:profiles(id, full_name, display_name, avatar_url),
           instance:whatsapp_instances(instance_name, name)
         `, { count: 'exact' })
+        .eq('company_id', companyId)
         .order('last_message_at', { ascending: false, nullsFirst: false })
         .range(from, to);
 
@@ -197,6 +210,7 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
     staleTime: 60_000,
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,
+    enabled: !!companyId,
   });
 
   useEffect(() => {

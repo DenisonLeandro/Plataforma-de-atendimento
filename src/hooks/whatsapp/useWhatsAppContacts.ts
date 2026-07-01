@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useCompanyContext } from '@/hooks/useCompanyContext';
 
 export type ContactSortOption = 'last_interaction' | 'name_asc' | 'name_desc' | 'conversations';
 
@@ -28,9 +29,19 @@ export const useWhatsAppContacts = (
   page: number = 1,
   pageSize: number = 20
 ) => {
+  const { companyId } = useCompanyContext();
+
   return useQuery({
-    queryKey: ['whatsapp-contacts', instanceId, searchTerm, sortBy, page, pageSize],
+    queryKey: ['whatsapp-contacts', instanceId, searchTerm, sortBy, page, pageSize, companyId],
     queryFn: async (): Promise<ContactsResult> => {
+      if (!companyId) {
+        return {
+          contacts: [],
+          totalCount: 0,
+          totalPages: 0,
+        };
+      }
+
       let query = supabase
         .from('whatsapp_contacts')
         .select(`
@@ -40,7 +51,8 @@ export const useWhatsAppContacts = (
           profile_picture_url,
           notes,
           instance_id
-        `);
+        `)
+        .eq('company_id', companyId);
 
       if (instanceId) {
         query = query.eq('instance_id', instanceId);
@@ -53,7 +65,8 @@ export const useWhatsAppContacts = (
       // Get total count first
       let countQuery = supabase
         .from('whatsapp_contacts')
-        .select('*', { count: 'exact', head: true });
+        .select('*', { count: 'exact', head: true })
+        .eq('company_id', companyId);
 
       if (instanceId) {
         countQuery = countQuery.eq('instance_id', instanceId);
@@ -149,5 +162,6 @@ export const useWhatsAppContacts = (
       };
     },
     staleTime: 30000,
+    enabled: !!companyId,
   });
 };

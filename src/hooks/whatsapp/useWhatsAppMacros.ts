@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Tables } from "@/integrations/supabase/types";
 import { toast } from "sonner";
+import { useCompanyContext } from "@/hooks/useCompanyContext";
 
 type Macro = Tables<'whatsapp_macros'>;
 type MacroInsert = Omit<Macro, 'id' | 'created_at' | 'updated_at' | 'usage_count'>;
@@ -9,15 +10,19 @@ type MacroUpdate = Partial<MacroInsert>;
 
 export const useWhatsAppMacros = (instanceId?: string) => {
   const queryClient = useQueryClient();
+  const { companyId } = useCompanyContext();
 
   // Fetch active macros
   const { data: macros = [], isLoading } = useQuery({
-    queryKey: ['whatsapp-macros', instanceId],
+    queryKey: ['whatsapp-macros', instanceId, companyId],
     queryFn: async () => {
+      if (!companyId) return [];
+
       let query = supabase
         .from('whatsapp_macros')
         .select('*')
         .eq('is_active', true)
+        .eq('company_id', companyId)
         .order('name', { ascending: true });
 
       if (instanceId) {
@@ -31,6 +36,7 @@ export const useWhatsAppMacros = (instanceId?: string) => {
       if (error) throw error;
       return data as Macro[];
     },
+    enabled: !!companyId,
   });
 
   // Create macro
@@ -39,7 +45,10 @@ export const useWhatsAppMacros = (instanceId?: string) => {
       // INSERT e SELECT separados para evitar o quirk de RLS no RETURNING.
       const { error } = await supabase
         .from('whatsapp_macros')
-        .insert(macro);
+        .insert({
+          ...macro,
+          company_id: companyId
+        });
 
       if (error) throw error;
 

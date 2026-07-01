@@ -34,6 +34,9 @@ interface AuthContextType {
   isAgent: boolean;
   isApproved: boolean;
   shouldRedirectToSetup: boolean;
+  viewingAsCompanyId: string | null;
+  setViewAsCompany: (companyId: string | null) => void;
+  isViewingAsCompany: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -46,6 +49,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [hasRedirectedToSetup, setHasRedirectedToSetup] = useState(false);
+  const [viewingAsCompanyId, setViewingAsCompanyIdState] = useState<string | null>(
+    typeof window !== 'undefined' ? sessionStorage.getItem('viewingAsCompanyId') : null
+  );
   const { toast } = useToast();
   const { setupProject, isConfigured, isCheckingConfig } = useProjectSetup();
   const lastLoadRef = useRef<{ userId: string; at: number } | null>(null);
@@ -53,6 +59,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const markSetupRedirectDone = () => {
     setHasRedirectedToSetup(true);
   };
+
+  const setViewAsCompany = (companyId: string | null) => {
+    setViewingAsCompanyIdState(companyId);
+    if (companyId) {
+      sessionStorage.setItem('viewingAsCompanyId', companyId);
+    } else {
+      sessionStorage.removeItem('viewingAsCompanyId');
+    }
+  };
+
+  const isViewingAsCompany = !!viewingAsCompanyId;
 
   // Auto-create profile and role if missing
   const ensureUserProfile = async (userId: string, accessToken: string) => {
@@ -355,6 +372,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isApproved,
     shouldRedirectToSetup,
     isSuperAdmin,
+    viewingAsCompanyId,
+    setViewAsCompany,
+    isViewingAsCompany,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

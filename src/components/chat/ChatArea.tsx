@@ -21,7 +21,7 @@ export const ChatArea = ({ conversationId }: ChatAreaProps) => {
   const { sentiment, isAnalyzing, analyze } = useWhatsAppSentiment(conversationId);
   const sendMutation = useWhatsAppSend();
   const queryClient = useQueryClient();
-  const { profile } = useAuth();
+  const { profile, isViewingAsCompany } = useAuth();
 
   // Prefixa o nome do atendente logado em toda mensagem enviada ao cliente,
   // para controle de quem respondeu. Formato: "Denison:\n<mensagem>".
@@ -130,11 +130,17 @@ export const ChatArea = ({ conversationId }: ChatAreaProps) => {
       
       <MessageInputContainer
         conversationId={conversationId}
+        disabled={isViewingAsCompany}
         replyingTo={replyingTo}
         onSendText={handleSendText}
         onSendMedia={handleSendMedia}
         onCancelReply={handleCancelReply}
       />
+      {isViewingAsCompany && (
+        <div className="bg-amber-100 text-amber-900 text-xs px-4 py-1.5 text-center font-medium border-t border-amber-200">
+          Modo de visualização ativo. Envio de mensagens desativado.
+        </div>
+      )}
     </div>
   );
 };

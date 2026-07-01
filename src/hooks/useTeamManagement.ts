@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { useCompanyContext } from '@/hooks/useCompanyContext';
 
 export type AppRole = 'admin' | 'supervisor' | 'agent';
 
@@ -19,14 +20,18 @@ export interface TeamMember {
 
 export const useTeamManagement = () => {
   const queryClient = useQueryClient();
+  const { companyId } = useCompanyContext();
 
   const { data, isLoading } = useQuery({
-    queryKey: ['team-members'],
+    queryKey: ['team-members', companyId],
     queryFn: async () => {
+      if (!companyId) return [];
+
       // Get all profiles
       const { data: profilesData, error: profilesError } = await supabase
         .from('profiles')
         .select('id, full_name, email, avatar_url, status, is_active, is_approved, created_at')
+        .eq('company_id', companyId)
         .order('created_at', { ascending: false });
 
       if (profilesError) throw profilesError;
@@ -34,7 +39,8 @@ export const useTeamManagement = () => {
       // Get roles for each profile
       const { data: rolesData, error: rolesError } = await supabase
         .from('user_roles')
-        .select('user_id, role');
+        .select('user_id, role')
+        .eq('company_id', companyId);
 
       if (rolesError) throw rolesError;
 
@@ -42,6 +48,7 @@ export const useTeamManagement = () => {
       const { data: conversationsData, error: conversationsError } = await supabase
         .from('whatsapp_conversations')
         .select('assigned_to')
+        .eq('company_id', companyId)
         .eq('status', 'active')
         .not('assigned_to', 'is', null);
 
@@ -75,6 +82,7 @@ export const useTeamManagement = () => {
 
       return members;
     },
+    enabled: !!companyId,
   });
 
   const updateRoleMutation = useMutation({

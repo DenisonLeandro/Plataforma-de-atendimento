@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { LogOut, User as UserIcon, Circle } from 'lucide-react';
+import { LogOut, User as UserIcon, Circle, Building2 } from 'lucide-react';
 import { ProfileModal } from './ProfileModal';
 import { useSignedUrl } from '@/utils/signedUrl';
 
@@ -31,7 +31,7 @@ const roleLabels: Record<string, string> = {
 };
 
 export function UserMenu() {
-  const { profile, role, signOut } = useAuth();
+  const { profile, role, signOut, isSuperAdmin } = useAuth();
   const { companyName } = useCompanyContext();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const navigate = useNavigate();
@@ -91,6 +91,16 @@ export function UserMenu() {
         </DropdownMenuItem>
         
         <DropdownMenuSeparator />
+
+        {isSuperAdmin && (
+          <>
+            <DropdownMenuItem onClick={() => navigate('/super-admin')}>
+              <Building2 className="mr-2 h-4 w-4" />
+              <span>Painel de Empresas</span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        )}
         
         <DropdownMenuItem onClick={handleSignOut} className="text-destructive focus:text-destructive">
           <LogOut className="mr-2 h-4 w-4" />

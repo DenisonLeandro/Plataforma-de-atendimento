@@ -27,6 +27,7 @@ import { toast } from 'sonner';
 interface ChatHeaderMenuProps {
   conversation: any;
   onRefresh?: () => void;
+  disabled?: boolean;
 }
 
 export function ChatHeaderMenu({ conversation, onRefresh }: ChatHeaderMenuProps) {
@@ -80,7 +81,7 @@ export function ChatHeaderMenu({ conversation, onRefresh }: ChatHeaderMenuProps)
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon" className="h-7 w-7">
+          <Button variant="ghost" size="icon" className="h-7 w-7" disabled={disabled}>
             <MoreVertical className="h-4 w-4" />
           </Button>
         </DropdownMenuTrigger>

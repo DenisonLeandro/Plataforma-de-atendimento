@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Tables, TablesInsert, TablesUpdate } from '@/integrations/supabase/types';
+import { useCompanyContext } from '@/hooks/useCompanyContext';
 
 type Instance = Tables<'whatsapp_instances'> & { provider_type?: string };
 type InstanceInsert = TablesInsert<'whatsapp_instances'>;
@@ -23,18 +24,22 @@ type InstanceUpdateWithSecrets = InstanceUpdate & {
 
 export const useWhatsAppInstances = () => {
   const queryClient = useQueryClient();
+  const { companyId } = useCompanyContext();
 
   const { data: instances = [], isLoading, error } = useQuery({
-    queryKey: ['whatsapp', 'instances'],
+    queryKey: ['whatsapp', 'instances', companyId],
     queryFn: async () => {
+      if (!companyId) return [];
       const { data, error } = await supabase
         .from('whatsapp_instances')
         .select('*')
+        .eq('company_id', companyId)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
       return data as Instance[];
     },
+    enabled: !!companyId,
   });
 
   const createInstance = useMutation({
@@ -49,6 +54,7 @@ export const useWhatsAppInstances = () => {
           ...instanceData,
           provider_type: provider_type || 'self_hosted',
           instance_id_external: instance_id_external || null,
+          company_id: companyId,
         } as any);
 
       if (instanceError) throw instanceError;
