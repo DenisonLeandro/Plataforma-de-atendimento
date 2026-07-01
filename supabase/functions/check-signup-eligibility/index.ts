@@ -13,6 +13,9 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json().catch(() => ({}));
     const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
+    const companyCode = typeof body?.companyCode === 'string'
+      ? body.companyCode.trim().toUpperCase()
+      : '';
     if (!email || !email.includes('@')) {
       return new Response(JSON.stringify({ allowed: false, reason: 'invalid_email' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -43,8 +46,25 @@ Deno.serve(async (req) => {
       allowed = allowedDomains.includes(domain);
     }
 
+    let company: { id: string; name: string; status: string } | null = null;
+    if (companyCode) {
+      const { data: c } = await supabase
+        .from('companies')
+        .select('id, name, status')
+        .eq('code', companyCode)
+        .maybeSingle();
+      if (c) company = c as any;
+    }
+
     return new Response(
-      JSON.stringify({ allowed, requireApproval, restrictionEnabled }),
+      JSON.stringify({
+        allowed,
+        requireApproval,
+        restrictionEnabled,
+        company,
+        companyCodeValid: !!company,
+        companyStatus: company?.status ?? null,
+      }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
   } catch (error: any) {
