@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useProjectSetup } from '@/hooks/useProjectSetup';
 
-type AppRole = 'admin' | 'supervisor' | 'agent';
+type AppRole = 'admin' | 'supervisor' | 'agent' | 'super_admin';
 
 interface Profile {
   id: string;
@@ -24,7 +24,8 @@ interface AuthContextType {
   role: AppRole | null;
   isLoading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: any }>;
-  signUp: (email: string, password: string, fullName: string) => Promise<{ error: any }>;
+  signUp: (email: string, password: string, fullName: string, companyId?: string) => Promise<{ error: any }>;
+  isSuperAdmin: boolean;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   markSetupRedirectDone: () => void;
@@ -42,6 +43,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [role, setRole] = useState<AppRole | null>(null);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [hasRedirectedToSetup, setHasRedirectedToSetup] = useState(false);
   const { toast } = useToast();
@@ -110,11 +112,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.warn('⚠️ [AuthContext] No profile found for user:', userId);
       }
 
-      // Load role
+      // Load role (exclude super_admin — treated separately via is_super_admin())
       const { data: roleData, error: roleError } = await supabase
         .from('user_roles')
         .select('role')
         .eq('user_id', userId)
+        .neq('role', 'super_admin' as any)
         .maybeSingle();
 
       if (roleError) {
@@ -124,6 +127,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         console.warn('⚠️ [AuthContext] No role found for user:', userId);
       }
+
+      // Check super_admin status independently
+      const { data: superAdmin } = await (supabase.rpc as any)('is_super_admin');
+      setIsSuperAdmin(!!superAdmin);
 
       // If profile OR role is truly missing, try to auto-create them.
       // Do not call the edge function after transient DB/API errors; that can create timeout loops.
@@ -161,6 +168,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } else {
           setProfile(null);
           setRole(null);
+          setIsSuperAdmin(false);
         }
 
         // Belt-and-suspenders: ensure we never leave the app stuck on the
@@ -258,7 +266,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error };
   };
 
-  const signUp = async (email: string, password: string, fullName: string) => {
+  const signUp = async (email: string, password: string, fullName: string, companyId?: string) => {
     const redirectUrl = `${window.location.origin}/`;
 
     const { data, error } = await supabase.auth.signUp({
@@ -268,6 +276,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         emailRedirectTo: redirectUrl,
         data: {
           full_name: fullName,
+          ...(companyId ? { company_id: companyId } : {}),
         },
       },
     });
@@ -307,6 +316,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(null);
     setProfile(null);
     setRole(null);
+    setIsSuperAdmin(false);
     setHasRedirectedToSetup(false);
     toast({
       title: "Logout realizado",
@@ -320,7 +330,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const isAdmin = role === 'admin';
+  const isAdmin = role === 'admin' || isSuperAdmin;
   const isSupervisor = role === 'supervisor';
   const isAgent = role === 'agent';
   const isApproved = profile?.is_approved ?? true; // Default to true for safety
@@ -344,6 +354,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isAgent,
     isApproved,
     shouldRedirectToSetup,
+    isSuperAdmin,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

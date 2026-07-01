@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { useCompanyContext } from '@/hooks/useCompanyContext';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,14 +23,16 @@ const statusColors = {
   busy: 'bg-red-500',
 };
 
-const roleLabels = {
+const roleLabels: Record<string, string> = {
   admin: 'Administrador',
   supervisor: 'Supervisor',
   agent: 'Atendente',
+  super_admin: 'Super Admin',
 };
 
 export function UserMenu() {
   const { profile, role, signOut } = useAuth();
+  const { companyName } = useCompanyContext();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const navigate = useNavigate();
   const signedAvatar = useSignedUrl(profile?.avatar_url ?? null);
@@ -71,6 +74,9 @@ export function UserMenu() {
             <Badge variant="secondary" className="text-xs px-1.5 py-0">
               {roleLabels[role]}
             </Badge>
+            {companyName && (
+              <span className="text-xs text-muted-foreground mt-0.5">{companyName}</span>
+            )}
           </div>
         </button>
       </DropdownMenuTrigger>

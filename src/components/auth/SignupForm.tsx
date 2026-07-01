@@ -16,6 +16,7 @@ import { isDomainAllowed } from '@/utils/domainValidation';
 const signupSchema = z.object({
   fullName: z.string().min(3, 'Nome deve ter no mínimo 3 caracteres'),
   email: z.string().email('Email inválido'),
+  companyCode: z.string().min(1, 'Código da empresa é obrigatório'),
   password: z.string().min(6, 'Senha deve ter no mínimo 6 caracteres'),
   confirmPassword: z.string(),
 }).refine((data) => data.password === data.confirmPassword, {
@@ -30,21 +31,21 @@ export function SignupForm() {
   const { signUp } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
-  
+
   const { register, handleSubmit, formState: { errors } } = useForm<SignupFormData>({
     resolver: zodResolver(signupSchema),
   });
 
   const onSubmit = async (data: SignupFormData) => {
     setIsLoading(true);
-    
+
     try {
       // Verificar restrição de domínio e aprovação antes de criar conta
       const { data: configs } = await supabase
         .from('project_config')
         .select('key, value')
         .in('key', ['restrict_signup_by_domain', 'allowed_email_domains', 'require_account_approval']);
-      
+
       const isRestrictionEnabled = configs?.find(c => c.key === 'restrict_signup_by_domain')?.value === 'true';
       const requireApproval = configs?.find(c => c.key === 'require_account_approval')?.value === 'true';
       const allowedDomainsString = configs?.find(c => c.key === 'allowed_email_domains')?.value || '';
@@ -52,7 +53,7 @@ export function SignupForm() {
         .split(',')
         .map(d => d.trim())
         .filter(Boolean);
-      
+
       // Validar domínio do email
       if (!isDomainAllowed(data.email, allowedDomains, isRestrictionEnabled)) {
         const domainsText = allowedDomains.map(d => `@${d}`).join(', ');
@@ -64,9 +65,36 @@ export function SignupForm() {
         setIsLoading(false);
         return;
       }
-      
-      const { error } = await signUp(data.email, data.password, data.fullName);
-      
+
+      // Validar código da empresa
+      const companyCode = data.companyCode.trim().toUpperCase();
+      const { data: company, error: companyError } = await (supabase.from as any)('companies')
+        .select('id, name, status')
+        .eq('code', companyCode)
+        .maybeSingle();
+
+      if (companyError || !company) {
+        toast({
+          variant: 'destructive',
+          title: 'Código de empresa inválido',
+          description: 'Verifique o código fornecido pelo administrador da sua empresa.',
+        });
+        setIsLoading(false);
+        return;
+      }
+
+      if (company.status === 'suspended') {
+        toast({
+          variant: 'destructive',
+          title: 'Empresa suspensa',
+          description: 'Esta empresa está com acesso suspenso. Entre em contato com o suporte.',
+        });
+        setIsLoading(false);
+        return;
+      }
+
+      const { error } = await signUp(data.email, data.password, data.fullName, company.id);
+
       if (error) {
         toast({
           variant: 'destructive',
@@ -74,7 +102,6 @@ export function SignupForm() {
           description: translateAuthError(error.message),
         });
       } else {
-        // Se aprovação obrigatória, usuário será redirecionado automaticamente pelo ProtectedRoute
         if (requireApproval) {
           toast({
             title: 'Conta criada com sucesso!',
@@ -82,7 +109,6 @@ export function SignupForm() {
             duration: 7000,
           });
         }
-        // Navigate on success - ProtectedRoute will handle redirect based on approval status
         navigate('/whatsapp');
       }
     } catch (error) {
@@ -124,6 +150,21 @@ export function SignupForm() {
         />
         {errors.email && (
           <p className="text-sm text-destructive">{errors.email.message}</p>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="companyCode">Código da empresa</Label>
+        <Input
+          id="companyCode"
+          type="text"
+          placeholder="Digite o código da sua empresa"
+          {...register('companyCode')}
+          disabled={isLoading}
+          className="uppercase"
+        />
+        {errors.companyCode && (
+          <p className="text-sm text-destructive">{errors.companyCode.message}</p>
         )}
       </div>
 
