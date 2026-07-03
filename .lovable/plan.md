@@ -1,54 +1,31 @@
-# Corrigir filtro de instâncias vazio para supervisores (Maria Ines)
+## Objetivo
 
-## Diagnóstico
+Garantir que a nova usuária **Eduarda** tenha acesso **apenas**:
+- à empresa **Denison Leandro Advocacia**
+- às **2 instâncias** definidas em Configurações → Acesso a Instâncias
 
-- Maria Ines (`ines@denisonleandro.adv.br`) é **supervisor** da empresa `0000...0001`, ativa e aprovada.
-- A empresa possui 5 instâncias cadastradas.
-- Ela **não tem nenhuma linha em `agent_instance_access`**.
-- A política RLS de `whatsapp_instances` (`Users can view permitted instances`) filtra pela função `can_user_see_instance`, que hoje só permite:
-  1. super admin, ou
-  2. **admin** da mesma empresa, ou
-  3. usuário com linha explícita em `agent_instance_access`.
-- Supervisores não estão em nenhum dos ramos → nenhuma instância aparece no filtro (nem em nenhuma outra tela que dependa dessa função).
+## Como o sistema já se comporta
 
-É exatamente a mesma classe de bug já identificada para o Leonardo. Corrigir a função resolve os dois casos e previne recorrência para qualquer supervisor futuro.
+O isolamento já é automático pelas regras existentes:
 
-## Correção
+1. **Empresa** — no cadastro, `handle_new_user` grava `company_id` no `profiles` e `user_roles` a partir do código da empresa informado. Todas as policies RLS filtram por `company_id`, então ela nunca enxerga dados de outra empresa.
+2. **Instâncias** — como Eduarda terá papel `agent`, a função `can_user_see_instance` só retorna `true` para instâncias listadas em `agent_instance_access`. Sem linhas lá, ela não vê nenhuma; com 2 linhas, vê só essas 2.
 
-Atualizar `public.can_user_see_instance` para tratar `supervisor` com a mesma regra do `admin` (visibilidade sobre todas as instâncias da própria empresa). Nenhuma mudança em RLS, GRANTs, frontend ou tipos.
+> A correção recente do `supervisor` (para ver todas as instâncias da empresa) **não afeta** `agent` — agentes continuam restritos ao `agent_instance_access`.
 
-```sql
-CREATE OR REPLACE FUNCTION public.can_user_see_instance(_user_id uuid, _instance_id uuid)
-RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
-  SELECT
-    public.is_super_admin(_user_id)
-    OR (
-      (public.has_role(_user_id, 'admin'::app_role)
-       OR public.has_role(_user_id, 'supervisor'::app_role))
-      AND EXISTS (
-        SELECT 1 FROM public.whatsapp_instances i
-        WHERE i.id = _instance_id
-          AND i.company_id = public.get_user_company_id(_user_id)
-      )
-    )
-    OR EXISTS (
-      SELECT 1 FROM public.agent_instance_access a
-      WHERE a.user_id = _user_id AND a.instance_id = _instance_id
-    );
-$$;
-```
+## Passos operacionais (sem código novo)
 
-## Impacto
+1. Confirmar que Eduarda foi criada com o código da empresa **Denison Leandro Advocacia** (perfil já com `company_id` correto).
+2. Confirmar que a role dela é **agent** (não `admin` nem `supervisor`, senão veria todas as instâncias da empresa).
+3. Em **Configurações → Acesso a Instâncias**, marcar as **2 instâncias** permitidas para ela e salvar.
+4. Validação rápida via consulta:
+   - `profiles.company_id` = id da Advocacia
+   - `user_roles.role` = `agent`
+   - `agent_instance_access` = exatamente 2 linhas para o `user_id` dela
 
-- Maria Ines (e Leonardo, e qualquer supervisor da empresa) passam a ver todas as instâncias da própria empresa no filtro, no gerenciador de acessos, nas conversas e nos relatórios.
-- `can_access_conversation` já reconhecia `supervisor` para escrita — agora leitura/filtro ficam consistentes.
-- Nenhum efeito sobre outras empresas: continua restrito por `company_id`. Agentes seguem restritos a `agent_instance_access`.
+## Fora de escopo
 
-## Verificação após aplicar
+- Nenhuma mudança de schema, RLS, função SQL, edge function ou frontend.
+- Se a role dela estiver como `admin`/`supervisor`, é preciso rebaixar para `agent` antes — a restrição por instâncias só se aplica a agentes.
 
-1. `SELECT public.can_user_see_instance('d08bec96-…', id) FROM whatsapp_instances WHERE company_id='0000…0001'` → todos `true`.
-2. Maria Ines recarrega `/whatsapp`: o filtro "Instância" lista as 5 instâncias.
-
-## Prevenção
-
-- Atualizar `mem://auth/role-permissions` registrando a regra: **supervisor tem paridade de leitura/visibilidade com admin dentro da própria empresa**, para que futuras alterações em `can_user_see_instance` / RLS preservem esse contrato.
+Confirma que quer que eu execute a verificação (itens 1–4) agora contra o banco?
