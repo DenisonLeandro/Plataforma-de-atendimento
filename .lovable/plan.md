@@ -1,48 +1,54 @@
-## Problema
+# Corrigir filtro de instâncias vazio para supervisores (Maria Ines)
 
-O banner e os botões usam apenas `isViewingAsCompany` para decidir se o modo é somente-leitura. Como Denison agora tem permissão de escrita em Piscinas Ibiporã (via `super_admin_company_access`), o backend aceita as ações, mas a interface continua bloqueando tudo e mostrando "MODO SOMENTE LEITURA".
+## Diagnóstico
 
-## Solução
+- Maria Ines (`ines@denisonleandro.adv.br`) é **supervisor** da empresa `0000...0001`, ativa e aprovada.
+- A empresa possui 5 instâncias cadastradas.
+- Ela **não tem nenhuma linha em `agent_instance_access`**.
+- A política RLS de `whatsapp_instances` (`Users can view permitted instances`) filtra pela função `can_user_see_instance`, que hoje só permite:
+  1. super admin, ou
+  2. **admin** da mesma empresa, ou
+  3. usuário com linha explícita em `agent_instance_access`.
+- Supervisores não estão em nenhum dos ramos → nenhuma instância aparece no filtro (nem em nenhuma outra tela que dependa dessa função).
 
-Introduzir um segundo sinal — `canWriteViewedCompany` — que consulta a nova tabela de exceções e é combinado com `isViewingAsCompany` para gerar um único flag de UI: `isReadOnlyView`.
+É exatamente a mesma classe de bug já identificada para o Leonardo. Corrigir a função resolve os dois casos e previne recorrência para qualquer supervisor futuro.
 
-### 1. Novo hook `useSuperAdminWriteAccess`
+## Correção
 
-- Query no `super_admin_company_access` filtrando por `super_admin_id = user.id` e `company_id = viewingAsCompanyId`.
-- Habilitada só quando `isSuperAdmin && isViewingAsCompany`.
-- Retorna `{ canWrite: boolean, isLoading }`.
-- Cache longo (staleTime 10 min).
+Atualizar `public.can_user_see_instance` para tratar `supervisor` com a mesma regra do `admin` (visibilidade sobre todas as instâncias da própria empresa). Nenhuma mudança em RLS, GRANTs, frontend ou tipos.
 
-### 2. `AuthContext`
+```sql
+CREATE OR REPLACE FUNCTION public.can_user_see_instance(_user_id uuid, _instance_id uuid)
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+  SELECT
+    public.is_super_admin(_user_id)
+    OR (
+      (public.has_role(_user_id, 'admin'::app_role)
+       OR public.has_role(_user_id, 'supervisor'::app_role))
+      AND EXISTS (
+        SELECT 1 FROM public.whatsapp_instances i
+        WHERE i.id = _instance_id
+          AND i.company_id = public.get_user_company_id(_user_id)
+      )
+    )
+    OR EXISTS (
+      SELECT 1 FROM public.agent_instance_access a
+      WHERE a.user_id = _user_id AND a.instance_id = _instance_id
+    );
+$$;
+```
 
-Expor dois novos valores derivados:
-- `canWriteViewedCompany: boolean` — vem do hook acima.
-- `isReadOnlyView: boolean` = `isViewingAsCompany && !canWriteViewedCompany`.
+## Impacto
 
-`isViewingAsCompany` continua existindo para casos que precisem saber "estou vendo como outra empresa" independentemente da permissão (ex.: mostrar o banner).
+- Maria Ines (e Leonardo, e qualquer supervisor da empresa) passam a ver todas as instâncias da própria empresa no filtro, no gerenciador de acessos, nas conversas e nos relatórios.
+- `can_access_conversation` já reconhecia `supervisor` para escrita — agora leitura/filtro ficam consistentes.
+- Nenhum efeito sobre outras empresas: continua restrito por `company_id`. Agentes seguem restritos a `agent_instance_access`.
 
-### 3. Banner (`ViewAsBanner.tsx`)
+## Verificação após aplicar
 
-- Continua aparecendo sempre que `isViewingAsCompany`.
-- Quando `canWriteViewedCompany = true`: cor verde, texto "Acesso total como admin" e ícone de escudo/edit.
-- Quando `false`: mantém o visual amarelo atual e o rótulo "Modo somente leitura".
-- Botão "Sair do modo visualização" permanece.
+1. `SELECT public.can_user_see_instance('d08bec96-…', id) FROM whatsapp_instances WHERE company_id='0000…0001'` → todos `true`.
+2. Maria Ines recarrega `/whatsapp`: o filtro "Instância" lista as 5 instâncias.
 
-### 4. Substituir bloqueios de UI
+## Prevenção
 
-Trocar `isViewingAsCompany` por `isReadOnlyView` nas ações que envolvem escrita:
-- `src/components/chat/ChatHeader.tsx` (assumir, transferir, análise, menu)
-- `src/components/chat/ChatArea.tsx` (input desabilitado + aviso)
-
-Componentes que só refletem contexto (labels, título) continuam usando `isViewingAsCompany`.
-
-## Resultado esperado
-
-- Denison entra "Ver como Piscinas Ibiporã" → banner verde "Acesso total", pode enviar mensagens, editar, transferir.
-- Denison entra "Ver como Denison Advocacia" (ou outra empresa sem exceção) → banner amarelo, tudo somente-leitura (comportamento atual).
-- Admin normal / agentes → nada muda.
-
-## Sem alterações necessárias
-
-- Banco de dados (já feito no passo anterior).
-- Edge functions (RLS trata).
+- Atualizar `mem://auth/role-permissions` registrando a regra: **supervisor tem paridade de leitura/visibilidade com admin dentro da própria empresa**, para que futuras alterações em `can_user_see_instance` / RLS preservem esse contrato.
