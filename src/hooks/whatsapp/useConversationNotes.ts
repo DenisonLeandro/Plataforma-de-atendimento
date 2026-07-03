@@ -58,11 +58,14 @@ export const useConversationNotes = (conversationId: string | null) => {
 
   const createNote = useMutation({
     mutationFn: async (content: string) => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
       const { error } = await supabase
         .from('whatsapp_conversation_notes')
         .insert({
           conversation_id: conversationId,
           content,
+          created_by: user.id,
         });
 
       if (error) throw error;
