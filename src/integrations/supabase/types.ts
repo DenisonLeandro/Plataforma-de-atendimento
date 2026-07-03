@@ -445,6 +445,7 @@ export type Database = {
           content: string
           conversation_id: string
           created_at: string | null
+          created_by: string | null
           id: string
           is_pinned: boolean | null
           updated_at: string | null
@@ -453,6 +454,7 @@ export type Database = {
           content: string
           conversation_id: string
           created_at?: string | null
+          created_by?: string | null
           id?: string
           is_pinned?: boolean | null
           updated_at?: string | null
@@ -461,6 +463,7 @@ export type Database = {
           content?: string
           conversation_id?: string
           created_at?: string | null
+          created_by?: string | null
           id?: string
           is_pinned?: boolean | null
           updated_at?: string | null
