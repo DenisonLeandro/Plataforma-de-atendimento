@@ -15,22 +15,12 @@ export const useMessageReaction = () => {
   const { toast } = useToast();
 
   const sendReaction = useMutation({
-    mutationFn: async ({ messageId, conversationId, emoji, reactorJid, isFromMe }: SendReactionParams) => {
-      const { data, error } = await supabase
-        .from('whatsapp_reactions')
-        .upsert({
-          message_id: messageId,
-          conversation_id: conversationId,
-          emoji,
-          reactor_jid: reactorJid,
-          is_from_me: isFromMe,
-        }, {
-          onConflict: 'message_id,reactor_jid',
-        })
-        .select()
-        .single();
-
+    mutationFn: async ({ messageId, conversationId, emoji }: SendReactionParams) => {
+      const { data, error } = await supabase.functions.invoke('send-whatsapp-reaction', {
+        body: { messageId, conversationId, emoji },
+      });
       if (error) throw error;
+      if (data && data.success === false) throw new Error(data.error || 'Falha ao enviar reação');
       return data;
     },
     onSuccess: (_, variables) => {
