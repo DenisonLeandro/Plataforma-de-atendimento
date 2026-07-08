@@ -689,6 +689,15 @@ async function processReaction(payload: EvolutionWebhookPayload, supabase: any) 
     const emoji = reaction.text;
     const reactorJid = key.remoteJid;
 
+    // Ignora eco da própria instância: quando o atendente reage pela
+    // plataforma, a Evolution devolve o evento com fromMe=true. Já gravamos
+    // essa reação no fluxo do frontend (send-whatsapp-reaction), então
+    // reprocessá-la duplicaria a linha (user_id vs owner_jid).
+    if (key.fromMe === true) {
+      console.log('[evolution-webhook] Skipping fromMe reaction echo');
+      return;
+    }
+
     // Find the target message to get conversation_id
     const { data: targetMessage } = await supabase
       .from('whatsapp_messages')
@@ -707,7 +716,8 @@ async function processReaction(payload: EvolutionWebhookPayload, supabase: any) 
         .from('whatsapp_reactions')
         .delete()
         .eq('message_id', targetMessageId)
-        .eq('reactor_jid', reactorJid);
+        .eq('reactor_jid', reactorJid)
+        .is('user_id', null);
       
       if (error) {
         console.error('[evolution-webhook] Error removing reaction:', error);
@@ -717,7 +727,8 @@ async function processReaction(payload: EvolutionWebhookPayload, supabase: any) 
       return;
     }
     
-    // UPSERT: update if exists, insert if not
+    // UPSERT restrito ao "canal externo" (reações vindas do WhatsApp).
+    // Reações de atendentes (user_id != null) NUNCA são tocadas aqui.
     const { error } = await supabase
       .from('whatsapp_reactions')
       .upsert({
@@ -726,9 +737,10 @@ async function processReaction(payload: EvolutionWebhookPayload, supabase: any) 
         emoji,
         reactor_jid: reactorJid,
         is_from_me: key.fromMe,
-      }, { 
+        user_id: null,
+      }, {
         onConflict: 'message_id,reactor_jid',
-        ignoreDuplicates: false 
+        ignoreDuplicates: false,
       });
     
     if (error) {
