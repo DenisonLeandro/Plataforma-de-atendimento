@@ -99,19 +99,40 @@ Deno.serve(async (req) => {
         .eq('message_id', body.messageId)
         .eq('user_id', userId);
     } else {
-      const { error: upErr } = await supabase
+      const { data: existing, error: selErr } = await supabase
         .from('whatsapp_reactions')
-        .upsert({
-          message_id: body.messageId,
-          conversation_id: body.conversationId,
-          emoji: body.emoji,
-          reactor_jid: `agent:${userId}`,
-          is_from_me: true,
-          user_id: userId,
-        }, { onConflict: 'message_id,user_id' });
-      if (upErr) {
-        console.error('[send-whatsapp-reaction] DB upsert error', upErr);
-        return json({ success: false, error: upErr.message }, 500);
+        .select('id')
+        .eq('message_id', body.messageId)
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (selErr) {
+        console.error('[send-whatsapp-reaction] DB select error', selErr);
+        return json({ success: false, error: selErr.message }, 500);
+      }
+      if (existing) {
+        const { error: updErr } = await supabase
+          .from('whatsapp_reactions')
+          .update({ emoji: body.emoji })
+          .eq('id', existing.id);
+        if (updErr) {
+          console.error('[send-whatsapp-reaction] DB update error', updErr);
+          return json({ success: false, error: updErr.message }, 500);
+        }
+      } else {
+        const { error: insErr } = await supabase
+          .from('whatsapp_reactions')
+          .insert({
+            message_id: body.messageId,
+            conversation_id: body.conversationId,
+            emoji: body.emoji,
+            reactor_jid: `agent:${userId}`,
+            is_from_me: true,
+            user_id: userId,
+          });
+        if (insErr) {
+          console.error('[send-whatsapp-reaction] DB insert error', insErr);
+          return json({ success: false, error: insErr.message }, 500);
+        }
       }
     }
 
