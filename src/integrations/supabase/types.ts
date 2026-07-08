@@ -881,6 +881,7 @@ export type Database = {
           is_from_me: boolean | null
           message_id: string
           reactor_jid: string
+          user_id: string | null
         }
         Insert: {
           conversation_id: string
@@ -890,6 +891,7 @@ export type Database = {
           is_from_me?: boolean | null
           message_id: string
           reactor_jid: string
+          user_id?: string | null
         }
         Update: {
           conversation_id?: string
@@ -899,6 +901,7 @@ export type Database = {
           is_from_me?: boolean | null
           message_id?: string
           reactor_jid?: string
+          user_id?: string | null
         }
         Relationships: [
           {
