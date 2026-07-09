@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
-import { Edit, Save, X, MessageSquare } from 'lucide-react';
+import { Edit, Save, X, MessageSquare, Pencil } from 'lucide-react';
 import { Tables } from '@/integrations/supabase/types';
 import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
@@ -19,6 +20,9 @@ export function ContactHeader({ contact }: ContactHeaderProps) {
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [notes, setNotes] = useState(contact.notes || '');
   const [isSaving, setIsSaving] = useState(false);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [name, setName] = useState(contact.name || '');
+  const [isSavingName, setIsSavingName] = useState(false);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const avatarUrl = useContactAvatar(contact.profile_picture_url);
@@ -56,6 +60,34 @@ export function ContactHeader({ contact }: ContactHeaderProps) {
     navigate(`/whatsapp?contact=${contact.id}`);
   };
 
+  const handleSaveName = async () => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      toast.error('Nome não pode ficar vazio');
+      return;
+    }
+    setIsSavingName(true);
+    try {
+      const { error } = await supabase
+        .from('whatsapp_contacts')
+        .update({ name: trimmed })
+        .eq('id', contact.id);
+
+      if (error) throw error;
+
+      toast.success('Nome atualizado com sucesso');
+      setIsEditingName(false);
+      queryClient.invalidateQueries({ queryKey: ['contact-details', contact.id] });
+      queryClient.invalidateQueries({ queryKey: ['whatsapp-contacts'] });
+      queryClient.invalidateQueries({ queryKey: ['whatsapp', 'conversations'] });
+    } catch (error) {
+      console.error('Error saving name:', error);
+      toast.error('Erro ao salvar nome');
+    } finally {
+      setIsSavingName(false);
+    }
+  };
+
   return (
     <Card>
       <CardContent className="p-6">
@@ -67,8 +99,57 @@ export function ContactHeader({ contact }: ContactHeaderProps) {
 
           <div className="flex-1">
             <div className="flex items-start justify-between mb-4">
-              <div>
-                <h2 className="text-2xl font-bold mb-1">{contact.name}</h2>
+              <div className="flex-1 min-w-0 mr-4">
+                {isEditingName ? (
+                  <div className="flex items-center gap-2 mb-1">
+                    <Input
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleSaveName();
+                        if (e.key === 'Escape') {
+                          setIsEditingName(false);
+                          setName(contact.name || '');
+                        }
+                      }}
+                      autoFocus
+                      className="text-2xl font-bold h-auto py-1"
+                    />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setIsEditingName(false);
+                        setName(contact.name || '');
+                      }}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={handleSaveName}
+                      disabled={isSavingName}
+                    >
+                      <Save className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 mb-1 group">
+                    <h2 className="text-2xl font-bold truncate">{contact.name}</h2>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setName(contact.name || '');
+                        setIsEditingName(true);
+                      }}
+                      title="Editar nome"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
                 <p className="text-muted-foreground">{contact.phone_number}</p>
               </div>
               <Button onClick={handleStartConversation}>
