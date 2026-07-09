@@ -1285,10 +1285,12 @@ async function processMessagesRead(payload: EvolutionWebhookPayload, supabase: a
     const remoteJids = rawKeys.map((k) => k?.remoteJid).filter(Boolean);
 
     if (messageIds.length > 0) {
+      // Só avança para 'read' se o status atual não for 'failed'.
       await supabase
         .from('whatsapp_messages')
         .update({ status: 'read' })
-        .in('message_id', messageIds);
+        .in('message_id', messageIds)
+        .or('status.is.null,status.in.(pending,sending,sent,delivered)');
     }
 
     const convIds = await resolveConversationIdsForJids(supabase, instanceId, remoteJids);
