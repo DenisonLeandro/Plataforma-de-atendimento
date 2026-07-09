@@ -1,15 +1,38 @@
-## Ação
+## Problema
 
-Encerrar em lote todas as conversas da empresa **Piscinas Ibipora** (`ab4c0aad-da5b-4200-b612-05bd8e29048b`) com `last_message_at <= 2026-07-07 23:59:59 -03` que atualmente estão em `active`.
+A política de UPDATE em `whatsapp_conversations` exige `can_access_conversation`, que para atendentes (`agent`) só devolve `true` quando a conversa está atribuída ao próprio usuário (ou não atribuída e coberta por uma regra de distribuição). Como resultado, agentes como a Estela não conseguem encerrar/reabrir conversas atribuídas a outra pessoa — o `UPDATE status` é bloqueado pelo RLS silenciosamente e a conversa continua aparecendo em "Abertos".
 
-## SQL
+## Correção
+
+Trocar a política de UPDATE para usar `can_view_conversation` (mesma checagem já usada no SELECT). Assim, qualquer usuário que enxerga a conversa também pode encerrá-la / reabri-la / arquivá-la.
+
+### Migração
 
 ```sql
-UPDATE public.whatsapp_conversations
-SET status = 'closed', updated_at = now()
-WHERE company_id = 'ab4c0aad-da5b-4200-b612-05bd8e29048b'
-  AND status = 'active'
-  AND last_message_at <= '2026-07-08 02:59:59+00';  -- 07/07 23:59:59 BRT
+DROP POLICY "Users can update accessible conversations"
+  ON public.whatsapp_conversations;
+
+CREATE POLICY "Users can update viewable conversations"
+  ON public.whatsapp_conversations
+  FOR UPDATE
+  USING (
+    auth.uid() IS NOT NULL
+    AND can_view_conversation(auth.uid(), id)
+  )
+  WITH CHECK (
+    auth.uid() IS NOT NULL
+    AND can_view_conversation(auth.uid(), id)
+    AND (
+      super_admin_can_write_company(auth.uid(), company_id)
+      OR company_id = get_user_company_id(auth.uid())
+    )
+  );
 ```
 
-Nada além disso — sem tocar em arquivos, migrações ou outras empresas. Executado via ferramenta de insert/update de dados.
+Atribuição/transferência continua protegida — ela passa pela função `assign_conversation` (SECURITY DEFINER) que valida permissões separadamente. Super admin sem exceção de escrita continua bloqueado pelo `WITH CHECK` (empresa diferente).
+
+## Validação
+
+- Logar como agent atribuído a outra conversa da mesma instância → encerrar deve funcionar.
+- Super admin sem exceção de escrita em outra empresa → UPDATE continua bloqueado.
+- Nenhuma mudança de código no frontend.
