@@ -296,7 +296,8 @@ Deno.serve(async (req) => {
         // quando não temos URL própria (ex.: áudio gravado enviado em base64).
         media_url: body.mediaUrl || extractedMediaUrl || null,
         media_mimetype: body.mediaMimetype || null,
-        status: 'sent',
+        // Não definimos status aqui para não sobrescrever delivered/read caso
+        // o webhook chegue antes. Setamos abaixo via update condicional.
         is_from_me: true,
         timestamp: new Date().toISOString(),
         quoted_message_id: body.quotedMessageId || null,
@@ -316,6 +317,15 @@ Deno.serve(async (req) => {
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    // Avança status para 'sent' somente se ainda estiver null/pending/sending.
+    // Evita retroceder delivered/read caso o webhook de status chegue antes.
+    await supabase
+      .from('whatsapp_messages')
+      .update({ status: 'sent' })
+      .eq('conversation_id', body.conversationId)
+      .eq('message_id', messageId)
+      .or('status.is.null,status.in.(pending,sending)');
 
     // Update conversation metadata
     await supabase
