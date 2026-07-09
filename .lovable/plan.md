@@ -1,46 +1,79 @@
-# Plano de performance — reduzir lentidão da plataforma
+# Plano — Corrigir isolamento entre empresas (4 findings)
 
-O gargalo tem duas causas independentes. Atacamos as duas em paralelo: engenharia (índices + queries) resolve a raiz; upgrade de compute dá fôlego imediato para o pico de conexões.
+Uma única migration reescreve as 4 policies. Nenhuma mudança de código no frontend/edge (todos os acessos hoje já assumem escopo por empresa; hoje as policies é que estão largas demais).
 
-## 1. Índices no banco (ganho maior, custo zero)
+## 1. `whatsapp_instance_secrets` — erro crítico
 
-As 3 queries mais lentas hoje varrem tabelas grandes sem índice adequado. Criar:
+Recriar a policy `Only admins can manage secrets` para exigir que a instância pertença à empresa do admin, com exceção para super admins autorizados via `super_admin_can_write_company`:
 
-- `whatsapp_conversations (company_id, last_message_at DESC NULLS LAST)` — cobre a listagem principal de conversas, que hoje leva ~3,3s por chamada (7.806 execuções).
-- `whatsapp_conversations (company_id, status, last_message_at DESC)` — cobre os filtros "abertas/encerradas".
-- `whatsapp_contacts (company_id)` + índice **trigram** (`pg_trgm`) em `name` e `phone_number` — a busca com `ilike '%texto%'` hoje faz seq scan (~4,7s). Trigram faz o `ilike` usar índice de verdade.
-- `whatsapp_messages (conversation_id, timestamp DESC)` — se ainda não existir; acelera abertura da conversa.
+```
+USING / WITH CHECK:
+  EXISTS (
+    SELECT 1 FROM whatsapp_instances i
+    WHERE i.id = whatsapp_instance_secrets.instance_id
+      AND (
+        i.company_id = get_user_company_id(auth.uid())
+        OR super_admin_can_write_company(auth.uid(), i.company_id)
+      )
+  )
+  AND has_role(auth.uid(), 'admin')
+```
 
-Impacto esperado: queda de segundos para dezenas de milissegundos nas queries dominantes → menos conexões presas → menos saturação.
+## 2. `whatsapp_webhook_events` — erro crítico
 
-## 2. Reduzir peso da listagem de conversas no frontend
+Recriar a policy `Admins and supervisors can view webhook events` (SELECT) exigindo que o `instance_id` do evento seja visível ao usuário:
 
-A query pesada traz `contact`, `assigned_profile` e `instance` inteiros via `LATERAL`. Ajustes:
+```
+USING:
+  (has_role(auth.uid(),'admin') OR has_role(auth.uid(),'supervisor'))
+  AND can_user_see_instance(auth.uid(), instance_id)
+```
 
-- Selecionar só as colunas usadas no card (`select` explícito em vez de `*`).
-- Manter `staleTime` alto no React Query (já está em 60s) e evitar refetch em foco para telas de listagem.
-- Confirmar paginação (limit) em vez de puxar todas as conversas de uma vez.
+## 3. Storage `whatsapp-media` — erro crítico
 
-## 3. Aumentar o limite de conexões (fôlego imediato)
+Substituir a policy de SELECT. Arquivos são armazenados como `<instance_name>/...` (uploads do webhook) ou `<user_id>/...` (uploads de agente). Ler apenas se a primeira pasta identifica uma instância/usuário da mesma empresa do leitor:
 
-Hoje: **52 de 60 conexões usadas** — muito perto do teto. Qualquer pico gera fila e timeouts (17 mil transações revertidas desde o boot).
+```
+USING:
+  bucket_id = 'whatsapp-media'
+  AND EXISTS (SELECT 1 FROM profiles p WHERE p.id = auth.uid() AND p.is_active AND p.is_approved)
+  AND (
+    EXISTS (
+      SELECT 1 FROM whatsapp_instances i
+      WHERE i.instance_name = (storage.foldername(name))[1]
+        AND (
+          i.company_id = get_user_company_id(auth.uid())
+          OR super_admin_can_write_company(auth.uid(), i.company_id)
+        )
+    )
+    OR EXISTS (
+      SELECT 1 FROM profiles p2
+      WHERE p2.id::text = (storage.foldername(name))[1]
+        AND p2.company_id = get_user_company_id(auth.uid())
+    )
+  )
+```
 
-Isso não se resolve por código: o limite de conexões é definido pelo tamanho da instância do Lovable Cloud. Caminho:
+Impacto: mídias antigas cujo primeiro segmento não bate com nenhuma instância/usuário conhecido deixam de ser acessíveis via URL assinada. Isso é o comportamento correto — hoje qualquer atendente aprovado consegue baixá-las.
 
-- Abrir **Backend → Configurações avançadas → Upgrade instance** e escolher um tamanho maior.
-- Instâncias maiores sobem tanto o limite de conexões quanto CPU/RAM disponível para o Postgres.
-- O upgrade leva alguns minutos e afeta o uso/cobrança do Lovable Cloud (o próprio painel mostra os valores antes de confirmar).
+## 4. Storage `avatars` — aviso
 
-Se preferir, na fase de implementação eu abro o seletor de tamanho direto no chat para você aprovar.
+Substituir a policy de SELECT para exigir que o dono do avatar (primeira pasta = `user_id`) pertença à mesma empresa do leitor:
 
-## Ordem de execução sugerida
-
-1. Migration com todos os índices (aplicação em segundos, sem downtime).
-2. Ajuste do `select` da listagem de conversas.
-3. Avaliar métricas por 10–15 min; se conexões continuarem >80%, fazer o upgrade da instância.
+```
+USING:
+  bucket_id = 'avatars'
+  AND EXISTS (SELECT 1 FROM profiles p WHERE p.id = auth.uid() AND p.is_active AND p.is_approved)
+  AND EXISTS (
+    SELECT 1 FROM profiles owner
+    WHERE owner.id::text = (storage.foldername(name))[1]
+      AND owner.company_id = get_user_company_id(auth.uid())
+  )
+```
 
 ## Detalhes técnicos
 
-- Trigram exige `CREATE EXTENSION IF NOT EXISTS pg_trgm;` antes dos índices `gin (... gin_trgm_ops)`.
-- Todos os `CREATE INDEX` rodarão dentro da migration (sem `CONCURRENTLY`), então haverá um lock curto por tabela — aceitável no volume atual (643 MB).
-- Nenhuma mudança de RLS ou de schema de negócio; só índices e ajuste de `select`.
+- Tudo em uma única migration (DROP + CREATE POLICY para cada uma das 4).
+- Super admins mantêm acesso cross-company apenas onde já existe autorização explícita (`super_admin_can_write_company`); nas policies de storage o super admin não precisa desse cross-access — se precisar visualizar mídia de outra empresa, usa o fluxo "Entrar como…" já existente, que muda o `company_id` efetivo do contexto.
+- Ao final, `manage_security_finding` marca os 4 `internal_id` como fixed.
+- Sem mudanças em edge functions: `send-whatsapp-message` já usa Service Role para mídia (bypassa RLS), e o webhook grava mídia como service_role.
