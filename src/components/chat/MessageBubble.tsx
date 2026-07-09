@@ -129,6 +129,7 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
     
     switch (message.status) {
       case 'sending':
+      case 'pending':
         return <Clock className="w-3 h-3" />;
       case 'sent':
         return <Check className="w-3 h-3" />;
@@ -136,6 +137,8 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
         return <CheckCheck className="w-3 h-3" />;
       case 'read':
         return <CheckCheck className="w-3 h-3 text-blue-500" />;
+      case 'failed':
+        return <AlertCircle className="w-3 h-3 text-red-500" />;
       default:
         return <Check className="w-3 h-3" />;
     }
