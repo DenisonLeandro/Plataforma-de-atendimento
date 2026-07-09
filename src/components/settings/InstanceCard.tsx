@@ -278,6 +278,19 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
           <Button
             variant="outline"
             size="sm"
+            onClick={handleSyncWebhook}
+            disabled={syncInstanceWebhook.isPending}
+            title="Sincronizar webhook (habilita MESSAGES_UPDATE para receber os ✓ ✓✓ ✓✓ azul)"
+          >
+            {syncInstanceWebhook.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Webhook className="h-4 w-4" />
+            )}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => setShowSyncDialog(true)}
             disabled={instance.status !== "connected" || syncHistory.isPending || (isRunning && !isSyncStale)}
             title={isSyncStale ? "Retomar sincronização travada" : isSyncing ? "Sincronização em andamento" : "Sincronizar histórico"}
