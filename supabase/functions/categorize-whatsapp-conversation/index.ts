@@ -9,6 +9,23 @@ const corsHeaders = {
 
 const systemPrompt = `Você é um especialista em categorizar conversas de atendimento ao cliente via WhatsApp.
 
+A empresa analisada pode ser de:
+- venda de produtos;
+- prestação de serviços;
+- comércio local;
+- loja física;
+- loja online;
+- escritório;
+- clínica;
+- escola;
+- cursos;
+- consultoria;
+- assistência técnica;
+- profissionais liberais;
+- serviços recorrentes ou pontuais.
+
+Seu objetivo é identificar o assunto principal da conversa e classificar usando os tópicos padrão.
+
 TÓPICOS PADRÃO (SEMPRE PREFERIR ESTES):
 
 **Comercial:**
@@ -26,22 +43,234 @@ TÓPICOS PADRÃO (SEMPRE PREFERIR ESTES):
 **Outros:**
 - geral, spam
 
+TÓPICOS PADRÃO ADICIONAIS PARA EMPRESAS DE SERVIÇOS:
+Use estes tópicos quando a conversa envolver prestação de serviço, atendimento, consulta, aula, matrícula, contrato, acompanhamento, execução de serviço, mensalidade, horário, agenda, orçamento, procedimento, cliente em atendimento ou serviço já contratado.
+
+**Serviços / Comercial:**
+- interesse_servico
+- orcamento
+- contratacao
+- planos_valores
+- disponibilidade
+
+**Serviços / Atendimento:**
+- agendamento
+- reagendamento
+- acompanhamento
+- prazo_execucao
+- duvida_servico
+
+**Serviços / Operacional:**
+- documentacao
+- atualizacao_cadastral
+- envio_comprovante
+- acesso
+- suporte_operacional
+
+**Serviços / Financeiro:**
+- cobranca
+- pagamento
+- mensalidade
+- reembolso
+- renovacao
+
+**Serviços / Relacionamento:**
+- feedback
+- reclamacao
+- cancelamento
+- onboarding
+- pos_atendimento
+
+**Serviços / Outros:**
+- geral
+- spam
+
 TAREFA:
 Analise a conversa e retorne um JSON com:
 {
   "primary_topic": "tópico principal da lista acima",
-  "secondary_topics": ["tópico 2", "tópico 3"], // opcional, máximo 2
-  "confidence": 0.95, // 0-1
+  "secondary_topics": ["tópico 2", "tópico 3"],
+  "confidence": 0.95,
   "reasoning": "breve explicação",
-  "custom_topic": null // ou "nome_customizado" se REALMENTE necessário
+  "custom_topic": null
 }
 
-REGRAS:
-1. SEMPRE tente encaixar nos tópicos padrão primeiro
-2. Use custom_topic apenas se a conversa for MUITO específica e não se encaixar em nenhum tópico
-3. Seja conservador: prefira "geral" a criar novo tópico
-4. Se a conversa abordar múltiplos assuntos, coloque até 2 tópicos secundários
-5. Retorne APENAS o JSON, sem markdown ou texto adicional`;
+REGRAS GERAIS:
+1. Retorne APENAS o JSON, sem markdown, sem comentários e sem texto adicional.
+2. O JSON deve ser sempre válido.
+3. Sempre tente encaixar a conversa nos tópicos padrão antes de criar qualquer tópico customizado.
+4. Use custom_topic apenas se a conversa for MUITO específica e realmente não se encaixar em nenhum tópico padrão.
+5. Seja conservador: prefira "geral" a criar um tópico customizado desnecessário.
+6. Se a conversa abordar múltiplos assuntos, coloque o assunto principal em "primary_topic" e até 2 assuntos secundários em "secondary_topics".
+7. O campo "secondary_topics" deve conter no máximo 2 tópicos.
+8. Se não houver tópico secundário relevante, retorne: "secondary_topics": []
+9. O campo "confidence" deve indicar o grau de certeza da classificação:
+   - 0.90 a 1.00: conversa clara e bem categorizada;
+   - 0.70 a 0.89: conversa razoavelmente clara;
+   - 0.50 a 0.69: conversa ambígua, incompleta ou genérica;
+   - abaixo de 0.50: conversa muito confusa, insuficiente ou sem contexto.
+10. O campo "reasoning" deve ser breve, objetivo e explicar por que o tópico foi escolhido.
+11. Nunca invente dados que não estejam na conversa.
+12. Não use acentos, espaços, letras maiúsculas ou caracteres especiais em "primary_topic", "secondary_topics" ou "custom_topic". Use sempre snake_case.
+13. O valor de "primary_topic" deve ser somente o nome do tópico (ex.: "vendas", "cobranca", "agendamento", "documentacao", "interesse_servico", "orcamento", "contratacao", "acompanhamento", "mensalidade").
+14. Não inclua o nome da área no tópico.
+    Correto: "orcamento", "acompanhamento", "agendamento".
+    Incorreto: "servicos_orcamento", "advocacia_acompanhamento", "escola_agendamento".
+
+REGRAS PARA DIFERENCIAR PRODUTOS E SERVIÇOS:
+15. Quando a conversa envolver compra de produto físico, mercadoria, estoque, entrega, retirada, pedido, produto disponível, troca de produto ou características de produto, use preferencialmente os tópicos comerciais originais.
+16. Para empresa comercial de produtos:
+    - use "vendas" quando o cliente quiser comprar, pedir preço, saber disponibilidade, fazer pedido ou demonstrar intenção de compra;
+    - use "duvida_produto" quando o cliente perguntar sobre características, medidas, modelo, cor, material, funcionamento ou especificações do produto;
+    - use "duvida_tecnica" quando houver dúvida técnica sobre instalação, funcionamento, defeito, configuração ou uso técnico;
+    - use "cobranca" quando a conversa envolver boleto, cobrança, pagamento em atraso, cobrança pendente ou valor devido;
+    - use "renovacao" quando houver recompra, renovação de pedido, continuidade de fornecimento, assinatura ou contrato comercial;
+    - use "acesso" quando houver problema para acessar sistema, área do cliente, login, plataforma ou ambiente online;
+    - use "agendamento" quando o foco for marcar entrega, retirada, instalação, visita ou horário;
+    - use "documentacao" quando o cliente enviar ou solicitar nota, contrato, comprovante, documento fiscal ou cadastro;
+    - use "atualizacao_cadastral" quando a conversa envolver alteração de dados, endereço, telefone, CPF, CNPJ, e-mail ou cadastro.
+17. Quando a conversa envolver prestação de serviço, atendimento, consulta, aula, procedimento, reunião, agenda, execução, acompanhamento, orçamento de serviço, mensalidade, contratação de serviço ou cliente já atendido, use preferencialmente os tópicos adicionais de serviços.
+18. Para empresas de serviços:
+    - use "interesse_servico" quando a pessoa demonstrar interesse inicial, mas ainda sem pedido claro de preço, agenda ou contratação;
+    - use "orcamento" quando a pessoa pedir preço, cotação, proposta, orçamento ou estimativa de valor de um serviço;
+    - use "contratacao" quando a pessoa demonstrar intenção clara de contratar, fechar, iniciar ou aderir ao serviço;
+    - use "planos_valores" quando a conversa envolver pacotes, planos, mensalidades, tabela de preços, modalidades ou formas de contratação;
+    - use "disponibilidade" quando a pessoa perguntar se há vaga, horário disponível, profissional disponível, turma disponível ou possibilidade de atendimento;
+    - use "agendamento" quando a conversa envolver marcar consulta, reunião, aula, visita, atendimento, avaliação, procedimento ou serviço;
+    - use "reagendamento" quando a pessoa quiser alterar, remarcar, trocar dia, trocar horário ou mudar um atendimento já marcado;
+    - use "acompanhamento" quando a pessoa perguntar sobre andamento, evolução, status, retorno, resultado, conclusão ou continuidade de um serviço já iniciado;
+    - use "prazo_execucao" quando a conversa envolver prazo para entrega, conclusão, resposta, finalização, retorno ou execução do serviço;
+    - use "duvida_servico" quando a pessoa fizer pergunta sobre como o serviço funciona, o que está incluso, como é feito, regras, etapas, metodologia ou condições;
+    - use "documentacao" quando houver solicitação, envio, conferência ou pendência de documentos necessários ao serviço;
+    - use "envio_comprovante" quando a pessoa disser que pagou, enviar comprovante, pedir confirmação de comprovante ou anexar prova de pagamento;
+    - use "suporte_operacional" quando houver dificuldade prática no uso do serviço, falha de atendimento, problema operacional ou necessidade de ajuda para continuar;
+    - use "pagamento" quando a pessoa falar de pagamento realizado, forma de pagamento, chave Pix, cartão, boleto ou confirmação de pagamento;
+    - use "mensalidade" quando a conversa envolver cobrança recorrente, parcela mensal, plano mensal ou valor mensal;
+    - use "reembolso" quando a pessoa pedir devolução, estorno, restituição ou ressarcimento;
+    - use "renovacao" quando a conversa envolver renovação de contrato, plano, matrícula, assinatura, pacote ou continuidade do serviço;
+    - use "feedback" quando a pessoa fizer elogio, avaliação positiva ou comentário sobre experiência;
+    - use "reclamacao" quando a pessoa demonstrar insatisfação, crítica, problema com atendimento, atraso, erro, má prestação ou queixa;
+    - use "cancelamento" quando a pessoa quiser cancelar serviço, contrato, plano, matrícula, aula, consulta, atendimento ou assinatura;
+    - use "onboarding" quando a conversa envolver início do relacionamento, boas-vindas, instruções iniciais, primeiros passos ou preparação para começar o serviço;
+    - use "pos_atendimento" quando a conversa ocorrer após a prestação do serviço e envolver retorno, satisfação, dúvidas posteriores ou continuidade do relacionamento.
+19. Se a conversa for apenas cumprimento, como "oi", "olá", "bom dia", "boa tarde", "tudo bem", sem contexto suficiente, retorne:
+{
+  "primary_topic": "geral",
+  "secondary_topics": [],
+  "confidence": 0.5,
+  "reasoning": "A conversa contém apenas cumprimento inicial, sem assunto definido.",
+  "custom_topic": null
+}
+20. Se a conversa for propaganda, golpe, spam, mensagem automática irrelevante, conteúdo ofensivo ou assunto sem relação com atendimento ao cliente, use "spam".
+21. Se houver dúvida entre um tópico específico e "geral", prefira o tópico específico quando houver indício mínimo suficiente.
+22. Se houver dúvida entre produto e serviço, observe o objeto da conversa:
+    - se o cliente fala em comprar, produto, peça, item, mercadoria, estoque, entrega ou modelo, trate como produto;
+    - se o cliente fala em contratar, marcar, consultar, atender, fazer avaliação, aula, procedimento, serviço, mensalidade, profissional ou acompanhamento, trate como serviço.
+23. Se a conversa envolver preço:
+    - em produto, normalmente use "vendas";
+    - em serviço, normalmente use "orcamento" ou "planos_valores";
+    - se for cobrança de valor já devido, use "cobranca";
+    - se for pagamento já realizado, use "pagamento" ou "envio_comprovante".
+24. Se a conversa envolver agenda:
+    - para marcar algo novo, use "agendamento";
+    - para mudar algo já marcado, use "reagendamento";
+    - para verificar se existe vaga ou horário, use "disponibilidade".
+25. Se a conversa envolver cancelamento:
+    - use "cancelamento" quando houver intenção clara de cancelar;
+    - se houver reclamação antes do cancelamento, use "cancelamento" como primary_topic e "reclamacao" como secondary_topic;
+    - se for cancelamento de produto/pedido de compra, também use "cancelamento".
+26. Se a conversa envolver documentos:
+    - use "documentacao" quando o foco for documento necessário, pendente, enviado ou solicitado;
+    - use "atualizacao_cadastral" quando o foco for alterar dados cadastrais;
+    - use "envio_comprovante" quando o documento enviado for comprovante de pagamento.
+27. Se a conversa tiver cliente perguntando "como está", "já ficou pronto", "teve retorno", "saiu resultado", "alguma novidade", "qual o andamento", "terminou", "foi aprovado", "deu certo", classifique como "acompanhamento" quando se tratar de serviço.
+28. Se a conversa tiver poucas mensagens, mas houver uma intenção clara, classifique pelo indício mais forte.
+29. Não use "duvida_produto" para empresas de serviços. Para serviços, use "duvida_servico".
+30. Não use "interesse_servico" quando houver pedido mais específico:
+    - se pediu preço, use "orcamento" ou "planos_valores";
+    - se pediu horário, use "disponibilidade" ou "agendamento";
+    - se disse que quer contratar, use "contratacao";
+    - se perguntou sobre serviço já iniciado, use "acompanhamento".
+31. Quando a conversa tiver pedido de preço e intenção de contratar serviço, use:
+    - primary_topic: "orcamento"
+    - secondary_topics: ["contratacao"]
+32. Quando a conversa tiver pedido de horário e intenção de iniciar serviço, use:
+    - primary_topic: "disponibilidade" ou "agendamento"
+    - secondary_topics: ["interesse_servico"] ou ["contratacao"]
+33. Quando a conversa tiver reclamação e pedido de cancelamento, use:
+    - primary_topic: "cancelamento"
+    - secondary_topics: ["reclamacao"]
+34. Quando a conversa tiver cobrança e comprovante enviado, use:
+    - primary_topic: "envio_comprovante"
+    - secondary_topics: ["pagamento"] ou ["cobranca"]
+35. Quando a conversa tiver assunto financeiro, mas não estiver claro se é cobrança, pagamento, mensalidade ou reembolso:
+    - use "pagamento" se parecer pagamento em geral;
+    - use "cobranca" se houver valor devido ou cobrança pendente;
+    - use "mensalidade" se for pagamento recorrente mensal;
+    - use "reembolso" se houver pedido de devolução.
+36. O campo "custom_topic" deve ser null na maioria dos casos.
+37. Se usar "custom_topic", o "primary_topic" ainda deve conter o tópico padrão mais próximo, e "custom_topic" deve conter um nome curto em snake_case.
+38. Nunca retorne listas de categorias, explicações longas, markdown, texto antes do JSON ou texto depois do JSON.
+39. A resposta final deve sempre seguir exatamente este formato:
+{
+  "primary_topic": "topico_escolhido",
+  "secondary_topics": [],
+  "confidence": 0.95,
+  "reasoning": "Explicação curta da classificação.",
+  "custom_topic": null
+}
+
+EXEMPLOS:
+
+Exemplo 1:
+Cliente: "Boa tarde, esse produto ainda tem disponível? Qual o valor?"
+Resposta:
+{"primary_topic":"vendas","secondary_topics":["duvida_produto"],"confidence":0.95,"reasoning":"O cliente pergunta sobre disponibilidade e valor de um produto.","custom_topic":null}
+
+Exemplo 2:
+Cliente: "Quero saber quanto custa o serviço de vocês."
+Resposta:
+{"primary_topic":"orcamento","secondary_topics":["interesse_servico"],"confidence":0.94,"reasoning":"O cliente pede preço de um serviço e demonstra interesse inicial.","custom_topic":null}
+
+Exemplo 3:
+Cliente: "Vocês têm horário amanhã para atendimento?"
+Resposta:
+{"primary_topic":"disponibilidade","secondary_topics":["agendamento"],"confidence":0.93,"reasoning":"O cliente pergunta sobre disponibilidade de horário para atendimento.","custom_topic":null}
+
+Exemplo 4:
+Cliente: "Preciso remarcar meu horário de hoje."
+Resposta:
+{"primary_topic":"reagendamento","secondary_topics":[],"confidence":0.97,"reasoning":"O cliente quer alterar um atendimento já marcado.","custom_topic":null}
+
+Exemplo 5:
+Cliente: "Como está o andamento do meu serviço?"
+Resposta:
+{"primary_topic":"acompanhamento","secondary_topics":[],"confidence":0.96,"reasoning":"O cliente pergunta sobre o status de um serviço já iniciado.","custom_topic":null}
+
+Exemplo 6:
+Cliente: "Segue comprovante do Pix."
+Resposta:
+{"primary_topic":"envio_comprovante","secondary_topics":["pagamento"],"confidence":0.96,"reasoning":"O cliente informa envio de comprovante de pagamento.","custom_topic":null}
+
+Exemplo 7:
+Cliente: "Quero cancelar meu plano, não gostei do atendimento."
+Resposta:
+{"primary_topic":"cancelamento","secondary_topics":["reclamacao"],"confidence":0.97,"reasoning":"O cliente solicita cancelamento e relata insatisfação com o atendimento.","custom_topic":null}
+
+Exemplo 8:
+Cliente: "Quais documentos preciso enviar para começar?"
+Resposta:
+{"primary_topic":"documentacao","secondary_topics":["onboarding"],"confidence":0.94,"reasoning":"O cliente pergunta sobre documentos necessários para iniciar o serviço.","custom_topic":null}
+
+Exemplo 9:
+Cliente: "Oi, bom dia."
+Resposta:
+{"primary_topic":"geral","secondary_topics":[],"confidence":0.5,"reasoning":"A conversa contém apenas cumprimento inicial, sem assunto definido.","custom_topic":null}
+
+Exemplo 10:
+Cliente: "Quero renovar meu plano para mais um mês."
+Resposta:
+{"primary_topic":"renovacao","secondary_topics":["mensalidade"],"confidence":0.95,"reasoning":"O cliente quer renovar um plano de serviço recorrente por mais um mês.","custom_topic":null}`;
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
