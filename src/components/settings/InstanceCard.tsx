@@ -15,7 +15,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useWhatsAppInstances, useSyncWhatsAppHistory, useSyncJob, useSyncJobCompletion, type SyncJob } from "@/hooks/whatsapp";
-import { RefreshCw, Pencil, Trash2, Copy, Link, Download, Loader2, Plug, Users } from "lucide-react";
+import { RefreshCw, Pencil, Trash2, Copy, Link, Download, Loader2, Plug, Users, Webhook } from "lucide-react";
 import { toast } from "sonner";
 import { EditInstanceDialog } from "./EditInstanceDialog";
 
@@ -26,7 +26,7 @@ interface InstanceCardProps {
 }
 
 export const InstanceCard = ({ instance }: InstanceCardProps) => {
-  const { testConnection, deleteInstance, reconnectInstance, resolveLidConversations } = useWhatsAppInstances();
+  const { testConnection, deleteInstance, reconnectInstance, resolveLidConversations, syncInstanceWebhook } = useWhatsAppInstances();
   const syncHistory = useSyncWhatsAppHistory();
   const navigate = useNavigate();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -127,6 +127,20 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
       );
     } catch (error: any) {
       toast.error(error?.message || "Falha ao resolver conversas @lid");
+    }
+  };
+
+  const handleSyncWebhook = async () => {
+    try {
+      const result = await syncInstanceWebhook.mutateAsync(instance.id);
+      const first = result?.results?.[0];
+      if (result?.okCount > 0) {
+        toast.success("Webhook sincronizado. Os ✓✓ e ✓✓ azul começarão a aparecer nas próximas mensagens.");
+      } else {
+        toast.error(first?.message || "Falha ao sincronizar webhook");
+      }
+    } catch (error: any) {
+      toast.error(error?.message || "Falha ao sincronizar webhook");
     }
   };
 
@@ -259,6 +273,19 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <Users className="h-4 w-4" />
+            )}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleSyncWebhook}
+            disabled={syncInstanceWebhook.isPending}
+            title="Sincronizar webhook (habilita MESSAGES_UPDATE para receber os ✓ ✓✓ ✓✓ azul)"
+          >
+            {syncInstanceWebhook.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Webhook className="h-4 w-4" />
             )}
           </Button>
           <Button

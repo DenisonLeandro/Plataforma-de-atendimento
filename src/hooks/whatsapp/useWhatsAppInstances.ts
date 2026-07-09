@@ -89,8 +89,15 @@ export const useWhatsAppInstances = () => {
 
       return instanceResult;
     },
-    onSuccess: () => {
+    onSuccess: (instanceResult: any) => {
       queryClient.invalidateQueries({ queryKey: ['whatsapp', 'instances'] });
+      // Configura o webhook (com MESSAGES_UPDATE) automaticamente. Falha silenciosa —
+      // se a Evolution recusar, o admin ainda pode disparar manualmente pelo card.
+      if (instanceResult?.id) {
+        supabase.functions
+          .invoke('sync-instance-webhook', { body: { instanceId: instanceResult.id } })
+          .catch(() => undefined);
+      }
     },
   });
 
@@ -176,8 +183,13 @@ export const useWhatsAppInstances = () => {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: ['whatsapp', 'instances'] });
+      // Reconectar frequentemente reseta a configuração de webhook do Baileys
+      // no Evolution — reaplicamos MESSAGES_UPDATE em background.
+      supabase.functions
+        .invoke('sync-instance-webhook', { body: { instanceId: id } })
+        .catch(() => undefined);
     },
   });
 
@@ -207,6 +219,21 @@ export const useWhatsAppInstances = () => {
     },
   });
 
+  // Reconfigura o webhook da Evolution para a instância — garante que os
+  // eventos MESSAGES_UPDATE (acks 1/2/3 = enviado/entregue/lido) sejam
+  // enviados de volta pro `evolution-webhook`. Sem isso, mensagens antigas
+  // ficam travadas em ✓ cinza (status `sent`).
+  const syncInstanceWebhook = useMutation({
+    mutationFn: async (id: string) => {
+      const { data, error } = await supabase.functions.invoke(
+        'sync-instance-webhook',
+        { body: { instanceId: id } }
+      );
+      if (error) throw error;
+      return data;
+    },
+  });
+
   return {
     instances,
     isLoading,
@@ -218,5 +245,6 @@ export const useWhatsAppInstances = () => {
     reconnectInstance,
     diagnoseInstance,
     resolveLidConversations,
+    syncInstanceWebhook,
   };
 };
