@@ -1,79 +1,54 @@
-# Plano — Corrigir isolamento entre empresas (4 findings)
+## Estado atual (já pronto)
 
-Uma única migration reescreve as 4 policies. Nenhuma mudança de código no frontend/edge (todos os acessos hoje já assumem escopo por empresa; hoje as policies é que estão largas demais).
+- Coluna `whatsapp_messages.status` existe (não precisa criar `delivery_status` — usar a existente).
+- `MessageBubble.tsx` já renderiza: Clock (sending) / Check (sent) / CheckCheck cinza (delivered) / CheckCheck azul (read) / AlertCircle (failed).
+- `useWhatsAppSend.ts` já grava `status='sending'` otimista e `'failed'` em erro.
+- `send-whatsapp-message` já atualiza para `status='sent'` após sucesso.
+- `evolution-webhook` já roteia `messages.update` → `processMessageUpdate` e `messages.read` → `processMessagesRead`.
+- `useWhatsAppMessages.ts` já escuta UPDATE via Realtime.
 
-## 1. `whatsapp_instance_secrets` — erro crítico
+## O que ainda falta / precisa corrigir
 
-Recriar a policy `Only admins can manage secrets` para exigir que a instância pertença à empresa do admin, com exceção para super admins autorizados via `super_admin_can_write_company`:
+### 1. Webhook — mapeamento de status mais robusto e monotônico
 
-```
-USING / WITH CHECK:
-  EXISTS (
-    SELECT 1 FROM whatsapp_instances i
-    WHERE i.id = whatsapp_instance_secrets.instance_id
-      AND (
-        i.company_id = get_user_company_id(auth.uid())
-        OR super_admin_can_write_company(auth.uid(), i.company_id)
-      )
-  )
-  AND has_role(auth.uid(), 'admin')
-```
+Em `supabase/functions/evolution-webhook/index.ts`, na função `processMessageUpdate`:
 
-## 2. `whatsapp_webhook_events` — erro crítico
+- Suportar tanto `updates.status` (texto) quanto `updates.ack` (número) — Evolution manda em formatos diferentes.
+- Mapa completo:
+  - `0` / `'PENDING'` → `pending`
+  - `1` / `'SENT'` / `'SERVER_ACK'` → `sent`
+  - `2` / `'DELIVERY_ACK'` / `'DELIVERED'` → `delivered`
+  - `3` / `'READ'` / `'PLAYED'` → `read`
+  - `-1` / `'ERROR'` → `failed`
+- **Guarda monotônica**: fazer UPDATE apenas quando o novo status for "maior" que o atual, para nunca voltar (ex.: nunca sobrescrever `read` com `sent`). `failed` é exceção — sempre aplica.
+- Aplicar a mesma guarda em `processMessagesRead` (que já força `'read'`) e em `send-whatsapp-message` (não sobrescrever se já for `delivered`/`read`).
 
-Recriar a policy `Admins and supervisors can view webhook events` (SELECT) exigindo que o `instance_id` do evento seja visível ao usuário:
+### 2. Ordem de status (helper compartilhado no webhook)
 
-```
-USING:
-  (has_role(auth.uid(),'admin') OR has_role(auth.uid(),'supervisor'))
-  AND can_user_see_instance(auth.uid(), instance_id)
-```
-
-## 3. Storage `whatsapp-media` — erro crítico
-
-Substituir a policy de SELECT. Arquivos são armazenados como `<instance_name>/...` (uploads do webhook) ou `<user_id>/...` (uploads de agente). Ler apenas se a primeira pasta identifica uma instância/usuário da mesma empresa do leitor:
+Adicionar uma pequena constante de rank dentro do próprio `index.ts` do webhook:
 
 ```
-USING:
-  bucket_id = 'whatsapp-media'
-  AND EXISTS (SELECT 1 FROM profiles p WHERE p.id = auth.uid() AND p.is_active AND p.is_approved)
-  AND (
-    EXISTS (
-      SELECT 1 FROM whatsapp_instances i
-      WHERE i.instance_name = (storage.foldername(name))[1]
-        AND (
-          i.company_id = get_user_company_id(auth.uid())
-          OR super_admin_can_write_company(auth.uid(), i.company_id)
-        )
-    )
-    OR EXISTS (
-      SELECT 1 FROM profiles p2
-      WHERE p2.id::text = (storage.foldername(name))[1]
-        AND p2.company_id = get_user_company_id(auth.uid())
-    )
-  )
+pending=0, sent=1, delivered=2, read=3
 ```
 
-Impacto: mídias antigas cujo primeiro segmento não bate com nenhuma instância/usuário conhecido deixam de ser acessíveis via URL assinada. Isso é o comportamento correto — hoje qualquer atendente aprovado consegue baixá-las.
+Update SQL usando `.in('status', [...menores])` para garantir monotonicidade sem exigir função SQL nova.
 
-## 4. Storage `avatars` — aviso
+### 3. Frontend — pequenos ajustes
 
-Substituir a policy de SELECT para exigir que o dono do avatar (primeira pasta = `user_id`) pertença à mesma empresa do leitor:
+- `MessageBubble.tsx`: no `getStatusIcon`, tratar `'pending'` (vindo do banco, além do `'sending'` otimista) e `'failed'` retornando `AlertCircle` no próprio ícone de status (hoje o AlertCircle aparece só num bloco separado do bubble; adicionar o mesmo case no getStatusIcon garante consistência ao lado do horário).
+- Confirmar que o listener Realtime de UPDATE em `useWhatsAppMessages.ts` invalida/atualiza o cache da mensagem correspondente (se hoje só refetcha a lista, ok — não mexer).
 
-```
-USING:
-  bucket_id = 'avatars'
-  AND EXISTS (SELECT 1 FROM profiles p WHERE p.id = auth.uid() AND p.is_active AND p.is_approved)
-  AND EXISTS (
-    SELECT 1 FROM profiles owner
-    WHERE owner.id::text = (storage.foldername(name))[1]
-      AND owner.company_id = get_user_company_id(auth.uid())
-  )
-```
+### 4. Verificação pós-deploy
 
-## Detalhes técnicos
+1. Redeploy de `evolution-webhook`.
+2. Enviar mensagem pela plataforma → Clock imediato → vira Check quando o webhook echo/ack chega.
+3. Cliente recebe (celular ligado) → CheckCheck cinza.
+4. Cliente abre a conversa → CheckCheck azul.
+5. Mensagens recebidas (`is_from_me=false`) continuam sem ícone.
+6. Mensagens antigas sem status caem no default (Check cinza) — ok.
 
-- Tudo em uma única migration (DROP + CREATE POLICY para cada uma das 4).
-- Super admins mantêm acesso cross-company apenas onde já existe autorização explícita (`super_admin_can_write_company`); nas policies de storage o super admin não precisa desse cross-access — se precisar visualizar mídia de outra empresa, usa o fluxo "Entrar como…" já existente, que muda o `company_id` efetivo do contexto.
-- Ao final, `manage_security_finding` marca os 4 `internal_id` como fixed.
-- Sem mudanças em edge functions: `send-whatsapp-message` já usa Service Role para mídia (bypassa RLS), e o webhook grava mídia como service_role.
+## Fora de escopo (não mexer)
+
+- `can_user_see_instance`, `can_access_conversation`, `can_view_conversation`.
+- Cor laranja, layout do bubble, lógica de envio.
+- Nenhuma migration nova (coluna já existe); só edge functions + 1 componente.

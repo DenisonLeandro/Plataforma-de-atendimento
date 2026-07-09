@@ -1060,33 +1060,70 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
 }
 
 // Process message update event (status changes)
+// Rank monotônico de status de entrega. Nunca deve retroceder.
+const STATUS_RANK: Record<string, number> = {
+  pending: 0,
+  sending: 0,
+  sent: 1,
+  delivered: 2,
+  read: 3,
+};
+
+function mapEvolutionStatus(raw: any): string | null {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw === 'number') {
+    if (raw === -1) return 'failed';
+    if (raw === 0) return 'pending';
+    if (raw === 1) return 'sent';
+    if (raw === 2) return 'delivered';
+    if (raw === 3 || raw === 4) return 'read';
+    return null;
+  }
+  const s = String(raw).toUpperCase();
+  if (s === 'ERROR' || s === 'FAILED') return 'failed';
+  if (s === 'PENDING') return 'pending';
+  if (s === 'SENT' || s === 'SERVER_ACK') return 'sent';
+  if (s === 'DELIVERED' || s === 'DELIVERY_ACK') return 'delivered';
+  if (s === 'READ' || s === 'PLAYED') return 'read';
+  return null;
+}
+
+// Atualiza status apenas se avançar (ou for failed). Usa filtro .in() para
+// evitar sobrescrever delivered/read com sent, etc.
+async function advanceMessageStatus(supabase: any, messageId: string, newStatus: string) {
+  if (!messageId || !newStatus) return;
+  let query = supabase.from('whatsapp_messages').update({ status: newStatus }).eq('message_id', messageId);
+  if (newStatus !== 'failed') {
+    const rank = STATUS_RANK[newStatus];
+    if (rank === undefined) return;
+    // Permitir apenas status atuais com rank menor OU nulos (mensagem antiga sem status).
+    const lower = Object.entries(STATUS_RANK)
+      .filter(([, r]) => r < rank)
+      .map(([k]) => k);
+    // is null OR status in (lower)
+    query = query.or(`status.is.null,status.in.(${lower.join(',')})`);
+  }
+  const { error } = await query;
+  if (error) console.error('[evolution-webhook] advanceMessageStatus error:', error);
+}
+
 async function processMessageUpdate(payload: EvolutionWebhookPayload, supabase: any) {
   try {
     const { data } = payload;
     const updates = data.update || data;
 
-    console.log('[evolution-webhook] Processing message update:', updates);
+    // Evolution manda status em campos variados: status (string/num) ou ack (num).
+    const rawStatus = updates.status ?? updates.ack ?? updates.messageStatus;
+    const mapped = mapEvolutionStatus(rawStatus);
+    const messageId = updates.key?.id || data.key?.id;
 
-    // Extract status from update
-    let status = 'sent';
-    if (updates.status === 3 || updates.status === 'READ') status = 'read';
-    else if (updates.status === 2 || updates.status === 'DELIVERY_ACK') status = 'delivered';
-    else if (updates.status === 1 || updates.status === 'SERVER_ACK') status = 'sent';
-
-    // Update all messages matching the key
-    const messageId = updates.key?.id;
-    if (messageId) {
-      const { error } = await supabase
-        .from('whatsapp_messages')
-        .update({ status })
-        .eq('message_id', messageId);
-
-      if (error) {
-        console.error('[evolution-webhook] Error updating message status:', error);
-      } else {
-        console.log('[evolution-webhook] Message status updated to:', status);
-      }
+    if (!mapped || !messageId) {
+      console.log('[evolution-webhook] messages.update sem status/id utilizável:', { rawStatus, messageId });
+      return;
     }
+
+    await advanceMessageStatus(supabase, messageId, mapped);
+    console.log('[evolution-webhook] Message status →', mapped, 'for', messageId);
   } catch (error) {
     console.error('[evolution-webhook] Error in processMessageUpdate:', error);
   }
@@ -1248,10 +1285,12 @@ async function processMessagesRead(payload: EvolutionWebhookPayload, supabase: a
     const remoteJids = rawKeys.map((k) => k?.remoteJid).filter(Boolean);
 
     if (messageIds.length > 0) {
+      // Só avança para 'read' se o status atual não for 'failed'.
       await supabase
         .from('whatsapp_messages')
         .update({ status: 'read' })
-        .in('message_id', messageIds);
+        .in('message_id', messageIds)
+        .or('status.is.null,status.in.(pending,sending,sent,delivered)');
     }
 
     const convIds = await resolveConversationIdsForJids(supabase, instanceId, remoteJids);
