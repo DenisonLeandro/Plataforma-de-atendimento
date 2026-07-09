@@ -530,18 +530,6 @@ async function findOrCreateConversation(
     }
 
     if (existingConversation) {
-      if (existingConversation.status === 'closed' && !isFromMe) {
-        const { error: reopenError } = await supabase
-          .from('whatsapp_conversations')
-          .update({ status: 'active' })
-          .eq('id', existingConversation.id);
-        if (reopenError) {
-          console.error('[evolution-webhook] Error reopening conversation:', reopenError);
-        } else {
-          console.log(`[evolution-webhook] Conversation REOPENED (client replied): ${existingConversation.id}`);
-          await applyAutoAssignment(supabase, instanceId, existingConversation.id);
-        }
-      }
       return existingConversation.id;
     }
 
@@ -1041,32 +1029,11 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
     if (!key.fromMe) {
       const { data: currentConv } = await supabase
         .from('whatsapp_conversations')
-        .select('unread_count, status')
+        .select('unread_count')
         .eq('id', conversationId)
         .single();
 
       updateData.unread_count = (currentConv?.unread_count || 0) + 1;
-
-      // Auto-reopen closed conversation when client sends a new message
-      if (currentConv?.status === 'closed') {
-        updateData.status = 'active';
-        console.log(`[evolution-webhook] Auto-reopened closed conversation ${conversationId}`);
-      }
-    }
-    else {
-      // Mensagem enviada pelo próprio número (agente respondeu pelo celular ou
-      // echo do Evolution). Mantém paridade com o branch !fromMe: reabre, mas
-      // NÃO reatribui — quem enviou já é o responsável.
-      const { data: currentConvFromMe } = await supabase
-        .from('whatsapp_conversations')
-        .select('status')
-        .eq('id', conversationId)
-        .single();
-
-      if (currentConvFromMe?.status === 'closed') {
-        updateData.status = 'active';
-        console.log(`[evolution-webhook] Auto-reopened closed conversation (fromMe) ${conversationId}`);
-      }
     }
 
     const { error: updateError } = await supabase
