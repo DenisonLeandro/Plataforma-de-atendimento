@@ -1235,6 +1235,8 @@ export type Database = {
       }
       is_first_user: { Args: never; Returns: boolean }
       is_super_admin: { Args: { _user_id?: string }; Returns: boolean }
+      show_limit: { Args: never; Returns: number }
+      show_trgm: { Args: { "": string }; Returns: string[] }
       super_admin_can_write_company: {
         Args: { _company_id: string; _uid: string }
         Returns: boolean
