@@ -89,8 +89,15 @@ export const useWhatsAppInstances = () => {
 
       return instanceResult;
     },
-    onSuccess: () => {
+    onSuccess: (instanceResult: any) => {
       queryClient.invalidateQueries({ queryKey: ['whatsapp', 'instances'] });
+      // Configura o webhook (com MESSAGES_UPDATE) automaticamente. Falha silenciosa —
+      // se a Evolution recusar, o admin ainda pode disparar manualmente pelo card.
+      if (instanceResult?.id) {
+        supabase.functions
+          .invoke('sync-instance-webhook', { body: { instanceId: instanceResult.id } })
+          .catch(() => undefined);
+      }
     },
   });
 
@@ -176,8 +183,13 @@ export const useWhatsAppInstances = () => {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: ['whatsapp', 'instances'] });
+      // Reconectar frequentemente reseta a configuração de webhook do Baileys
+      // no Evolution — reaplicamos MESSAGES_UPDATE em background.
+      supabase.functions
+        .invoke('sync-instance-webhook', { body: { instanceId: id } })
+        .catch(() => undefined);
     },
   });
 
