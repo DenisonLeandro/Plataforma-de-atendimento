@@ -1,54 +1,25 @@
-## Estado atual (já pronto)
+## Problema
 
-- Coluna `whatsapp_messages.status` existe (não precisa criar `delivery_status` — usar a existente).
-- `MessageBubble.tsx` já renderiza: Clock (sending) / Check (sent) / CheckCheck cinza (delivered) / CheckCheck azul (read) / AlertCircle (failed).
-- `useWhatsAppSend.ts` já grava `status='sending'` otimista e `'failed'` em erro.
-- `send-whatsapp-message` já atualiza para `status='sent'` após sucesso.
-- `evolution-webhook` já roteia `messages.update` → `processMessageUpdate` e `messages.read` → `processMessagesRead`.
-- `useWhatsAppMessages.ts` já escuta UPDATE via Realtime.
+A função SQL `public.get_assignable_agents(_instance_id)` retorna TODOS os `profiles` com role admin/supervisor/agent, sem filtrar por empresa. Por isso a Estela (empresa A) vê atendentes das empresas B, C etc. no seletor de transferência.
 
-## O que ainda falta / precisa corrigir
+## Correção (1 migration, sem mudança de código frontend)
 
-### 1. Webhook — mapeamento de status mais robusto e monotônico
+Redefinir `public.get_assignable_agents` para:
 
-Em `supabase/functions/evolution-webhook/index.ts`, na função `processMessageUpdate`:
+1. Resolver o `company_id` da instância (`_instance_id`) via `whatsapp_instances`.
+2. Retornar apenas atendentes ativos/aprovados cujo `profiles.company_id` seja igual ao `company_id` daquela instância.
+3. Incluir também super admins que tenham exceção explícita para essa empresa em `super_admin_company_access` (para não quebrar o fluxo do Denison na empresa Piscinas).
+4. Manter a mesma assinatura de retorno (`id, full_name, avatar_url, status, role, active_conversations`) para não quebrar o hook `useAssignableAgents` nem a UI.
+5. Manter `SECURITY DEFINER` + `search_path = public, pg_temp`.
 
-- Suportar tanto `updates.status` (texto) quanto `updates.ack` (número) — Evolution manda em formatos diferentes.
-- Mapa completo:
-  - `0` / `'PENDING'` → `pending`
-  - `1` / `'SENT'` / `'SERVER_ACK'` → `sent`
-  - `2` / `'DELIVERY_ACK'` / `'DELIVERED'` → `delivered`
-  - `3` / `'READ'` / `'PLAYED'` → `read`
-  - `-1` / `'ERROR'` → `failed`
-- **Guarda monotônica**: fazer UPDATE apenas quando o novo status for "maior" que o atual, para nunca voltar (ex.: nunca sobrescrever `read` com `sent`). `failed` é exceção — sempre aplica.
-- Aplicar a mesma guarda em `processMessagesRead` (que já força `'read'`) e em `send-whatsapp-message` (não sobrescrever se já for `delivered`/`read`).
+Nenhuma alteração no frontend é necessária — o `useAssignableAgents` continua chamando o RPC com o `instance_id` da conversa.
 
-### 2. Ordem de status (helper compartilhado no webhook)
+## Fora de escopo
 
-Adicionar uma pequena constante de rank dentro do próprio `index.ts` do webhook:
+- Não mexer em `can_user_see_instance`, `can_access_conversation`, `can_view_conversation`.
+- Não mexer em `assign_conversation` (a validação ali é apenas "atendente válido"; o filtro de empresa é feito no seletor, e transferências cross-empresa continuam bloqueadas na prática porque o alvo não terá acesso).
+- Sem novas tabelas, sem novas policies.
 
-```
-pending=0, sent=1, delivered=2, read=3
-```
+## Erros do build
 
-Update SQL usando `.in('status', [...menores])` para garantir monotonicidade sem exigir função SQL nova.
-
-### 3. Frontend — pequenos ajustes
-
-- `MessageBubble.tsx`: no `getStatusIcon`, tratar `'pending'` (vindo do banco, além do `'sending'` otimista) e `'failed'` retornando `AlertCircle` no próprio ícone de status (hoje o AlertCircle aparece só num bloco separado do bubble; adicionar o mesmo case no getStatusIcon garante consistência ao lado do horário).
-- Confirmar que o listener Realtime de UPDATE em `useWhatsAppMessages.ts` invalida/atualiza o cache da mensagem correspondente (se hoje só refetcha a lista, ok — não mexer).
-
-### 4. Verificação pós-deploy
-
-1. Redeploy de `evolution-webhook`.
-2. Enviar mensagem pela plataforma → Clock imediato → vira Check quando o webhook echo/ack chega.
-3. Cliente recebe (celular ligado) → CheckCheck cinza.
-4. Cliente abre a conversa → CheckCheck azul.
-5. Mensagens recebidas (`is_from_me=false`) continuam sem ícone.
-6. Mensagens antigas sem status caem no default (Check cinza) — ok.
-
-## Fora de escopo (não mexer)
-
-- `can_user_see_instance`, `can_access_conversation`, `can_view_conversation`.
-- Cor laranja, layout do bubble, lógica de envio.
-- Nenhuma migration nova (coluna já existe); só edge functions + 1 componente.
+Os erros mostrados são falhas transitórias de upload S3 (ServiceUnavailable / "Reduce your concurrent request rate"), não erros de código. Serão resolvidos no próximo build automático — não requerem ação.
