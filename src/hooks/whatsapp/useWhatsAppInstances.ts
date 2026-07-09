@@ -207,6 +207,21 @@ export const useWhatsAppInstances = () => {
     },
   });
 
+  // Reconfigura o webhook da Evolution para a instância — garante que os
+  // eventos MESSAGES_UPDATE (acks 1/2/3 = enviado/entregue/lido) sejam
+  // enviados de volta pro `evolution-webhook`. Sem isso, mensagens antigas
+  // ficam travadas em ✓ cinza (status `sent`).
+  const syncInstanceWebhook = useMutation({
+    mutationFn: async (id: string) => {
+      const { data, error } = await supabase.functions.invoke(
+        'sync-instance-webhook',
+        { body: { instanceId: id } }
+      );
+      if (error) throw error;
+      return data;
+    },
+  });
+
   return {
     instances,
     isLoading,
@@ -218,5 +233,6 @@ export const useWhatsAppInstances = () => {
     reconnectInstance,
     diagnoseInstance,
     resolveLidConversations,
+    syncInstanceWebhook,
   };
 };
