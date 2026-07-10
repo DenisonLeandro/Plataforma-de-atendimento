@@ -126,21 +126,25 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
 
   const getStatusIcon = () => {
     if (!isFromMe) return null;
-    
+
+    const GRAY = '#9CA3AF';
+    const BLUE = '#3B82F6';
+    const RED = '#EF4444';
+
     switch (message.status) {
       case 'sending':
       case 'pending':
-        return <Clock className="w-3 h-3" />;
+        return <Clock size={14} style={{ color: GRAY }} />;
       case 'sent':
-        return <Check className="w-3 h-3" />;
+        return <Check size={14} style={{ color: GRAY }} />;
       case 'delivered':
-        return <CheckCheck className="w-3 h-3" />;
+        return <CheckCheck size={14} style={{ color: GRAY }} />;
       case 'read':
-        return <CheckCheck className="w-3 h-3 text-blue-500" />;
+        return <CheckCheck size={14} style={{ color: BLUE }} />;
       case 'failed':
-        return <AlertCircle className="w-3 h-3 text-red-500" />;
+        return <AlertCircle size={14} style={{ color: RED }} />;
       default:
-        return <Check className="w-3 h-3" />;
+        return <Check size={14} style={{ color: GRAY }} />;
     }
   };
 
