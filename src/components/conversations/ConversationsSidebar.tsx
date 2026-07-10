@@ -71,7 +71,7 @@ const ConversationsSidebar = ({ selectedId, onSelect, instanceId, isCollapsed, o
   // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [instanceFilter, statusFilter, filter, debouncedSearchQuery]);
+  }, [instanceFilter, instanceId, statusFilter, filter, sortBy, debouncedSearchQuery]);
 
   // If a stale counter/page state leaves the user beyond the last real page,
   // return to the last valid page instead of showing an empty page.
