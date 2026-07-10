@@ -73,6 +73,15 @@ const ConversationsSidebar = ({ selectedId, onSelect, instanceId, isCollapsed, o
     setCurrentPage(1);
   }, [instanceFilter, statusFilter, filter, debouncedSearchQuery]);
 
+  // If a stale counter/page state leaves the user beyond the last real page,
+  // return to the last valid page instead of showing an empty page.
+  useEffect(() => {
+    const lastValidPage = Math.max(totalPages || 1, 1);
+    if (!isLoading && currentPage > lastValidPage) {
+      setCurrentPage(lastValidPage);
+    }
+  }, [currentPage, totalPages, isLoading]);
+
   // Lógica de filtragem
   const filteredConversations = useMemo(() => {
     let result = [...conversations];
