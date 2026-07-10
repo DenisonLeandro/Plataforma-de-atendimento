@@ -179,12 +179,13 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
       let totalCount = listCount ?? 0;
 
       if (!searchTerm) {
-        const { data: counters } = await supabase.rpc('get_conversation_counters', {
+        const { data: counters } = await (supabase.rpc as any)('get_conversation_counters', {
           _instance_id: filters?.instanceId ?? null,
           _status: filters?.status ?? null,
           _status_in: filters?.statusIn && filters.statusIn.length > 0 ? filters.statusIn : null,
           _assigned_to: filters?.assignedTo ?? null,
           _unassigned: filters?.unassigned ?? false,
+          _company_id: companyId,
         });
         const row = Array.isArray(counters) ? counters[0] : counters;
         if (row) {

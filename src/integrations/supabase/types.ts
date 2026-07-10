@@ -1217,6 +1217,7 @@ export type Database = {
       get_conversation_counters: {
         Args: {
           _assigned_to?: string
+          _company_id?: string
           _instance_id?: string
           _status?: string
           _status_in?: string[]
