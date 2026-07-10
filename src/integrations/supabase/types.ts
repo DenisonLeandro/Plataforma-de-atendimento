@@ -279,6 +279,7 @@ export type Database = {
       }
       project_config: {
         Row: {
+          company_id: string | null
           created_at: string | null
           id: string
           key: string
@@ -286,6 +287,7 @@ export type Database = {
           value: string
         }
         Insert: {
+          company_id?: string | null
           created_at?: string | null
           id?: string
           key: string
@@ -293,13 +295,22 @@ export type Database = {
           value: string
         }
         Update: {
+          company_id?: string | null
           created_at?: string | null
           id?: string
           key?: string
           updated_at?: string | null
           value?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "project_config_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       super_admin_company_access: {
         Row: {
