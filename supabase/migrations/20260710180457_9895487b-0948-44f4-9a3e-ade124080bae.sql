@@ -1,0 +1,1 @@
+DROP FUNCTION IF EXISTS public.get_conversation_counters(uuid, text, text[], uuid, boolean);
