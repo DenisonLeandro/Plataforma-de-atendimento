@@ -530,6 +530,39 @@ async function findOrCreateConversation(
     }
 
     if (existingConversation) {
+      // Auto-reopen closed conversation on inbound message, if company setting allows
+      if (
+        !isFromMe &&
+        existingConversation.status === 'closed'
+      ) {
+        try {
+          const { data: inst } = await supabase
+            .from('whatsapp_instances')
+            .select('company_id')
+            .eq('id', instanceId)
+            .maybeSingle();
+
+          if (inst?.company_id) {
+            const { data: cfg } = await supabase
+              .from('project_config')
+              .select('value')
+              .eq('key', 'auto_reopen_on_inbound')
+              .eq('company_id', inst.company_id)
+              .maybeSingle();
+
+            const shouldReopen = (cfg?.value ?? 'true') === 'true';
+            if (shouldReopen) {
+              await supabase
+                .from('whatsapp_conversations')
+                .update({ status: 'active', updated_at: new Date().toISOString() })
+                .eq('id', existingConversation.id);
+              console.log('[evolution-webhook] Reopened conversation on inbound:', existingConversation.id);
+            }
+          }
+        } catch (e) {
+          console.error('[evolution-webhook] auto-reopen check failed:', e);
+        }
+      }
       return existingConversation.id;
     }
 
