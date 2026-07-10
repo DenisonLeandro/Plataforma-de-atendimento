@@ -1214,20 +1214,36 @@ export type Database = {
           status: string
         }[]
       }
-      get_conversation_counters: {
-        Args: {
-          _assigned_to?: string
-          _instance_id?: string
-          _status?: string
-          _status_in?: string[]
-          _unassigned?: boolean
-        }
-        Returns: {
-          total_count: number
-          unread_count: number
-          waiting_count: number
-        }[]
-      }
+      get_conversation_counters:
+        | {
+            Args: {
+              _assigned_to?: string
+              _instance_id?: string
+              _status?: string
+              _status_in?: string[]
+              _unassigned?: boolean
+            }
+            Returns: {
+              total_count: number
+              unread_count: number
+              waiting_count: number
+            }[]
+          }
+        | {
+            Args: {
+              _assigned_to?: string
+              _company_id?: string
+              _instance_id?: string
+              _status?: string
+              _status_in?: string[]
+              _unassigned?: boolean
+            }
+            Returns: {
+              total_count: number
+              unread_count: number
+              waiting_count: number
+            }[]
+          }
       get_instance_names: {
         Args: { _ids: string[] }
         Returns: {
