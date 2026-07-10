@@ -1,42 +1,62 @@
-# Evolution voltou — validação + melhorias de resiliência
 
-Confirmado agora: `https://evolution-api-hbbv.srv1746890.hstgr.cloud/` respondeu **HTTP 200 em 450ms**. O servidor externo está de pé de novo, então envio e webhooks já devem funcionar normalmente.
+## Problema
 
-## 1. Validação imediata (sem código)
-- Testar `connectionState` das 3 instâncias (Advocacia Ibiporã, Advocacia Denison, Piscinas Ibiporã) pela função `test-evolution-connection`.
-- Qualquer instância que voltar em `connecting`/`close` → botão **Reconectar** no card.
-- Você envia 1 mensagem de teste em cada empresa para confirmar ponta-a-ponta.
+Na instância "Piscinas Ibiporã" o rodapé mostra **95 conversas**, mas ao avançar as páginas ficam vazias. Causa raiz: contador e listagem usam critérios de visibilidade diferentes.
 
-## 2. Melhorias de UI para o próximo incidente (código)
-Objetivo: quando a Evolution cair de novo, o usuário entende na hora — sem toast genérico "Falha ao enviar".
+- Listagem passa pela policy RLS `Users can view accessible conversations`, que usa `can_view_conversation(uid, id)` (checa atribuição, acesso à instância e regras de fila).
+- Contador `get_conversation_counters` usa apenas `can_user_see_instance(uid, instance_id)` + `company_id`.
 
-### 2a. Banner global "Servidor WhatsApp indisponível"
-- Novo componente `EvolutionHealthBanner` no topo do `ChatArea`.
-- Consulta leve a cada 60s: chama uma nova edge function `check-evolution-health` que faz `GET /` no host da Evolution da instância selecionada com timeout de 5s.
-- Mostra banner vermelho fixo **apenas** quando **todas** as instâncias da empresa estão inacessíveis: *"Servidor WhatsApp fora do ar — envio e recebimento temporariamente indisponíveis. Nenhuma ação necessária na plataforma."*
+A RPC conta conversas que a RLS depois esconde. Isso também infla os badges de "não lidas" e "aguardando".
 
-### 2b. Toast específico por tipo de erro no envio
-Atualmente `send-whatsapp-message` já devolve `code: 'CONNECTION_CLOSED'` vs `'EVOLUTION_ERROR'`. Vou adicionar:
-- `code: 'EVOLUTION_UNREACHABLE'` quando o `fetchWithTimeout` estourar (timeout de rede, não erro HTTP).
-- No frontend (`useWhatsAppSend`), mapear cada code para uma mensagem clara em pt-BR:
-  - `EVOLUTION_UNREACHABLE` → "Servidor WhatsApp fora do ar. Tente novamente em alguns minutos."
-  - `CONNECTION_CLOSED` → texto atual (reconectar instância).
-  - `EVOLUTION_ERROR` → texto atual.
+## Correção
 
-### 2c. Log estruturado por instância
-- Em `send-whatsapp-message`, prefixar todo log com `[instance=<name>]` para facilitar filtrar por instância nos logs de edge function em incidentes futuros.
+Redefinir a RPC `public.get_conversation_counters` para usar exatamente a mesma função da RLS (`can_view_conversation`), garantindo que contador = número real de linhas visíveis.
 
-## O que **não** faz parte do plano
-- Não vou mexer em RLS, schema, webhooks recebidos, nem em lógica de auto-reopen — nada disso quebrou; só houve indisponibilidade externa.
-- Não vou tocar em `evolution-webhook` (o receptor): quando a Evolution está no ar, os webhooks já chegam.
+### Migração SQL
 
-## Escopo técnico resumido
-- **Novo:** `supabase/functions/check-evolution-health/index.ts` (GET, retorna `{ reachable: boolean, latencyMs }` por instância da empresa).
-- **Novo:** `src/components/notifications/EvolutionHealthBanner.tsx` + montagem no layout do WhatsApp.
-- **Editar:** `supabase/functions/send-whatsapp-message/index.ts` (adicionar `EVOLUTION_UNREACHABLE`, prefixo de log).
-- **Editar:** `src/hooks/whatsapp/useWhatsAppSend.ts` (mapear codes para mensagens específicas).
+```sql
+CREATE OR REPLACE FUNCTION public.get_conversation_counters(
+  _instance_id uuid DEFAULT NULL,
+  _status text DEFAULT NULL,
+  _status_in text[] DEFAULT NULL,
+  _assigned_to uuid DEFAULT NULL,
+  _unassigned boolean DEFAULT false
+) RETURNS TABLE(unread_count bigint, waiting_count bigint, total_count bigint)
+LANGUAGE sql STABLE
+SET search_path TO 'public'
+AS $$
+  SELECT
+    COUNT(*) FILTER (
+      WHERE c.unread_count > 0
+        AND (c.status IS NULL OR c.status NOT IN ('closed','archived'))
+    )::bigint,
+    COUNT(*) FILTER (
+      WHERE c.last_message_is_from_me = false
+        AND (c.status IS NULL OR c.status NOT IN ('closed','archived'))
+    )::bigint,
+    COUNT(*)::bigint
+  FROM public.whatsapp_conversations c
+  WHERE public.can_view_conversation(auth.uid(), c.id)
+    AND (_instance_id IS NULL OR c.instance_id = _instance_id)
+    AND (_status IS NULL OR c.status = _status)
+    AND (_status_in IS NULL OR c.status = ANY(_status_in))
+    AND (_assigned_to IS NULL OR c.assigned_to = _assigned_to)
+    AND (NOT _unassigned OR c.assigned_to IS NULL);
+$$;
+```
 
-## Passo a passo sugerido
-1. Você confirma que o envio manual voltou nas 3 instâncias.
-2. Se sim, sigo com 2a + 2b + 2c num único build.
-3. Se alguma instância ainda estiver `connecting`, corrijo pela plataforma antes de tocar em código.
+Observações técnicas:
+- Removemos `is_super_admin`/`get_user_company_id` porque `can_view_conversation` já cobre esses casos.
+- Mantemos `SECURITY INVOKER` (padrão) para respeitar o `auth.uid()` do chamador — a policy é a mesma que o `SELECT` usa, então zero divergência.
+- Assinatura e retorno da função **não mudam**, então o front (`useWhatsAppConversations.ts`) não precisa ser tocado.
+
+## Validação
+
+1. Antes: `SELECT * FROM get_conversation_counters(_instance_id => '<piscinas>');` retorna 95.
+2. Após migração: mesma chamada deve retornar exatamente o mesmo número que `SELECT count(*) FROM whatsapp_conversations WHERE instance_id = '<piscinas>'` executado pelo usuário do Leonardo (via RLS).
+3. UI: rodapé, badge "Não lidas" e "Aguardando" batem com o número real de linhas paginadas — última página não fica vazia.
+
+## Fora de escopo
+
+- Não vamos mexer em `can_view_conversation` nem em `can_user_see_instance` — a lógica de acesso permanece igual.
+- Sem mudanças de frontend.
