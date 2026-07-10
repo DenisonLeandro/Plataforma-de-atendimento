@@ -1,43 +1,31 @@
-## Contexto
+## Diagnóstico
 
-Boa parte da ETAPA 2 já está no código:
-- `MessageBubble.tsx` já tem `getStatusIcon()` cobrindo `pending/sending/sent/delivered/read/failed` com `Clock`, `Check`, `CheckCheck`, `AlertCircle`.
-- `useWhatsAppMessages.ts` já escuta `INSERT` **e** `UPDATE` via Realtime e faz merge no cache sem recarregar tudo.
-- `useWhatsAppSend.ts` já cria a mensagem otimista com `status: 'sending'` (renderizada como `Clock`).
+O Leonardo é supervisor da empresa "Denison Leandro Advocacia" e tem acesso pleno à instância **Advocacia Ibiporã**. As mensagens **estão chegando normalmente** no banco (71 nas últimas 24h, 24 nas últimas 2h).
 
-O que ainda **não** bate com a especificação:
-1. Tamanho dos ícones é `w-3 h-3` (12px) — pedido é 14px.
-2. Cores não seguem a paleta pedida (`#9CA3AF` / `#3B82F6` / `#EF4444`). Hoje: cinza usa `text-primary-foreground/70` (herda do balão laranja → fica branco em mensagens enviadas), `read` usa `text-blue-500`, `failed` usa `text-red-500`.
-3. Fallback para `status` nulo/indefinido não está explícito (hoje cai no `default` = `Check` cinza herdado — funcional, mas vale deixar explícito).
-4. Ícones aparecem só se `is_from_me` — já correto, manter.
+O problema: **565 das 566 conversas dessa instância estão com status `closed`** e apenas 1 está `active`. Quando um contato manda mensagem nova, a mensagem é salva mas a conversa **continua fechada**, então não aparece na aba "Abertos" do Leonardo.
 
-## Mudanças (somente frontend)
+### Por quê?
 
-### `src/components/chat/MessageBubble.tsx`
-- Reescrever `getStatusIcon()` para:
-  - Retornar `null` quando `!isFromMe`.
-  - Usar `size={14}` em todos os ícones (via prop do lucide, mais preciso que classe).
-  - Aplicar cor via `style={{ color: '#9CA3AF' }}` para `pending/sent/delivered` e fallback, `#3B82F6` para `read`, `#EF4444` para `failed`. Isso sobrepõe o `text-primary-foreground/70` do balão laranja e garante o cinza/azul/vermelho exatos em qualquer tema.
-  - Mapa:
-    - `sending` | `pending` → `Clock` cinza
-    - `sent` → `Check` cinza
-    - `delivered` → `CheckCheck` cinza
-    - `read` → `CheckCheck` azul
-    - `failed` → `AlertCircle` vermelho
-    - default (null/undefined/desconhecido) → `Check` cinza
-- Nenhuma outra mudança no layout, posição, espaçamento, cor de balão ou classe do horário.
+No pedido anterior da **Piscinas Ibiporã**, você pediu para remover o "auto-reopen" (reabrir conversa automaticamente quando o cliente responde). Isso foi aplicado **globalmente** no `evolution-webhook`, o que quebrou o comportamento esperado na Advocacia — lá o Leonardo espera que uma mensagem nova de um cliente reabra a conversa e apareça em "Abertos".
 
-### Nada mais é alterado
-- `useWhatsAppMessages.ts` — já tem listener de `UPDATE`, sem mudança.
-- `useWhatsAppSend.ts` — já emite estado otimista `sending`, sem mudança.
-- Backend, RLS, edge functions, migrations — não tocar.
-- Cor laranja do projeto — intocada.
+## Correção proposta
 
-## Validação
+Tornar o comportamento **configurável por empresa** via `project_config`:
 
-- `npm run build` deve continuar passando (mudança isolada a um componente).
-- Verificação visual: enviar mensagem → Clock cinza → Check cinza (após insert) → CheckCheck cinza (delivered) → CheckCheck azul (read), tudo via Realtime sem reload.
+1. **Migração SQL**
+   - Adicionar coluna `company_id uuid` em `project_config` (com índice único `(company_id, key)`) para permitir configuração por empresa.
+   - Inserir chave `auto_reopen_on_inbound` = `true` para todas as empresas (padrão).
+   - Definir `auto_reopen_on_inbound` = `false` apenas para **Piscinas Ibipora** (mantém o comportamento pedido anteriormente).
+   - Reabrir imediatamente as conversas da **Advocacia Ibiporã** que receberam mensagem inbound nas últimas 48h (para o Leonardo já ver o que caiu).
 
-## Entregável
+2. **`supabase/functions/evolution-webhook/index.ts`**
+   - Em `findOrCreateConversation`, quando a conversa existir e a mensagem for **inbound** (`isFromMe = false`) e o status for `closed`, ler `project_config.auto_reopen_on_inbound` da empresa dona da instância. Se `true`, atualizar a conversa para `status = 'active'`. Se `false`, deixar como está.
+   - Mensagens **outbound** (enviadas pela plataforma ou pelo próprio celular do atendente) não reabrem.
 
-Diff de `src/components/chat/MessageBubble.tsx` + confirmação do build. Sem commit/push até seu OK.
+3. **Sem mudança de UI.** Nenhuma tela nova; se no futuro quiser um toggle nas configurações da empresa, é rápido adicionar depois.
+
+## Detalhe técnico
+
+- `project_config` hoje é global (sem `company_id`). A migração adiciona a coluna, permite `NULL` para chaves globais existentes (`require_account_approval`, `project_url`, `anon_key`) e usa `company_id NOT NULL` para chaves por empresa. Índice único parcial: `(key) WHERE company_id IS NULL` e `(company_id, key) WHERE company_id IS NOT NULL`.
+- RLS: leitura autenticada por qualquer usuário da empresa; escrita restrita a admin da empresa (ou super_admin com acesso).
+- Nenhum impacto em Piscinas — a chave para essa empresa fica `false`, mantendo o comportamento atual (conversas encerradas continuam encerradas).
