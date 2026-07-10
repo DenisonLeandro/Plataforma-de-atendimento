@@ -1115,10 +1115,26 @@ async function processMessageUpdate(payload: EvolutionWebhookPayload, supabase: 
     // Evolution manda status em campos variados: status (string/num) ou ack (num).
     const rawStatus = updates.status ?? updates.ack ?? updates.messageStatus;
     const mapped = mapEvolutionStatus(rawStatus);
-    const messageId = updates.key?.id || data.key?.id;
+    // Evolution manda o ID em formatos diferentes conforme versão/evento:
+    // key.id (upsert clássico), keyId (messages.update self-hosted v2),
+    // messageId, id. Tentamos todos.
+    const messageId =
+      updates.key?.id ||
+      data.key?.id ||
+      updates.keyId ||
+      data.keyId ||
+      updates.messageId ||
+      data.messageId ||
+      updates.id ||
+      data.id;
 
     if (!mapped || !messageId) {
-      console.log('[evolution-webhook] messages.update sem status/id utilizável:', { rawStatus, messageId });
+      console.log('[evolution-webhook] messages.update sem status/id utilizável:', {
+        rawStatus,
+        messageId,
+        dataKeys: Object.keys(data || {}),
+        updatesKeys: updates ? Object.keys(updates) : null,
+      });
       return;
     }
 

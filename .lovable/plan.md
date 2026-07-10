@@ -1,32 +1,58 @@
-## Problema
+## Diagnóstico
 
-Na tela `/whatsapp/contatos`, o cabeçalho do contato (`ContactHeader.tsx`) só permite editar as **Notas**. O nome (`isaias eng43` na imagem) aparece como texto estático, sem botão de edição — então não há como corrigir contatos que ficaram com nome errado, LID ou "Sem nome".
+Confirmado nos logs de `evolution-webhook`:
+- `messages.update` **chega** normalmente para `piscinas-ibipora`, `advocacia-denison`, `cinco-conjuntos`.
+- `rawStatus` sai como string (`"READ"`, `"DELIVERY_ACK"`) — o mapa já cobre isso.
+- Mas o `messageId` sai `undefined`, então o `advanceMessageStatus` nunca roda.
+- Query no banco confirma: 8.269 mensagens `is_from_me=true`, todas em `status='sent'`.
 
-## Solução
+Motivo: `processMessageUpdate` só lê o ID em `updates.key?.id || data.key?.id`. A Evolution (nesse payload de status) manda em `data.keyId` (às vezes `data.messageId` ou `data.id`). Nada a ver com coluna faltando — a coluna `status` já existe e faz o papel do "delivery_status".
 
-Adicionar edição inline do **nome** no `ContactHeader`, no mesmo padrão visual do editor de Notas já existente (ícone lápis → input + Salvar/Cancelar). Vale para todas as empresas e instâncias, pois usa a mesma tabela `whatsapp_contacts` com as RLS multi-tenant já vigentes.
+## Plano (backend só, sem tocar frontend)
 
-### Mudanças
+### 1. Corrigir extração do messageId em `supabase/functions/evolution-webhook/index.ts`
+Na função `processMessageUpdate`, ampliar as chaves consideradas para pegar o ID em todos os formatos que a Evolution usa:
 
-**1. `src/components/contacts/ContactHeader.tsx`**
-- Novo estado `isEditingName`, `name`, `isSavingName`.
-- Ao lado do `<h2>` com o nome, renderizar um botão fantasma com ícone `Pencil` (só aparece no hover ou sempre — seguir padrão simples: sempre visível, discreto, como o botão "Editar" das notas).
-- Em modo edição: substituir o `<h2>` por um `<Input>` controlado + botões Salvar / Cancelar (ícones `Save` / `X`), reutilizando o visual dos botões de notas.
-- `handleSaveName`:
-  - Validar: `name.trim().length > 0`, senão `toast.error("Nome não pode ficar vazio")`.
-  - `supabase.from('whatsapp_contacts').update({ name: name.trim() }).eq('id', contact.id)`.
-  - Em sucesso: `toast.success('Nome atualizado')`, sair do modo edição, invalidar queries `['contact-details', contact.id]`, `['whatsapp-contacts']` e `['whatsapp', 'conversations']` (o nome aparece nos cards de conversa também).
-  - Em erro: `toast.error('Erro ao salvar nome')`.
-- Enter salva, Esc cancela (opcional, alinhado com padrão do app).
+```ts
+const messageId =
+  updates.key?.id ||
+  data.key?.id ||
+  updates.keyId ||
+  data.keyId ||
+  updates.messageId ||
+  data.messageId ||
+  updates.id ||
+  data.id;
+```
 
-### Fora de escopo
-- Não alterar telefone, avatar ou outros campos.
-- Não mexer em RLS: a policy atual de UPDATE em `whatsapp_contacts` já permite que membros da empresa editem seus contatos.
-- Não tocar em nenhum outro componente/hook.
+E logar o payload bruto (uma vez) quando ainda faltar ID, para pegar qualquer variante futura sem precisar adivinhar.
+
+### 2. Deploy de `evolution-webhook`
+Só essa função. `send-whatsapp-message` já grava `status='sent'` com proteção de não retroceder — não precisa mexer.
+
+### 3. Verificação
+- Aguardar 1–2 min após o deploy e conferir logs: linhas do tipo `Message status → delivered for <id>` / `→ read for <id>` devem aparecer.
+- Rodar:
+  ```sql
+  SELECT status, count(*)
+  FROM whatsapp_messages
+  WHERE is_from_me = true AND created_at > now() - interval '1 hour'
+  GROUP BY status;
+  ```
+  Esperado: aparecer `delivered` e `read` para mensagens novas. Mensagens antigas (histórico) continuam em `sent` porque o Evolution não reenviega ACKs passados — isso é limite da Evolution, não do nosso código.
+
+### 4. (Se ainda não funcionar em alguma instância)
+Rodar o botão "Sincronizar webhook" (ícone `Webhook`) no card da instância — garante que `MESSAGES_UPDATE` está habilitado no Evolution. Os logs já mostram que as 3 instâncias testadas recebem o evento, então provavelmente é dispensável.
+
+## Fora de escopo (explicitamente)
+- **Não** criar coluna `delivery_status` (duplicaria `status` e quebraria webhook, send e `MessageBubble`).
+- **Não** mexer em `can_user_see_instance`, `can_access_conversation`, `can_view_conversation`.
+- **Não** adicionar bypass de supervisor.
+- **Não** tocar em cor laranja ou qualquer coisa de UI.
+- **Não** mudar `send-whatsapp-message` (já está correto).
 
 ## Detalhes técnicos
-
-- Arquivo único alterado: `src/components/contacts/ContactHeader.tsx`.
-- Import adicional: `Input` de `@/components/ui/input`, ícone `Pencil` de `lucide-react`.
-- Nenhuma migração de banco necessária.
-- Nenhuma edge function envolvida.
+- Arquivo alterado: `supabase/functions/evolution-webhook/index.ts` (função `processMessageUpdate`, ~10 linhas).
+- Sem migração de banco.
+- Sem mudança de RLS.
+- Deploy: só `evolution-webhook`.
