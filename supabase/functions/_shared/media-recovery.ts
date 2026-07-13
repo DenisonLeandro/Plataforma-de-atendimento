@@ -69,7 +69,7 @@ export async function recoverMessageMedia(
     const { data: message, error: msgError } = await supabase
       .from("whatsapp_messages")
       .select(
-        "id, message_id, remote_jid, is_from_me, message_type, media_mimetype, media_retry_count, conversation_id",
+        "id, message_id, remote_jid, is_from_me, message_type, media_mimetype, media_retry_count, conversation_id, media_status, updated_at",
       )
       .eq("id", messageId)
       .single();
@@ -171,18 +171,27 @@ export async function recoverMessageMedia(
         lastStatus,
         lastRaw.slice(0, 200),
       );
-      // WhatsApp likely purged the media from the server.
+      // Só marca como definitivamente indisponível após >= 3 tentativas E
+      // com >= 6h desde a última atualização. Caso contrário, mantém 'pending'
+      // (o cron retry-pending-media volta a tentar mais tarde), evitando
+      // "sumir" o áudio por um único blip da Evolution.
+      const retryCount = (message.media_retry_count || 0) + 1;
+      const lastUpdatedMs = message.updated_at ? new Date(message.updated_at).getTime() : 0;
+      const ageMs = Date.now() - lastUpdatedMs;
+      const shouldGiveUp = retryCount >= 3 && ageMs > 6 * 60 * 60 * 1000;
       await supabase
         .from("whatsapp_messages")
         .update({
-          media_status: "unavailable",
-          media_error: "Mídia não está mais disponível no WhatsApp",
+          media_status: shouldGiveUp ? "unavailable" : "pending",
+          media_error: shouldGiveUp
+            ? "Mídia não está mais disponível no WhatsApp"
+            : `Evolution não retornou payload (tentativa ${retryCount})`,
+          media_retry_count: retryCount,
         })
         .eq("id", message.id);
-      return {
-        status: "unavailable",
-        error: "Mídia não está mais disponível no WhatsApp",
-      };
+      return shouldGiveUp
+        ? { status: "unavailable", error: "Mídia não está mais disponível no WhatsApp" }
+        : { status: "failed", error: "Evolution payload missing (will retry)", httpStatus: 503 };
     }
 
     // 4. Ask Evolution to give us the base64-decoded media
