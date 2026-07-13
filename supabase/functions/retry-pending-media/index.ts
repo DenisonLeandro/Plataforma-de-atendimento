@@ -11,9 +11,9 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const MAX_PER_RUN = 50;
-const MAX_RETRIES = 8;
-const LOOKBACK_HOURS = 24;
+const DEFAULT_MAX_PER_RUN = 50;
+const DEFAULT_MAX_RETRIES = 8;
+const DEFAULT_LOOKBACK_HOURS = 24;
 const RECOVER_TIMEOUT_MS = 15_000;
 
 Deno.serve(async (req) => {
@@ -26,16 +26,33 @@ Deno.serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
 
-  const since = new Date(Date.now() - LOOKBACK_HOURS * 60 * 60 * 1000).toISOString();
+  // Optional overrides for manual backfill runs (e.g. hoursBack=720, limit=200).
+  let overrides: { hoursBack?: number; limit?: number; maxRetries?: number } = {};
+  try {
+    if (req.method === 'POST') overrides = (await req.json().catch(() => ({}))) as any;
+    else {
+      const url = new URL(req.url);
+      const h = url.searchParams.get('hoursBack');
+      const l = url.searchParams.get('limit');
+      if (h) overrides.hoursBack = Number(h);
+      if (l) overrides.limit = Number(l);
+    }
+  } catch { /* ignore */ }
+
+  const lookbackHours = Math.max(1, Math.min(24 * 60, overrides.hoursBack ?? DEFAULT_LOOKBACK_HOURS));
+  const perRun = Math.max(1, Math.min(500, overrides.limit ?? DEFAULT_MAX_PER_RUN));
+  const maxRetries = Math.max(1, Math.min(20, overrides.maxRetries ?? DEFAULT_MAX_RETRIES));
+
+  const since = new Date(Date.now() - lookbackHours * 60 * 60 * 1000).toISOString();
 
   const { data: rows, error } = await supabase
     .from('whatsapp_messages')
     .select('id, message_type, media_retry_count, created_at')
     .in('media_status', ['pending', 'failed'])
-    .lt('media_retry_count', MAX_RETRIES)
+    .lt('media_retry_count', maxRetries)
     .gte('created_at', since)
     .order('created_at', { ascending: false })
-    .limit(MAX_PER_RUN);
+    .limit(perRun);
 
   if (error) {
     console.error('[retry-pending-media] fetch failed', error);
