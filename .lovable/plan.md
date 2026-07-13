@@ -1,38 +1,59 @@
-Diagnóstico encontrado:
-- A transcrição em si está funcionando quando há crédito: encontrei chamadas recentes com sucesso para `openai/gpt-4o-mini-transcribe`.
-- As falhas recentes principais são `402` no Gateway de IA, ou seja: o limite diário de créditos de IA do workspace chegou a `0 / 5` no período atual.
-- A plataforma está salvando esses casos como `failed`, então o usuário vê “erro de transcrição” genérico, mesmo quando o problema real é limite diário/credito esgotado.
-- Também há risco de tentativas repetidas automáticas consumirem crédito rapidamente quando muitos áudios chegam juntos.
+## Diagnóstico encontrado
 
-Plano de correção:
+A instância **Escritório Virtual** não está falhando por desconexão geral nem por ausência de webhook. O envio chega na Evolution, a Evolution aceita e gera o evento `send.message`, mas logo depois devolve `messages.update` com `status: ERROR`.
 
-1. Melhorar o backend de transcrição
-- Atualizar a função `transcribe-audio` para diferenciar falhas por tipo:
-  - `credits_exhausted` quando o Gateway retornar `402`.
-  - `rate_limited` quando retornar `429`.
-  - `invalid_audio` quando o áudio realmente for inválido/não suportado.
-  - `media_unavailable` quando o arquivo do áudio não puder ser baixado.
-- Salvar o motivo técnico em `metadata.transcription_error` no próprio registro da mensagem.
-- Não marcar falta de crédito como erro genérico; marcar como estado pausado/recuperável.
+Nos dados recentes da conversa “Namorado”, existe um padrão claro:
 
-2. Melhorar a interface do player de áudio
-- Atualizar `AudioMessagePlayer.tsx` para mostrar mensagens corretas:
-  - “Limite diário de IA atingido. Tente novamente quando renovar.”
-  - “Muitas tentativas agora. Tente novamente em alguns segundos.”
-  - “Formato de áudio não suportado.”
-- Evitar toast genérico “Falha ao transcrever áudio” quando o backend já retorna uma causa clara.
+- Antes das falhas, mensagens enviadas pelo WhatsApp real aparecem com sucesso usando `message_id` iniciado por `2A...` e `ack_remote_jid` como `...@lid`.
+- As mensagens enviadas pela plataforma depois disso usam `message_id` iniciado por `3EB...`, passam pelo endpoint da Evolution, mas voltam como `ERROR`.
+- O destino usado pela plataforma é `554399948455@s.whatsapp.net`, porém o WhatsApp real/Evolution também registra identificadores `@lid` para essa mesma conversa.
+- O contato salvo tem telefone `5543999948455`, enquanto o JID técnico usado no envio recente é `554399948455@s.whatsapp.net`. Ou seja: há conflito entre telefone salvo, JID resolvido e LID da conversa.
 
-3. Evitar repetição automática desnecessária
-- Manter auto-transcrição para áudio novo sem status.
-- Não repetir automaticamente áudios com `credits_exhausted`, `rate_limited`, `invalid_audio` ou `audio_too_large`.
-- Permitir tentativa manual pelo botão quando for recuperável.
+Conclusão: para esta instância, o problema mais provável é **roteamento errado de destinatário/JID em conversas com LID**, não apenas sessão desconectada. A plataforma está reenviando para um identificador que a Evolution aceita, mas o WhatsApp rejeita na entrega.
 
-4. Recuperar os áudios recentes que ficaram marcados errado
-- Atualizar os áudios recentes com `transcription_status = failed` causados por falta de crédito para `credits_exhausted`, mantendo-os prontos para nova tentativa manual quando o limite renovar.
-- Não reprocessar todos automaticamente para evitar novo estouro de crédito.
+## Plano de correção
 
-Resultado esperado:
-- O usuário verá o motivo real da falha.
-- A plataforma não vai parecer “quebrada” quando o limite diário de IA acabar.
-- Áudios válidos continuarão transcrevendo normalmente quando houver crédito disponível.
-- Menos tentativas desnecessárias e menos consumo acidental de créditos.
+1. **Corrigir a resolução do destinatário no envio**
+   - Atualizar `send-whatsapp-message` para priorizar o identificador técnico mais confiável por conversa:
+     - primeiro `conversation.metadata.resolved_phone_jid`, quando existir;
+     - depois `conversation.metadata.last_remote_jid`;
+     - depois `contact.metadata.resolved_phone_jid`;
+     - depois `contact.metadata.last_remote_jid`;
+     - depois JIDs de mensagens recentes bem-sucedidas;
+     - por último o telefone do contato.
+   - Para conversas LID, não escolher automaticamente um `@s.whatsapp.net` antigo se os ACKs recentes bem-sucedidos apontam para `@lid`.
+
+2. **Persistir os identificadores corretos vindos do WhatsApp real**
+   - Ajustar `evolution-webhook` para salvar, em mensagens/conversas/contatos:
+     - `remote_jid` original;
+     - `ack_remote_jid`;
+     - `resolved_phone_jid`;
+     - `lid` quando aparecer.
+   - Isso evita que a plataforma perca o identificador correto quando a conversa tem telefone + LID.
+
+3. **Corrigir os dados atuais da instância Escritório Virtual**
+   - Fazer uma atualização pontual nos metadados da conversa/contato afetados, usando os dados já existentes nos webhooks e mensagens recentes.
+   - Manter as mensagens antigas falhadas como falhadas para não reenviar duplicado automaticamente.
+
+4. **Melhorar a detecção de erro de entrega**
+   - Quando a Evolution retornar `ERROR`, salvar no metadado da mensagem:
+     - destino usado no envio;
+     - destino retornado pelo ACK;
+     - motivo técnico;
+     - sugestão de recuperação.
+   - Isso vai permitir identificar rapidamente se a falha futura é sessão corrompida, número inválido ou conflito LID/JID.
+
+5. **Implantar e validar**
+   - Implantar `send-whatsapp-message` e `evolution-webhook`.
+   - Testar a função de envio em uma conversa da instância Escritório Virtual usando o mesmo fluxo real da plataforma.
+   - Confirmar nos logs se a Evolution deixa de retornar `ERROR` e se a mensagem passa para `sent/delivered/read`.
+
+## Arquivos/funções que serão alterados
+
+- `supabase/functions/send-whatsapp-message/index.ts`
+- `supabase/functions/evolution-webhook/index.ts`
+- Dados pontuais em `whatsapp_conversations` e `whatsapp_contacts` da instância Escritório Virtual, sem apagar mensagens.
+
+## Resultado esperado
+
+A instância **Escritório Virtual** deve voltar a enviar mensagens pela plataforma, usando o mesmo identificador técnico que o WhatsApp/Evolution usam para entregar mensagens nessa conversa, em vez de depender apenas do telefone salvo.

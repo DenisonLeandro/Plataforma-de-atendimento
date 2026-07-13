@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { QRCodeSVG } from "qrcode.react";
 import { Tables } from "@/integrations/supabase/types";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -74,6 +75,7 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
   const isSyncing = (isRunning && !isSyncStale) || syncHistory.isPending;
   const instanceMetadata = (instance.metadata || {}) as Record<string, any>;
   const isDeliveryDegraded = instanceMetadata.delivery_degraded === true;
+  const shouldShowQr = instance.status === "connecting" && !!instance.qr_code;
 
   const webhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/evolution-webhook`;
 
@@ -84,6 +86,10 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
 
   const handleTestConnection = async () => {
     try {
+      if (isDeliveryDegraded) {
+        toast.warning("A Evolution mostra conexão aberta, mas os envios estão sendo rejeitados. Use Reconectar para gerar um QR Code novo.");
+        return;
+      }
       // Faz até 3 tentativas se a Evolution responder "connecting" (estado
       // transitório do Baileys que dura poucos segundos quando o socket renova).
       let result: any = null;
@@ -104,7 +110,7 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
 
   const handleReconnect = async () => {
     try {
-      const result = await reconnectInstance.mutateAsync(instance.id);
+      const result = await reconnectInstance.mutateAsync({ id: instance.id, clean: isDeliveryDegraded });
       if (result?.cleanReconnect && result?.qr) {
         toast.info("Sessão limpa iniciada — leia o QR Code novamente para restaurar os envios.", { duration: 10000 });
       } else if (result?.cleanReconnect) {
@@ -229,6 +235,16 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
                   Clique em Reconectar para derrubar a sessão atual e ler o QR Code novamente.
                 </p>
               </div>
+            </div>
+          )}
+          {shouldShowQr && (
+            <div className="space-y-2 rounded-md border border-border bg-card px-3 py-3">
+              <div className="flex justify-center">
+                <QRCodeSVG value={instance.qr_code!} size={192} level="M" includeMargin />
+              </div>
+              <p className="text-center text-xs text-muted-foreground">
+                Leia este QR Code no WhatsApp para concluir a reconexão.
+              </p>
             </div>
           )}
           <div className="text-sm text-muted-foreground">

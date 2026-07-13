@@ -91,7 +91,7 @@ serve(async (req) => {
     // Fetch instance name, provider_type, and instance_id_external
     const { data: instance, error: instanceError } = await supabaseAdmin
       .from('whatsapp_instances')
-      .select('instance_name, provider_type, instance_id_external, status')
+      .select('instance_name, provider_type, instance_id_external, status, metadata')
       .eq('id', instanceId)
       .single();
 
@@ -143,13 +143,17 @@ serve(async (req) => {
 
     const mapped = mapEvolutionState(data, !!responseText);
     const currentStatus = (instance as any).status as string | undefined;
+    const metadata = ((instance as any).metadata || {}) as Record<string, any>;
+    const isDeliveryDegraded = metadata.delivery_degraded === true;
 
     // Importante: `connecting` é um estado intermediário do Baileys que aparece
     // por alguns segundos quando o socket renova. Se a instância já estava
     // `connected`, NÃO rebaixamos — isso evitava o falso "Desconectado" depois
     // de clicar em testar.
     let newStatus: string;
-    if (mapped === 'connecting' && currentStatus === 'connected') {
+    if (isDeliveryDegraded) {
+      newStatus = 'connecting';
+    } else if (mapped === 'connecting' && currentStatus === 'connected') {
       newStatus = 'connected';
     } else {
       newStatus = mapped;
@@ -163,10 +167,10 @@ serve(async (req) => {
       })
       .eq('id', instanceId);
 
-    console.log(`[test-instance-connection] Updated instance status to ${newStatus} (evolution=${mapped})`);
+    console.log(`[test-instance-connection] Updated instance status to ${newStatus} (evolution=${mapped}, degraded=${isDeliveryDegraded})`);
 
     return new Response(
-      JSON.stringify({ ...data, mappedStatus: newStatus, evolutionState: mapped }),
+      JSON.stringify({ ...data, mappedStatus: newStatus, evolutionState: mapped, deliveryDegraded: isDeliveryDegraded }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {

@@ -175,21 +175,26 @@ export const useWhatsAppInstances = () => {
   });
 
   const reconnectInstance = useMutation({
-    mutationFn: async (id: string) => {
+    mutationFn: async (input: string | { id: string; clean?: boolean }) => {
+      const id = typeof input === 'string' ? input : input.id;
+      const clean = typeof input === 'string' ? false : !!input.clean;
       const { data, error } = await supabase.functions.invoke(
         'reconnect-instance',
-        { body: { instanceId: id } }
+        { body: { instanceId: id, clean } }
       );
       if (error) throw error;
-      return data;
+      return { ...data, instanceId: id };
     },
-    onSuccess: (_data, id) => {
+    onSuccess: (data) => {
+      const id = (data as { instanceId?: string })?.instanceId;
       queryClient.invalidateQueries({ queryKey: ['whatsapp', 'instances'] });
       // Reconectar frequentemente reseta a configuração de webhook do Baileys
       // no Evolution — reaplicamos MESSAGES_UPDATE em background.
-      supabase.functions
-        .invoke('sync-instance-webhook', { body: { instanceId: id } })
-        .catch(() => undefined);
+      if (id) {
+        supabase.functions
+          .invoke('sync-instance-webhook', { body: { instanceId: id } })
+          .catch(() => undefined);
+      }
     },
   });
 
