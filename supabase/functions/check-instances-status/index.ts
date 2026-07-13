@@ -23,6 +23,21 @@ function mapEvolutionState(data: any, hasBody: boolean): 'connected' | 'connecti
 }
 
 const FAILURE_THRESHOLD = 3;
+const DELIVERY_FAILURE_THRESHOLD = 3;
+const DELIVERY_FAILURE_WINDOW_MS = 5 * 60 * 1000;
+
+async function countRecentOutboundFailures(supabaseAdmin: any, instanceId: string): Promise<number> {
+  const since = new Date(Date.now() - DELIVERY_FAILURE_WINDOW_MS).toISOString();
+  const { count } = await supabaseAdmin
+    .from('whatsapp_messages')
+    .select('id, whatsapp_conversations!inner(instance_id)', { count: 'exact', head: true })
+    .eq('is_from_me', true)
+    .eq('status', 'failed')
+    .gte('created_at', since)
+    .eq('whatsapp_conversations.instance_id', instanceId);
+
+  return count ?? 0;
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -115,16 +130,39 @@ serve(async (req) => {
 
         const mapped = mapEvolutionState(connectionData, !!responseText);
 
+        const recentDeliveryFailures = await countRecentOutboundFailures(supabaseAdmin, instance.id);
+        const isDeliveryDegraded =
+          currentMeta.delivery_degraded === true &&
+          recentDeliveryFailures >= DELIVERY_FAILURE_THRESHOLD;
+
         // Não rebaixa connected -> disconnected/connecting por estado transitório:
         // só atualiza se vier `open` (zerando falhas) ou se já estávamos fora de connected.
+        // Exceção: socket zumbi. Se envios recentes voltaram ERROR, connectionState
+        // "open" não é suficiente para considerar saudável.
         let newStatus = currentStatus || 'disconnected';
-        if (mapped === 'connected') {
+        if (isDeliveryDegraded) {
+          newStatus = 'connecting';
+        } else if (mapped === 'connected') {
           newStatus = 'connected';
         } else if (currentStatus !== 'connected') {
           newStatus = mapped;
         }
 
-        const newMeta = { ...currentMeta, consecutive_failures: 0, last_check_error: null };
+        const newMeta = {
+          ...currentMeta,
+          consecutive_failures: 0,
+          last_check_error: null,
+          delivery_failure_count: recentDeliveryFailures,
+          ...(isDeliveryDegraded
+            ? {
+                delivery_degraded: true,
+                delivery_degraded_reason: currentMeta.delivery_degraded_reason || 'A conexão está aberta, mas envios recentes retornaram ERROR.',
+                recovery_hint: 'Faça uma reconexão limpa: derrube a sessão atual e leia o QR Code novamente.',
+              }
+            : currentMeta.delivery_degraded
+              ? { delivery_degraded: false, delivery_recovered_at: new Date().toISOString() }
+              : {}),
+        };
         await supabaseAdmin
           .from('whatsapp_instances')
           .update({
