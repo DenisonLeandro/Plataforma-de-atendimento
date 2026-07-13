@@ -13,10 +13,24 @@ interface AudioMessagePlayerProps {
   mimetype?: string | null;
   transcription?: string | null;
   transcriptionStatus?: string | null;
+  transcriptionError?: {
+    code?: string;
+    message?: string;
+  } | null;
   isFromMe: boolean;
 }
 
 const SPEEDS = [1, 1.5, 2] as const;
+const RECOVERABLE_TRANSCRIPTION_STATUSES = new Set([
+  "failed",
+  "credits_exhausted",
+  "rate_limited",
+  "media_unavailable",
+]);
+const TERMINAL_TRANSCRIPTION_STATUSES = new Set([
+  "invalid_audio",
+  "audio_too_large",
+]);
 
 // Global singleton so only one audio plays at a time
 let currentlyPlaying: HTMLAudioElement | null = null;
@@ -26,6 +40,24 @@ function fmt(seconds: number) {
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
   return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function getTranscriptionStatusMessage(status?: string | null, errorMessage?: string) {
+  if (errorMessage) return errorMessage;
+  switch (status) {
+    case "credits_exhausted":
+      return "Limite diário de créditos de IA atingido. Tente novamente quando renovar.";
+    case "rate_limited":
+      return "Muitas requisições de transcrição agora. Tente novamente em alguns segundos.";
+    case "invalid_audio":
+      return "Formato de áudio não suportado para transcrição.";
+    case "audio_too_large":
+      return "Áudio muito grande para transcrever.";
+    case "media_unavailable":
+      return "Não foi possível baixar este áudio para transcrição.";
+    default:
+      return "Não foi possível transcrever este áudio.";
+  }
 }
 
 /**
@@ -91,6 +123,7 @@ export const AudioMessagePlayer = ({
   mimetype,
   transcription,
   transcriptionStatus,
+  transcriptionError,
   isFromMe,
 }: AudioMessagePlayerProps) => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -219,11 +252,15 @@ export const AudioMessagePlayer = ({
       if (error || payload.error) {
         const msg = payload.message
           || (payload.error === "credits_exhausted"
-            ? "Créditos de IA esgotados. Peça ao admin do workspace para aumentar o limite."
+            ? "Limite diário de créditos de IA atingido. Tente novamente quando renovar."
             : payload.error === "audio_too_large"
               ? "Áudio muito grande para transcrever."
               : payload.error === "rate_limited"
                 ? "Muitas requisições. Tente novamente em alguns segundos."
+                : payload.error === "invalid_audio"
+                  ? "Formato de áudio não suportado para transcrição."
+                  : payload.error === "media_unavailable"
+                    ? "Não foi possível baixar este áudio para transcrição."
                 : "Não foi possível transcrever este áudio.");
         toast.error(msg);
       }
@@ -292,7 +329,16 @@ export const AudioMessagePlayer = ({
 
   const hasTranscript = !!transcription;
   const transcribing = transcriptionStatus === "processing" || isRetranscribing;
-  const transcribeFailed = transcriptionStatus === "failed" && !transcription;
+  const transcribeFailed = !!transcriptionStatus &&
+    transcriptionStatus !== "completed" &&
+    transcriptionStatus !== "processing" &&
+    !transcription;
+  const canRetryTranscription = !TERMINAL_TRANSCRIPTION_STATUSES.has(transcriptionStatus ?? "") &&
+    (RECOVERABLE_TRANSCRIPTION_STATUSES.has(transcriptionStatus ?? "") || transcriptionStatus === undefined || transcriptionStatus === null);
+  const transcriptionFailureMessage = getTranscriptionStatusMessage(
+    transcriptionStatus,
+    transcriptionError?.message,
+  );
 
   return (
     <div className="space-y-2 min-w-[240px]">
@@ -380,14 +426,22 @@ export const AudioMessagePlayer = ({
             </div>
           )}
           {!transcribing && transcribeFailed && (
-            <button
-              type="button"
-              onClick={triggerTranscription}
-              className="flex items-center gap-1.5 opacity-80 hover:opacity-100"
-            >
-              <RotateCcw className="w-3 h-3" />
-              <span>Tentar transcrever novamente</span>
-            </button>
+            <div className="space-y-1.5">
+              <div className="flex items-start gap-1.5 opacity-80">
+                <AlertCircle className="w-3 h-3 mt-0.5 shrink-0" />
+                <span>{transcriptionFailureMessage}</span>
+              </div>
+              {canRetryTranscription && (
+                <button
+                  type="button"
+                  onClick={triggerTranscription}
+                  className="flex items-center gap-1.5 opacity-80 hover:opacity-100"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Tentar transcrever novamente</span>
+                </button>
+              )}
+            </div>
           )}
         </div>
       )}

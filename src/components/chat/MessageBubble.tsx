@@ -50,6 +50,10 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
   const isMissingMedia =
     mediaTypes.includes(message.message_type) && !message.media_url;
   const mediaStatus = (message as any).media_status as string | undefined;
+  const transcriptionError = ((message.metadata as any)?.transcription_error ?? null) as {
+    code?: string;
+    message?: string;
+  } | null;
   // Mídia residual apontando pro CDN cru do WhatsApp (.enc) — não recuperada pelo backfill.
   // Não auto-disparamos fetch aqui (evita tempestade de chamadas ao abrir a conversa);
   // mostramos UI graciosa com "Tentar novamente" manual.
@@ -262,6 +266,7 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
               mimetype={message.media_mimetype}
               transcription={(message as any).audio_transcription}
               transcriptionStatus={(message as any).transcription_status}
+              transcriptionError={transcriptionError}
               isFromMe={isFromMe}
             />
           ) : null
