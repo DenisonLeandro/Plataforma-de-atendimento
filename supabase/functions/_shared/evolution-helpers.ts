@@ -76,12 +76,24 @@ export function extractRealPhoneFromKey(key: any, data?: any): string | null {
 // Detect message type from Evolution API message object
 export function getMessageType(message: any): string {
   if (!message) return 'text';
+  // Unwrap common envelopes so encapsulated audios/images/videos are not
+  // misdetected as text (ephemeral messages, view-once, deviceSent, etc.).
+  const inner =
+    message.ephemeralMessage?.message ||
+    message.viewOnceMessage?.message ||
+    message.viewOnceMessageV2?.message ||
+    message.viewOnceMessageV2Extension?.message ||
+    message.deviceSentMessage?.message ||
+    message.documentWithCaptionMessage?.message ||
+    message.editedMessage?.message ||
+    null;
+  if (inner) return getMessageType(inner);
   if (message.reactionMessage) return 'reaction';
   if (message.conversation || message.extendedTextMessage) return 'text';
   if (message.buttonsResponseMessage || message.listResponseMessage || message.templateButtonReplyMessage) return 'text';
   if (message.editedMessage || message.protocolMessage?.editedMessage) return 'text';
   if (message.imageMessage) return 'image';
-  if (message.audioMessage) return 'audio';
+  if (message.audioMessage || message.pttMessage) return 'audio';
   if (message.videoMessage) return 'video';
   if (message.documentMessage) return 'document';
   if (message.stickerMessage) return 'sticker';
