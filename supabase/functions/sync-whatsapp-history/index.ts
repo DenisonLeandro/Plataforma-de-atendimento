@@ -6,6 +6,7 @@ import {
   getMessageType,
   getMessageContent,
   isEditedMessage,
+  getMediaSubMessage,
 } from '../_shared/evolution-helpers.ts';
 
 const corsHeaders = {
@@ -789,7 +790,7 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
               continue;
             }
 
-            const mediaMessage = type !== 'text' ? message[`${type}Message`] : null;
+            const mediaMessage = type !== 'text' ? getMediaSubMessage(message, type) : null;
             let mediaMimetype = mediaMessage?.mimetype || null;
             // Espelha a resolução de mimetype do webhook ao vivo (evolution-webhook:650-655):
             // áudio sem mimetype → OGG/Opus; demais → `${type}/*`.
@@ -800,6 +801,10 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
             // Downloading/decrypting every old media file makes the background
             // chunk exceed runtime limits; live webhooks still save media normally.
             let mediaUrl: string | null = null;
+            // Flag media rows as 'pending' so the retry-pending-media cron and
+            // the auto-fetch in MessageBubble actually try to download them.
+            // Text messages stay as 'none' (default).
+            const mediaStatus = mediaMessage ? 'pending' : 'none';
 
             const quotedMessageId =
               message.extendedTextMessage?.contextInfo?.stanzaId || null;
@@ -812,6 +817,7 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
               message_type: type,
               media_url: mediaUrl,
               media_mimetype: mediaMimetype,
+              media_status: mediaStatus,
               is_from_me: !!key.fromMe,
               status: rec.status || 'sent',
               quoted_message_id: quotedMessageId,
