@@ -1229,6 +1229,20 @@ function mapEvolutionStatus(raw: any): string | null {
   return null;
 }
 
+function normalizeRoutableJid(value: string): string {
+  return value
+    .trim()
+    .replace(/:\d+(?=@(?:lid|s\.whatsapp\.net)$)/i, '');
+}
+
+function isRoutableWhatsAppJid(value: unknown): value is string {
+  return typeof value === 'string' && /@(s\.whatsapp\.net|g\.us|lid)$/i.test(value);
+}
+
+function isReliableDeliveryStatus(value: string): boolean {
+  return value === 'delivered' || value === 'read';
+}
+
 // Atualiza status apenas se avançar (ou for failed). Usa filtro .in() para
 // evitar sobrescrever delivered/read com sent, etc.
 async function advanceMessageStatus(
@@ -1309,11 +1323,12 @@ async function processMessageUpdate(payload: EvolutionWebhookPayload, supabase: 
 
     const ackMetadata: Record<string, any> = {
       last_evolution_ack: rawStatus,
-      ...(updateRemoteJid ? { ack_remote_jid: updateRemoteJid } : {}),
+      ...(updateRemoteJid ? { ack_remote_jid: normalizeRoutableJid(updateRemoteJid) } : {}),
       ...(mapped === 'failed' ? {
         error: 'evolution_ack_error',
         error_reason: 'A Evolution aceitou o envio, mas o WhatsApp retornou ERROR em seguida. A sessão desta instância pode estar conectada visualmente, porém inválida para entrega.',
         error_message_id: messageId,
+        attempted_remote_jid: updateRemoteJid ? normalizeRoutableJid(updateRemoteJid) : undefined,
         recovery_hint: 'Faça uma reconexão limpa da instância e leia o QR Code novamente.',
       } : {}),
     };
@@ -1322,6 +1337,8 @@ async function processMessageUpdate(payload: EvolutionWebhookPayload, supabase: 
     console.log('[evolution-webhook] Message status →', mapped, 'for', messageId);
 
     if (updateRemoteJid) {
+      const normalizedUpdateRemoteJid = normalizeRoutableJid(updateRemoteJid);
+      const shouldPromotePreferredJid = isReliableDeliveryStatus(mapped) && isRoutableWhatsAppJid(normalizedUpdateRemoteJid);
       const { data: msgForJid } = await supabase
         .from('whatsapp_messages')
         .select('conversation_id, whatsapp_conversations!inner(contact_id, metadata)')
@@ -1338,7 +1355,8 @@ async function processMessageUpdate(payload: EvolutionWebhookPayload, supabase: 
           .update({
             metadata: {
               ...conversationMetadata,
-              last_remote_jid: updateRemoteJid,
+              last_remote_jid: normalizedUpdateRemoteJid,
+              ...(shouldPromotePreferredJid ? { preferred_send_jid: normalizedUpdateRemoteJid } : {}),
             },
             updated_at: new Date().toISOString(),
           })
@@ -1357,7 +1375,8 @@ async function processMessageUpdate(payload: EvolutionWebhookPayload, supabase: 
           .update({
             metadata: {
               ...((contactForJid as any)?.metadata || {}),
-              last_remote_jid: updateRemoteJid,
+              last_remote_jid: normalizedUpdateRemoteJid,
+              ...(shouldPromotePreferredJid ? { preferred_send_jid: normalizedUpdateRemoteJid } : {}),
             },
             updated_at: new Date().toISOString(),
           })
@@ -1438,7 +1457,12 @@ async function processConnectionUpdate(payload: EvolutionWebhookPayload, supabas
     // Update instance status
     const { error } = await supabase
       .from('whatsapp_instances')
-      .update({ status: nextStatus, metadata: nextMetadata, updated_at: new Date().toISOString() })
+      .update({
+        status: nextStatus,
+        metadata: nextMetadata,
+        ...(nextStatus === 'connected' ? { qr_code: null } : {}),
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', instanceRow.id);
 
     if (error) {

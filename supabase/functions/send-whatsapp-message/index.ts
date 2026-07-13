@@ -153,7 +153,8 @@ Deno.serve(async (req) => {
       supabase,
       body.conversationId,
       contact.phone_number,
-      contact.metadata || {}
+      contact.metadata || {},
+      ((conversation as any).metadata || {})
     );
 
     // Para mensagens de mídia, baixamos o arquivo do Storage e enviamos como
@@ -417,18 +418,35 @@ async function fetchMediaAsBase64(url: string, supabase: any): Promise<string> {
   return btoa(binary);
 }
 
+function normalizeRoutableJid(value: string): string {
+  return value
+    .trim()
+    // ACKs from Baileys can include a device suffix (ex: 123:23@lid).
+    // Evolution send endpoints route more reliably with the bare JID.
+    .replace(/:\d+(?=@(?:lid|s\.whatsapp\.net)$)/i, '');
+}
+
 function getDestinationNumber(phoneNumber: string): string {
+  const normalized = normalizeRoutableJid(phoneNumber);
   // If the value is already a WhatsApp JID, keep it. Evolution can route with
   // JIDs, and preserving them avoids stale Brazilian 9th-digit rewrites.
-  if (/@(s\.whatsapp\.net|g\.us|lid)$/i.test(phoneNumber)) {
-    return phoneNumber;
+  if (/@(s\.whatsapp\.net|g\.us|lid)$/i.test(normalized)) {
+    return normalized;
   }
   // Otherwise, use only digits
-  return phoneNumber.replace(/\D/g, '');
+  return normalized.replace(/\D/g, '');
 }
 
 function isRoutableWhatsAppJid(value: unknown): value is string {
   return typeof value === 'string' && /@(s\.whatsapp\.net|g\.us|lid)$/i.test(value);
+}
+
+function isLidJid(value: unknown): value is string {
+  return typeof value === 'string' && /@lid$/i.test(value);
+}
+
+function isReliableDeliveryStatus(value: unknown): boolean {
+  return value === 'delivered' || value === 'read';
 }
 
 function hasUsableDigits(value: unknown): value is string {
@@ -439,22 +457,30 @@ async function resolveDestinationNumber(
   supabase: any,
   conversationId: string,
   contactPhoneNumber: string,
-  contactMetadata: Record<string, any>
+  contactMetadata: Record<string, any>,
+  conversationMetadata: Record<string, any> = {}
 ): Promise<string> {
+  const highPriorityCandidates: string[] = [];
   const candidates: string[] = [];
 
-  const addCandidate = (value: unknown) => {
+  const addCandidate = (value: unknown, highPriority = false) => {
     if (typeof value !== 'string') return;
-    const trimmed = value.trim();
-    if (trimmed && !candidates.includes(trimmed)) candidates.push(trimmed);
+    const trimmed = normalizeRoutableJid(value);
+    const target = highPriority ? highPriorityCandidates : candidates;
+    if (trimmed && !target.includes(trimmed)) target.push(trimmed);
   };
+
+  // Explicitly persisted routing hints win. These are populated from delivery
+  // ACKs and manual recovery for LID conversations, where the saved phone and
+  // the actual WhatsApp route can diverge.
+  addCandidate(conversationMetadata.preferred_send_jid, true);
+  addCandidate(contactMetadata.preferred_send_jid, true);
 
   try {
     const { data: recentMessages, error } = await supabase
       .from('whatsapp_messages')
-      .select('remote_jid, is_from_me, timestamp, created_at')
+      .select('remote_jid, is_from_me, status, metadata, timestamp, created_at')
       .eq('conversation_id', conversationId)
-      .not('remote_jid', 'is', null)
       .order('timestamp', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(25);
@@ -464,6 +490,40 @@ async function resolveDestinationNumber(
     }
 
     const messages = recentMessages || [];
+
+    // Most reliable signal: a previous outbound message that WhatsApp actually
+    // delivered/read, especially if its ACK came back as @lid. This fixes the
+    // "Evolution accepts send then ACK ERROR" loop for LID conversations.
+    const successfulAckLid = messages.find(
+      (m: any) =>
+        m.is_from_me &&
+        isReliableDeliveryStatus(m.status) &&
+        isLidJid(m.metadata?.ack_remote_jid)
+    );
+    addCandidate(successfulAckLid?.metadata?.ack_remote_jid, true);
+
+    const successfulAckRoutable = messages.find(
+      (m: any) =>
+        m.is_from_me &&
+        isReliableDeliveryStatus(m.status) &&
+        isRoutableWhatsAppJid(m.metadata?.ack_remote_jid)
+    );
+    addCandidate(successfulAckRoutable?.metadata?.ack_remote_jid, true);
+
+    const successfulRemoteLid = messages.find(
+      (m: any) =>
+        m.is_from_me &&
+        isReliableDeliveryStatus(m.status) &&
+        isLidJid(m.remote_jid)
+    );
+    addCandidate(successfulRemoteLid?.remote_jid, true);
+
+    addCandidate(conversationMetadata.resolved_phone_jid);
+    addCandidate(conversationMetadata.last_remote_jid);
+    addCandidate(contactMetadata.resolved_phone_jid);
+    addCandidate(contactMetadata.last_remote_jid);
+    addCandidate(contactMetadata.raw_remote_jid);
+
     const lastRoutable = messages.find((m: any) => isRoutableWhatsAppJid(m.remote_jid));
     addCandidate(lastRoutable?.remote_jid);
 
@@ -476,13 +536,12 @@ async function resolveDestinationNumber(
     console.warn('[send-whatsapp-message] Destination JID lookup failed:', error);
   }
 
-  addCandidate(contactMetadata.last_remote_jid);
   addCandidate(contactMetadata.remote_jid);
-  addCandidate(contactMetadata.raw_remote_jid);
   addCandidate(contactPhoneNumber);
 
-  const routableJid = candidates.find(isRoutableWhatsAppJid);
-  const chosen = routableJid || candidates.find(hasUsableDigits) || contactPhoneNumber;
+  const orderedCandidates = [...highPriorityCandidates, ...candidates];
+  const routableJid = orderedCandidates.find(isRoutableWhatsAppJid);
+  const chosen = routableJid || orderedCandidates.find(hasUsableDigits) || contactPhoneNumber;
   const destination = getDestinationNumber(chosen);
 
   if (destination !== getDestinationNumber(contactPhoneNumber)) {
