@@ -47,6 +47,12 @@ function getWebhookMessageId(payload: EvolutionWebhookPayload): string | null {
     || payload?.data?.update?.key?.id
     || payload?.data?.message?.key?.id
     || payload?.data?.message?.protocolMessage?.key?.id
+    || payload?.data?.keyId
+    || payload?.data?.update?.keyId
+    || payload?.data?.messageId
+    || payload?.data?.update?.messageId
+    || payload?.data?.id
+    || payload?.data?.update?.id
     || null;
 }
 
@@ -320,7 +326,9 @@ async function findOrCreateContact(
   apiKey?: string,
   instanceName?: string,
   providerType: string = 'self_hosted',
-  lid: string | null = null
+  lid: string | null = null,
+  rawRemoteJid: string | null = null,
+  resolvedPhoneJid: string | null = null
 ): Promise<string | null> {
   try {
     // Gerar variantes do número para números brasileiros
@@ -351,6 +359,15 @@ async function findOrCreateContact(
         .maybeSingle();
       existingContact = byLid ?? null;
     }
+    if (!existingContact && rawRemoteJid) {
+      const { data: byRemoteJid } = await supabase
+        .from('whatsapp_contacts')
+        .select('id, name, phone_number, metadata')
+        .eq('instance_id', instanceId)
+        .filter('metadata->>last_remote_jid', 'eq', rawRemoteJid)
+        .maybeSingle();
+      existingContact = byRemoteJid ?? null;
+    }
     if (!existingContact) {
       const { data: byPhone } = await supabase
         .from('whatsapp_contacts')
@@ -366,11 +383,18 @@ async function findOrCreateContact(
       // Lock: nunca sobrescrever phone_number/name de um contato editado manualmente.
       const manualEdit = metadata.manual_edit === true;
 
-      // Garantir o mapeamento metadata.lid (para reencontrar o contato em mensagens futuras).
-      if (lid && metadata.lid !== lid) {
+      // Garantir mapeamentos técnicos (JID/LID) para roteamento de envio e
+      // reencontro do contato em payloads futuros, sem mexer em nome editado.
+      const nextMetadata = {
+        ...metadata,
+        ...(lid ? { lid } : {}),
+        ...(rawRemoteJid ? { last_remote_jid: rawRemoteJid } : {}),
+        ...(resolvedPhoneJid ? { resolved_phone_jid: resolvedPhoneJid } : {}),
+      };
+      if (JSON.stringify(nextMetadata) !== JSON.stringify(metadata)) {
         await supabase
           .from('whatsapp_contacts')
-          .update({ metadata: { ...metadata, lid }, updated_at: new Date().toISOString() })
+          .update({ metadata: nextMetadata, updated_at: new Date().toISOString() })
           .eq('id', existingContact.id);
       }
 
@@ -419,7 +443,11 @@ async function findOrCreateContact(
         phone_number: phoneNumber,
         name: contactName,
         is_group: isGroup,
-        metadata: lid ? { lid } : {},
+        metadata: {
+          ...(lid ? { lid } : {}),
+          ...(rawRemoteJid ? { last_remote_jid: rawRemoteJid } : {}),
+          ...(resolvedPhoneJid ? { resolved_phone_jid: resolvedPhoneJid } : {}),
+        },
       })
       .select('id')
       .single();
