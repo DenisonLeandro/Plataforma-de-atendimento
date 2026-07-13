@@ -991,7 +991,7 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
     let shouldFetchMedia = false;
 
     if (MEDIA_TYPES.includes(messageType)) {
-      const mediaMessage = message[`${messageType}Message`];
+      const mediaMessage = getMediaSubMessage(message, messageType);
       if (mediaMessage) {
         mediaMimetype = mediaMessage.mimetype || null;
         // WhatsApp voice notes often come back without a mimetype; default to OGG/Opus.
