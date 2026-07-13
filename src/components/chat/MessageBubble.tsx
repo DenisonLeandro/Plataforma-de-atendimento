@@ -87,9 +87,12 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
     }
   };
 
-  // Auto-fetch missing media once when message mounts/updates
+  // Auto-fetch missing media once when message mounts/updates.
+  // We DO auto-fetch when status is 'pending' (webhook download still in-flight
+  // or historical sync placeholder) — the cron reprocesses too, but a user
+  // opening the chat shouldn't have to wait for the next cron tick.
   useEffect(() => {
-    const shouldAutoFetch = isMissingMedia && !['pending', 'failed', 'unavailable'].includes(mediaStatus || '');
+    const shouldAutoFetch = isMissingMedia && !['unavailable'].includes(mediaStatus || '');
     if (shouldAutoFetch && !autoFetchedRef.current && !isFetchingMedia && !fetchFailed) {
       autoFetchedRef.current = true;
       handleFetchMedia();
