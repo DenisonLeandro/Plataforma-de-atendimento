@@ -1097,12 +1097,18 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
       }));
     }
 
+    const { data: currentConversationForUpdate } = await supabase
+      .from('whatsapp_conversations')
+      .select('metadata, unread_count')
+      .eq('id', conversationId)
+      .maybeSingle();
+
     // Update conversation metadata
     const updateData: any = {
       last_message_at: timestamp,
       last_message_preview: content.substring(0, 100),
       metadata: {
-        ...((conversationMetadataForJid as any)?.metadata || {}),
+        ...((currentConversationForUpdate as any)?.metadata || {}),
         last_remote_jid: key.remoteJid,
         resolved_phone_jid: realJid || phoneJid,
       },
@@ -1110,13 +1116,7 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
 
     // Increment unread count only if message is not from me
     if (!key.fromMe) {
-      const { data: currentConv } = await supabase
-        .from('whatsapp_conversations')
-        .select('unread_count')
-        .eq('id', conversationId)
-        .single();
-
-      updateData.unread_count = (currentConv?.unread_count || 0) + 1;
+      updateData.unread_count = ((currentConversationForUpdate as any)?.unread_count || 0) + 1;
     }
 
     const { error: updateError } = await supabase
