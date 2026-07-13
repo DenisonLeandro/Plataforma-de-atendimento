@@ -250,11 +250,14 @@ Deno.serve(async (req) => {
 
       // Sincroniza o status no banco quando for connection closed
       if (looksLikeConnectionClosed(attempt.text)) {
-        await supabase
-          .from('whatsapp_instances')
-          .update({ status: 'connecting', updated_at: new Date().toISOString() })
-          .eq('id', instanceRowId)
-          .catch?.(() => null);
+        try {
+          await supabase
+            .from('whatsapp_instances')
+            .update({ status: 'connecting', updated_at: new Date().toISOString() })
+            .eq('id', instanceRowId);
+        } catch (_e) {
+          // status sync is best-effort; keep returning the send failure below
+        }
       }
 
       return new Response(
