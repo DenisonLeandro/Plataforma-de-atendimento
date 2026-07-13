@@ -8,6 +8,8 @@ import {
   getMessageContent,
   isEditedMessage,
   downloadAndUploadMedia,
+  getMediaSubMessage,
+  unwrapMessage,
 } from '../_shared/evolution-helpers.ts';
 import { fetchWithTimeout } from '../_shared/fetch-with-timeout.ts';
 
@@ -789,7 +791,9 @@ async function downloadAndAttachWebhookMedia(
   },
 ) {
   const { secrets, instanceData, evolutionInstanceId, key, message, messageRowId, conversationId, mediaMimetype, messageType } = params;
-  const delays = [0, 5_000, 20_000];
+  // Longer, more forgiving retry schedule. If all fail we KEEP media_status='pending'
+  // so the retry-pending-media cron picks it up later (never marks 'failed' silently).
+  const delays = [0, 3_000, 15_000, 60_000, 180_000];
   let lastError = 'media download failed';
 
   for (let attempt = 1; attempt <= delays.length; attempt++) {
@@ -826,14 +830,21 @@ async function downloadAndAttachWebhookMedia(
         if (messageType === 'audio') {
           const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
           const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-          fetch(`${supabaseUrl}/functions/v1/transcribe-audio`, {
+          // Wrap the transcription call itself in waitUntil so the outer
+          // background task can complete even if this function shuts down
+          // between the media upload and the transcribe response.
+          const transcribePromise = fetch(`${supabaseUrl}/functions/v1/transcribe-audio`, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${serviceRoleKey}`,
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({ messageId: messageRowId }),
-          }).catch(err => console.error('[evolution-webhook] Error triggering auto-transcription:', err));
+          })
+            .then((r) => r.text().catch(() => ''))
+            .catch((err) => console.error('[evolution-webhook] Error triggering auto-transcription:', err));
+          // @ts-ignore EdgeRuntime is provided by Supabase Edge Runtime
+          try { EdgeRuntime.waitUntil(transcribePromise); } catch { /* best-effort */ }
         }
 
         return;
@@ -843,17 +854,21 @@ async function downloadAndAttachWebhookMedia(
       console.error('[evolution-webhook] Background media attempt failed:', attempt, lastError);
     }
 
+    // Always leave as 'pending' so the cron retry (retry-pending-media)
+    // will keep trying. Only the cron eventually promotes to 'unavailable'.
     await supabase
       .from('whatsapp_messages')
       .update({
-        media_status: attempt >= delays.length ? 'failed' : 'pending',
+        media_status: 'pending',
         media_error: lastError,
         media_retry_count: attempt,
       })
       .eq('id', messageRowId);
   }
 
-  console.error('[evolution-webhook] Background media failed after retries:', { messageRowId, conversationId, messageType });
+  console.error('[evolution-webhook] Background media exhausted webhook retries (pending → cron):', {
+    messageRowId, conversationId, messageType, instance: instanceData?.instance_name,
+  });
 }
 
 // Process message upsert event
