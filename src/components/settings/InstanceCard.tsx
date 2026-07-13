@@ -15,7 +15,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useWhatsAppInstances, useSyncWhatsAppHistory, useSyncJob, useSyncJobCompletion, type SyncJob } from "@/hooks/whatsapp";
-import { RefreshCw, Pencil, Trash2, Copy, Link, Download, Loader2, Plug, Users, Webhook } from "lucide-react";
+import { RefreshCw, Pencil, Trash2, Copy, Link, Download, Loader2, Plug, Users, Webhook, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { EditInstanceDialog } from "./EditInstanceDialog";
 
@@ -72,6 +72,8 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
   const lastSyncUpdateMs = syncJob?.updated_at ? new Date(syncJob.updated_at).getTime() : 0;
   const isSyncStale = isRunning && lastSyncUpdateMs > 0 && Date.now() - lastSyncUpdateMs > 5 * 60 * 1000;
   const isSyncing = (isRunning && !isSyncStale) || syncHistory.isPending;
+  const instanceMetadata = (instance.metadata || {}) as Record<string, any>;
+  const isDeliveryDegraded = instanceMetadata.delivery_degraded === true;
 
   const webhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/evolution-webhook`;
 
@@ -103,7 +105,11 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
   const handleReconnect = async () => {
     try {
       const result = await reconnectInstance.mutateAsync(instance.id);
-      if (result?.alreadyConnected) {
+      if (result?.cleanReconnect && result?.qr) {
+        toast.info("Sessão limpa iniciada — leia o QR Code novamente para restaurar os envios.", { duration: 10000 });
+      } else if (result?.cleanReconnect) {
+        toast.info("Sessão limpa iniciada. Aguarde alguns segundos e gere/teste o QR Code novamente.", { duration: 10000 });
+      } else if (result?.alreadyConnected) {
         toast.success("Instância já está conectada — nada a fazer.");
       } else if (result?.stillConnecting) {
         toast.info("Baileys já está reconectando. Aguarde alguns segundos e teste novamente.");
@@ -214,6 +220,17 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
             <span className="text-muted-foreground">Status:</span>{" "}
             <span className="font-medium">{getStatusText()}</span>
           </div>
+          {isDeliveryDegraded && (
+            <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div className="space-y-1">
+                <p className="font-medium">Sessão conectada, mas rejeitando envios.</p>
+                <p className="text-xs text-destructive/90">
+                  Clique em Reconectar para derrubar a sessão atual e ler o QR Code novamente.
+                </p>
+              </div>
+            </div>
+          )}
           <div className="text-sm text-muted-foreground">
             Criado em {new Date(instance.created_at).toLocaleDateString("pt-BR")}
           </div>
@@ -254,7 +271,7 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
             size="sm"
             onClick={handleReconnect}
             disabled={reconnectInstance.isPending}
-            title="Reconectar (força o socket sem perder a sessão)"
+            title={isDeliveryDegraded ? "Reconexão limpa: derruba a sessão e gera novo QR Code" : "Reconectar (força o socket sem perder a sessão)"}
           >
             {reconnectInstance.isPending ? (
               <Loader2 className="h-4 w-4 animate-spin" />
