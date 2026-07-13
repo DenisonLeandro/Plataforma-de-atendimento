@@ -760,6 +760,7 @@ export type Database = {
       }
       whatsapp_message_edit_history: {
         Row: {
+          company_id: string | null
           conversation_id: string
           created_at: string
           edited_at: string
@@ -768,6 +769,7 @@ export type Database = {
           previous_content: string
         }
         Insert: {
+          company_id?: string | null
           conversation_id: string
           created_at?: string
           edited_at?: string
@@ -776,6 +778,7 @@ export type Database = {
           previous_content: string
         }
         Update: {
+          company_id?: string | null
           conversation_id?: string
           created_at?: string
           edited_at?: string
