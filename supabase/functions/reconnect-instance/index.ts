@@ -7,6 +7,22 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const DELIVERY_FAILURE_THRESHOLD = 3;
+const DELIVERY_FAILURE_LOOKBACK_MS = 24 * 60 * 60 * 1000;
+
+async function countRecentOutboundFailures(supabaseAdmin: any, instanceId: string): Promise<number> {
+  const since = new Date(Date.now() - DELIVERY_FAILURE_LOOKBACK_MS).toISOString();
+  const { count } = await supabaseAdmin
+    .from('whatsapp_messages')
+    .select('id, whatsapp_conversations!inner(instance_id)', { count: 'exact', head: true })
+    .eq('is_from_me', true)
+    .eq('status', 'failed')
+    .gte('created_at', since)
+    .eq('whatsapp_conversations.instance_id', instanceId);
+
+  return count ?? 0;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -82,7 +98,11 @@ serve(async (req) => {
 
     const baseUrl = (secrets.api_url.endsWith('/') ? secrets.api_url.slice(0, -1) : secrets.api_url).replace(/\/manager$/, '');
     const metadata = ((instance as any).metadata || {}) as Record<string, any>;
-    const needsCleanReconnect = clean === true || metadata.delivery_degraded === true;
+    const recentDeliveryFailures = await countRecentOutboundFailures(supabaseAdmin, instanceId);
+    const needsCleanReconnect =
+      clean === true ||
+      metadata.delivery_degraded === true ||
+      recentDeliveryFailures >= DELIVERY_FAILURE_THRESHOLD;
 
     // 1) Checa estado atual antes de forçar nada. Bater em /instance/connect
     //    numa instância já `open` causava status "connecting" falso no banco.
@@ -132,6 +152,7 @@ serve(async (req) => {
           metadata: {
             ...metadata,
             delivery_degraded: false,
+            delivery_failure_count: recentDeliveryFailures,
             clean_reconnect_started_at: new Date().toISOString(),
             clean_reconnect_reason: metadata.delivery_degraded_reason || 'Reconexão limpa solicitada',
           },
@@ -192,6 +213,7 @@ serve(async (req) => {
         metadata: {
           ...metadata,
           delivery_degraded: false,
+          delivery_failure_count: recentDeliveryFailures,
           clean_reconnect_required: false,
           reconnect_started_at: new Date().toISOString(),
         },
