@@ -980,7 +980,9 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
       secrets.api_key,
       evolutionInstanceId,
       instanceData.provider_type || 'self_hosted',
-      lidValue
+      lidValue,
+      key.remoteJid || null,
+      realJid || phoneJid || null
     );
 
     if (!contactId) {
@@ -1099,6 +1101,11 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
     const updateData: any = {
       last_message_at: timestamp,
       last_message_preview: content.substring(0, 100),
+      metadata: {
+        ...((conversationMetadataForJid as any)?.metadata || {}),
+        last_remote_jid: key.remoteJid,
+        resolved_phone_jid: realJid || phoneJid,
+      },
     };
 
     // Increment unread count only if message is not from me
