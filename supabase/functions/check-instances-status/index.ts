@@ -131,9 +131,7 @@ serve(async (req) => {
         const mapped = mapEvolutionState(connectionData, !!responseText);
 
         const recentDeliveryFailures = await countRecentOutboundFailures(supabaseAdmin, instance.id);
-        const isDeliveryDegraded =
-          currentMeta.delivery_degraded === true &&
-          recentDeliveryFailures >= DELIVERY_FAILURE_THRESHOLD;
+        const isDeliveryDegraded = recentDeliveryFailures >= DELIVERY_FAILURE_THRESHOLD;
 
         // Não rebaixa connected -> disconnected/connecting por estado transitório:
         // só atualiza se vier `open` (zerando falhas) ou se já estávamos fora de connected.
