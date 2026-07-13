@@ -142,7 +142,7 @@ serve(async (req) => {
       await new Promise((resolve) => setTimeout(resolve, 1500));
     }
 
-    if (currentState === 'connecting') {
+    if (currentState === 'connecting' && !needsCleanReconnect) {
       // Baileys já está tentando reconectar sozinho. Não força de novo.
       await supabaseAdmin
         .from('whatsapp_instances')
