@@ -1,74 +1,145 @@
-# Diagnóstico — instância "Escritório Virtual" não envia (⚠️ ponto de exclamação)
+## Diagnóstico da instância "Escritório Virtual"
 
-## O que descobri (análise read-only)
+Analisei sem alterar nada.
 
-Rastreei as 3 tentativas de envio feitas hoje (13/07 às 13:39:34, 13:39:41 e 13:39:45) e o comportamento é **igual nas três**:
+### O que está acontecendo
 
-1. Nosso `send-whatsapp-message` chama `/message/sendText` na Evolution API e recebe **200 OK** com um `key.id` válido (`3EB01300AF41FF660163CB`, `3EB0AA90...`, `3EB00CB6...`). Log confirma: `Message sent and saved`.
-2. A mensagem é gravada no banco com `status='sent'`.
-3. **Poucos milissegundos depois**, a Evolution manda um webhook `messages.update` para cada uma dessas mensagens com este payload:
+A instância está **conectada de verdade** na Evolution:
 
-```json
-{
-  "event": "messages.update",
-  "instance": "escritorio-virtual",
-  "data": {
-    "keyId": "3EB01300AF41FF660163CB",
-    "remoteJid": "554699817679@s.whatsapp.net",
-    "fromMe": true,
-    "status": "ERROR"     // ← Evolution está dizendo que falhou
-  }
-}
+- Banco: `connected`
+- Evolution: `state = open`
+- Perfil conectado: `Maria Angelica`
+- Número da instância: `554399776600`
+
+Mas os envios feitos pela plataforma continuam falhando porque a requisição está indo para a Evolution com o **destino em formato errado/incompleto** em alguns contatos.
+
+### Evidência principal
+
+Nos envios que falham, a plataforma salva/enfileira a mensagem usando `remote_jid` apenas como número puro:
+
+```text
+5543999948455
+5541991322900
+554288919751
+558287512346
 ```
 
-4. Nosso webhook faz o que deve: mapeia `status: "ERROR"` → `'failed'` e marca a mensagem com o ponto de exclamação vermelho.
+A Evolution aceita o envio inicialmente, cria um `message_id`, mas logo em seguida devolve:
 
-**Conclusão:** o problema **não é da plataforma**. A Evolution aceita a requisição, mas o socket Baileys da instância `escritorio-virtual` não consegue efetivamente entregar a mensagem ao WhatsApp e reporta ERROR no ack. Isso acontece com todas as conversas (3 números diferentes, 3 ERRORs seguidos), o que descarta problema de contato específico e aponta para **saúde da sessão da instância**.
+```text
+messages.update -> status: ERROR
+```
 
-O DB ainda diz `status='connected'` porque o último `connection.update` foi `open` (01:35 de hoje) — mas o socket interno do Baileys degradou depois disso sem emitir novo `connection.update`. Já vimos esse padrão antes (o famoso "Connection Closed" silencioso).
+Exemplo recente:
 
-## Causa provável (do lado do WhatsApp/Evolution, não do código)
+```text
+Mensagem: "Denison: opa"
+Destino salvo pela plataforma: 5543999948455
+Evolution retorna: status ERROR
+```
 
-- Sessão multi-device expirada / invalidada pelo WhatsApp.
-- Celular pareado ficou muito tempo sem abrir o WhatsApp → sessão pendurada.
-- Instância recebeu logout do outro lado (celular desconectou os dispositivos).
-- Rate-limit / anti-spam do WhatsApp para esse número.
+Já as mensagens que funcionaram na mesma conversa apareceram com o destino completo:
 
-O envio via app do celular provavelmente também está falhando ou o número perdeu o pareamento — isso precisa ser conferido no aparelho.
+```text
+554399948455@s.whatsapp.net
+```
 
-## Ação imediata (fora do código, feita pelo Denison/dono da conta)
+e receberam status corretos:
 
-1. Abrir Configurações → Instâncias → **Escritório Virtual** → clicar em **"Reconectar"**.
-2. Se aparecer QR Code, ler novamente com o WhatsApp do celular.
-3. Se não aparecer QR e continuar com ERROR, **remover a instância no celular** (WhatsApp → Aparelhos conectados → desconectar) e reparear via QR.
+```text
+SERVER_ACK -> DELIVERY_ACK -> READ
+```
 
-## Plano de correção na plataforma (para a próxima vez esse cenário não passar despercebido)
+Ou seja: **a conexão voltou**, mas o envio pela plataforma está escolhendo um identificador de destino diferente do identificador que a própria Evolution/WhatsApp está usando para a conversa.
 
-Faremos 3 melhorias, todas de baixo risco:
+### Por que reconectar não resolveu
 
-### 1. Detectar "ERROR em rajada" e sinalizar a instância como degradada
+Reconectar resolveu a sessão, mas não corrige o erro de roteamento do contato.
 
-Em `supabase/functions/evolution-webhook/index.ts` (`processMessageUpdate`): quando mapear para `'failed'`, incrementar um contador por instância (janela de 5 min). Se ≥ 3 ERRORs em 5 min, forçar `whatsapp_instances.status = 'connecting'` e disparar um `connection.update` fake para o front acordar o banner "Reconectar".
+Também encontrei eventos de desconexão `401` antes da reconexão:
 
-### 2. Guardar o motivo do erro na mensagem
+```text
+state: close
+statusReason: 401
+message: Log out instance: escritorio-virtual
+```
 
-Hoje o balão fica com ⚠️ sem contexto. Vou salvar `metadata.error = 'evolution_ack_error'` (e o `keyId`) para que o `MessageBubble` mostre um tooltip: *"Evolution reportou erro no envio — reconecte a instância"*.
+Depois disso a instância voltou para `open`, porém os envios pela plataforma ainda usam o número salvo antigo em algumas conversas, enquanto os eventos reais do WhatsApp chegam com outro JID.
 
-### 3. Toast diferenciado + botão "Reconectar agora"
+### Situação atual nos últimos envios
 
-Em `src/hooks/whatsapp/useWhatsAppSend.ts` — quando o envio for aceito e o webhook virar `failed` em ≤10s (via Realtime na mensagem otimista), disparar um toast destrutivo com ação *"Reconectar instância"* que leva direto para `/whatsapp/settings`.
+Nos últimos dados da instância:
 
-## Detalhes técnicos
+- 11 mensagens enviadas pela plataforma ficaram `failed`
+- 5 mensagens da mesma instância tiveram confirmação `read`
+- As que funcionam usam JID completo `@s.whatsapp.net`
+- As que falham usam número puro salvo no contato/conversa
 
-- Nada muda no fluxo de sucesso (não impacta as outras instâncias que estão saudáveis).
-- Não alteramos `send-whatsapp-message` — o comportamento dele está correto.
-- A regra monotônica de `advanceMessageStatus` já protege: `failed` sobrescreve `sent`, mas nunca sobrescreve `read`/`delivered` sem querer.
-- A detecção de rajada usa `whatsapp_webhook_events` (já temos janela de tempo e `instance_identifier`).
+### Causa provável
 
-## Fora do escopo
+O problema não é mais "instância desconectada".
 
-- **Não vou** mudar a lógica de retry automático do envio (isso pode gerar mensagens duplicadas quando o socket volta).
-- **Não vou** reconectar a instância automaticamente sem clique do usuário (política antiga do projeto, para evitar QR indesejado).
-- **Não vou** reprocessar as 3 mensagens já `failed` — o usuário decide se reenvia manualmente.  
-  
-tente mesmo assim, enviar as 3 mensagens
+A causa provável agora é uma inconsistência entre:
+
+1. `phone_number` salvo no contato
+2. `remote_jid` real recebido pela Evolution
+3. número alternativo/LID retornado nos eventos do WhatsApp
+4. payload montado em `send-whatsapp-message`
+
+O código atual monta o destino assim:
+
+```text
+contact.phone_number.replace(/\D/g, '')
+```
+
+Isso perde o sufixo correto (`@s.whatsapp.net`) e ignora o `remoteJid` real usado pela Evolution.
+
+## Plano de correção proposto
+
+### 1. Corrigir o destino usado no envio
+
+No `send-whatsapp-message`, em vez de enviar sempre o número limpo do contato, a função deve escolher o melhor destino nesta ordem:
+
+1. `remote_jid` confiável da última mensagem da conversa com `@s.whatsapp.net`
+2. `remote_jid` confiável da última mensagem recebida da conversa
+3. `phone_number` se já tiver `@s.whatsapp.net` ou `@lid`
+4. número limpo apenas como último fallback
+
+Isso evita que mensagens sejam enviadas para um identificador que a Evolution rejeita logo depois.
+
+### 2. Salvar o JID correto quando o webhook receber mensagens
+
+Quando a Evolution enviar `messages.upsert` ou `messages.update`, atualizar o contato/conversa com o JID real usado:
+
+```text
+remoteJid: 554399948455@s.whatsapp.net
+remoteJidAlt: 554399948455@s.whatsapp.net
+```
+
+Sem sobrescrever nomes ou números bons, apenas guardar esse identificador como referência técnica.
+
+### 3. Marcar falhas de ack com motivo claro
+
+Quando a Evolution devolver `status: ERROR`, salvar no metadata da mensagem:
+
+```text
+evolution_ack_error
+remoteJid usado
+keyId
+```
+
+Assim a plataforma mostra que o envio chegou na Evolution, mas foi recusado no ack final.
+
+### 4. Opcional: reenviar as mensagens recentes depois da correção
+
+Depois da correção, posso tentar reenviar apenas as mensagens recentes com `failed` da instância "Escritório Virtual".
+
+Eu não recomendo fazer retry automático sem confirmação, para evitar mensagens duplicadas caso alguma tenha chegado no WhatsApp real apesar do erro.
+
+## Resultado esperado
+
+Após aplicar isso:
+
+- A instância conectada deve conseguir enviar pela plataforma usando o mesmo JID que o WhatsApp/Evolution usa.
+- O ponto de exclamação deve parar para casos em que a falha era causada por destino incorreto.
+- Se ainda houver `ERROR`, ficará claro se é bloqueio/sessão/WhatsApp, e não erro genérico da plataforma.

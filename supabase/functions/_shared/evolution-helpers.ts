@@ -279,7 +279,7 @@ export async function downloadAndUploadMedia(
     const filePath = `${instanceName}/${filename}`;
 
     // Upload to Supabase Storage (bounded by withTimeout — the client has no AbortSignal).
-    const { error: uploadError } = await withTimeout(
+    const uploadResult = await withTimeout(
       supabase.storage
         .from('whatsapp-media')
         .upload(filePath, blob, {
@@ -288,7 +288,8 @@ export async function downloadAndUploadMedia(
         }),
       timeoutMs,
       'storage upload',
-    );
+    ) as { error?: unknown };
+    const uploadError = uploadResult?.error;
 
     if (uploadError) {
       console.error('[media-helpers] Storage upload error:', uploadError);
