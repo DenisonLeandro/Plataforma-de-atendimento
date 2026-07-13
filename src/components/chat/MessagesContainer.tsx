@@ -7,6 +7,7 @@ import { ptBR } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
 import { ChevronDown } from "lucide-react";
 import { useMessageReactions } from "@/hooks/whatsapp";
+import { parseLocalDay } from "@/utils/dateHelpers";
 
 type Message = Tables<'whatsapp_messages'>;
 
@@ -76,7 +77,9 @@ export const MessagesContainer = ({ messages, isLoading, conversationId, onReply
     });
 
     return Object.entries(groups).map(([dateKey, msgs]) => ({
-      date: new Date(dateKey),
+      // Constrói no fuso local — `new Date("YYYY-MM-DD")` seria UTC e
+      // deslocaria o dia em fusos negativos (ex.: UTC-3 vira "Ontem").
+      date: parseLocalDay(dateKey),
       messages: msgs,
     }));
   };

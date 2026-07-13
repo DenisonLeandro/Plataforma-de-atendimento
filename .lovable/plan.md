@@ -1,35 +1,35 @@
 ## Diagnóstico
 
-O problema não parece ser banco cheio nem instância com 96 conversas abertas:
+Os timestamps no banco estão **corretos** (ex.: "Bom dia" das 09:24 → `2026-07-13 12:24 UTC` = 09:24 em São Paulo, hoje).
 
-- O banco está saudável: 689 MB, disco em 53%, memória 47%, conexões 26/60.
-- A instância **Piscinas Ibiporã** tem apenas **7 conversas abertas** e **960 encerradas**.
-- O número **96** é o total global de conversas `active` em todas as instâncias/empresas, não o total filtrado da instância selecionada.
-- A causa provável está no frontend: o filtro “Em Aberto” + paginação/contador pode estar usando um estado amplo/global em vez de sempre prender o contador à instância efetivamente selecionada.
+O bug está apenas na **exibição do separador de data** em `src/components/chat/MessagesContainer.tsx`:
+
+```ts
+const dateKey = format(date, 'yyyy-MM-dd');   // ok: '2026-07-13' no fuso local
+...
+date: new Date(dateKey)                        // BUG: interpreta como UTC meia-noite
+```
+
+`new Date('2026-07-13')` é parseado como **UTC 00:00**. No navegador em UTC-3, isso vira `2026-07-12 21:00` local — então `isToday` retorna `false` e `isYesterday` retorna `true`, mesmo a mensagem sendo de hoje. Qualquer usuário com fuso negativo em relação ao UTC vê "Ontem" para mensagens de hoje enviadas antes das ~21h locais.
+
+Confirma o padrão citado na knowledge base: nunca usar `new Date(stringISOsemHora)` diretamente.
 
 ## Plano de correção
 
-1. **Corrigir a fonte do total mostrado no rodapé**
-   - Ajustar a listagem para exibir o total retornado pela própria consulta filtrada quando houver filtro de status/instância.
-   - Evitar que o contador global de abertas sobrescreva o total real da página.
+1. **Corrigir `MessagesContainer.tsx`** — no agrupamento por data, guardar a data como objeto `Date` no fuso local (construído a partir de ano/mês/dia com `new Date(y, m-1, d)`) em vez de `new Date(dateKey)`. Assim `isToday`, `isYesterday`, `isSameWeek` e `format` operam todos no mesmo fuso do usuário.
 
-2. **Unificar filtros aplicados na lista e no contador**
-   - Garantir que `instanceId`, `status/statusIn`, busca, “minhas”, “fila”, “não lidas” e “aguardando” usem exatamente os mesmos parâmetros para total e lista.
-   - Quando “Em Aberto” estiver selecionado, o total deve contar só conversas abertas visíveis dentro da instância/empresa selecionada.
+2. **Varredura de segurança** — procurar outros usos de `new Date(...)` sobre strings `YYYY-MM-DD` no projeto (ex.: relatórios, filtros de data) e trocar pelo mesmo padrão local-safe onde a intenção for "dia local". Ajustar somente os que exibem/comparam dia; timestamps completos (`YYYY-MM-DDTHH:mm:ssZ`) continuam com `new Date(...)`.
 
-3. **Corrigir o estado da paginação**
-   - Ao mudar instância/status/filtro, resetar para página 1.
-   - Se o total cair e a página atual ficar inválida, voltar automaticamente para a última página válida, impedindo página vazia com contador maior.
+3. **Guardrail para não reintroduzir** — adicionar um helper único `parseLocalDay(dateKey)` em `src/utils/` e usá-lo nos pontos afetados, deixando claro por comentário por que `new Date('YYYY-MM-DD')` é proibido.
 
-4. **Validar com dados reais**
-   - Conferir que **Piscinas Ibiporã + Em Aberto** mostra cerca de **7 conversas**, sem permitir avançar para páginas vazias.
-   - Conferir que o total global “Em Aberto” continua mostrando **96** somente quando nenhuma instância estiver filtrada e o usuário realmente tiver visibilidade de todas essas conversas.
+4. **Validação visual** — abrir uma conversa com mensagem de hoje cedo (ex.: "Bom dia" 09:24) e confirmar que o separador mostra **"Hoje"**; verificar também mensagens de ontem e de dias anteriores continuam corretas.
 
-## Arquivos prováveis
+## Arquivos afetados
 
-- `src/hooks/whatsapp/useWhatsAppConversations.ts`
-- `src/components/conversations/ConversationsSidebar.tsx`
+- `src/components/chat/MessagesContainer.tsx` (correção principal)
+- `src/utils/dateHelpers.ts` (novo helper `parseLocalDay`)
+- Possíveis ajustes pontuais em componentes de relatório se a varredura encontrar o mesmo padrão
 
 ## Resultado esperado
 
-A plataforma não deve mais mostrar “96 conversas” para Piscinas Ibiporã quando existem apenas 7 abertas, e o botão de próxima página ficará desativado quando não houver mais conversas reais para carregar.
+Separadores "Hoje / Ontem / dia da semana / dd/MM/yyyy" sempre refletem o fuso local do usuário — em todas as empresas e instâncias — e o erro não volta porque o parsing de "dia" passa por um helper único e testável.
