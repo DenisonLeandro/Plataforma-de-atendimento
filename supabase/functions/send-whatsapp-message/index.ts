@@ -145,16 +145,21 @@ Deno.serve(async (req) => {
       console.warn('[send-whatsapp-message] Pré-check de estado falhou (ignorado):', e);
     }
 
-    // Determine destination using the same JID that Evolution/WhatsApp uses for
-    // this conversation whenever possible. Some Brazilian numbers differ by the
-    // 9th digit in the saved contact, and sending to the stale phone_number is
-    // accepted by Evolution but immediately comes back as ACK ERROR.
-    const destinationNumber = await resolveDestinationNumber(
+    // Determine destination candidates using the same JID that Evolution/WhatsApp
+    // uses for this conversation whenever possible. Some Brazilian numbers differ
+    // by the 9th digit in the saved contact, and sending to the stale phone_number
+    // is accepted by Evolution but immediately comes back as ACK ERROR. We keep
+    // a fallback candidate so an alternate key can be tried at the HTTP layer.
+    const destinationCandidates = await resolveDestinationCandidates(
       supabase,
       body.conversationId,
       contact.phone_number,
       contact.metadata || {},
       ((conversation as any).metadata || {})
+    );
+    const destinationNumber = destinationCandidates[0];
+    console.log(
+      `[send-whatsapp-message] Destination candidates for ${body.conversationId}: ${JSON.stringify(destinationCandidates)}`
     );
 
     // Para mensagens de mídia, baixamos o arquivo do Storage e enviamos como
@@ -180,30 +185,55 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Build request for Evolution API
-    const { endpoint, requestBody } = buildEvolutionRequest(
-      secrets.api_url,
-      instanceIdentifier,
-      destinationNumber,
-      body
-    );
-
     // Get correct auth headers based on provider type
     const authHeaders = getEvolutionAuthHeaders(secrets.api_key, providerType);
 
-    // Função de envio (usada para o envio inicial e para o retry após recuperar o socket)
-    const doSend = async () => {
-      const r = await fetchWithTimeout(endpoint, {
+    // Envio com fallback de JID: se o primeiro candidato falhar no nível HTTP
+    // (ou a Evolution responder "exists:false" / "not on WhatsApp"), tentamos
+    // o próximo candidato antes de expor o erro ao usuário. Isso evita ficar
+    // preso em uma chave de roteamento (número vs. LID) que a rede WhatsApp
+    // não aceita mais.
+    const looksLikeRoutingRejection = (txt: string) =>
+      /"exists"\s*:\s*false/i.test(txt || '') ||
+      /not\s*on\s*whatsapp/i.test(txt || '') ||
+      /invalid\s*number/i.test(txt || '');
+
+    const doSendWith = async (candidate: string) => {
+      const built = buildEvolutionRequest(
+        secrets.api_url,
+        instanceIdentifier,
+        candidate,
+        body
+      );
+      const r = await fetchWithTimeout(built.endpoint, {
         timeout: 15000,
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders },
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify(built.requestBody),
       });
       const txt = await r.text();
-      return { ok: r.ok, status: r.status, text: txt };
+      return { ok: r.ok, status: r.status, text: txt, candidate };
     };
 
-    let attempt = await doSend();
+    let attempt = await doSendWith(destinationNumber);
+    let usedCandidate = destinationNumber;
+
+    // Se falhou por roteamento (não por socket), tenta o próximo candidato.
+    for (let i = 1; i < destinationCandidates.length; i++) {
+      const httpFailed = !attempt.ok;
+      const routingRejected = attempt.ok && looksLikeRoutingRejection(attempt.text);
+      if (!httpFailed && !routingRejected) break;
+      // Não trocamos de candidato para "Connection Closed" — isso é socket, não JID.
+      if (httpFailed && /Connection\s*Closed/i.test(attempt.text)) break;
+      const alt = destinationCandidates[i];
+      console.warn(
+        `[send-whatsapp-message] Tentativa com ${usedCandidate} falhou (${attempt.status}). Tentando candidato alternativo: ${alt}`
+      );
+      const next = await doSendWith(alt);
+      attempt = next;
+      usedCandidate = alt;
+      if (attempt.ok && !looksLikeRoutingRejection(attempt.text)) break;
+    }
 
     // Se a Evolution devolveu "Connection Closed", o socket Baileys caiu.
     // Tentamos reabrir uma vez via /instance/connect e reenviar.
@@ -235,7 +265,7 @@ Deno.serve(async (req) => {
           .update({ status: 'connecting', updated_at: new Date().toISOString() })
           .eq('id', instanceRowId);
         await new Promise((r) => setTimeout(r, 2500));
-        attempt = await doSend();
+        attempt = await doSendWith(usedCandidate);
       } catch (e) {
         console.error('[send-whatsapp-message] Falha ao tentar recuperar socket:', e);
       }
@@ -300,7 +330,7 @@ Deno.serve(async (req) => {
       .upsert({
         conversation_id: body.conversationId,
         message_id: messageId,
-        remote_jid: destinationNumber,
+        remote_jid: usedCandidate,
         content: messageContent,
         message_type: body.messageType,
         // Preferimos a nossa cópia no Storage (renderizável via signed URL). O
@@ -316,6 +346,8 @@ Deno.serve(async (req) => {
         quoted_message_id: body.quotedMessageId || null,
         metadata: {
           fileName: body.fileName,
+          send_candidate_used: usedCandidate,
+          send_candidates_tried: destinationCandidates,
         },
       }, {
         onConflict: 'conversation_id,message_id',
@@ -453,13 +485,13 @@ function hasUsableDigits(value: unknown): value is string {
   return typeof value === 'string' && value.replace(/\D/g, '').length >= 10;
 }
 
-async function resolveDestinationNumber(
+async function resolveDestinationCandidates(
   supabase: any,
   conversationId: string,
   contactPhoneNumber: string,
   contactMetadata: Record<string, any>,
   conversationMetadata: Record<string, any> = {}
-): Promise<string> {
+): Promise<string[]> {
   const highPriorityCandidates: string[] = [];
   const candidates: string[] = [];
 
@@ -475,6 +507,8 @@ async function resolveDestinationNumber(
   // the actual WhatsApp route can diverge.
   addCandidate(conversationMetadata.preferred_send_jid, true);
   addCandidate(contactMetadata.preferred_send_jid, true);
+  // Explicit LID hint on the contact metadata (populated from delivery ACKs).
+  addCandidate(contactMetadata.lid, true);
 
   try {
     const { data: recentMessages, error } = await supabase
@@ -540,15 +574,23 @@ async function resolveDestinationNumber(
   addCandidate(contactPhoneNumber);
 
   const orderedCandidates = [...highPriorityCandidates, ...candidates];
-  const routableJid = orderedCandidates.find(isRoutableWhatsAppJid);
-  const chosen = routableJid || orderedCandidates.find(hasUsableDigits) || contactPhoneNumber;
-  const destination = getDestinationNumber(chosen);
 
-  if (destination !== getDestinationNumber(contactPhoneNumber)) {
-    console.log('[send-whatsapp-message] Using conversation remote_jid as destination instead of contact phone');
-  }
-
-  return destination;
+  // Deduplicated ordered list of send-ready destinations. We prefer routable
+  // JIDs first, then digit fallbacks. The caller may try more than one if the
+  // first is rejected by Evolution/WhatsApp routing.
+  const seen = new Set<string>();
+  const finalList: string[] = [];
+  const pushDest = (raw: string) => {
+    const d = getDestinationNumber(raw);
+    if (d && !seen.has(d)) {
+      seen.add(d);
+      finalList.push(d);
+    }
+  };
+  for (const c of orderedCandidates) if (isRoutableWhatsAppJid(c)) pushDest(c);
+  for (const c of orderedCandidates) if (!isRoutableWhatsAppJid(c) && hasUsableDigits(c)) pushDest(c);
+  if (finalList.length === 0) pushDest(contactPhoneNumber);
+  return finalList;
 }
 
 function buildEvolutionRequest(
