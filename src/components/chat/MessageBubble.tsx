@@ -145,7 +145,15 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
       case 'read':
         return <CheckCheck size={14} style={{ color: BLUE }} />;
       case 'failed':
-        return <AlertCircle size={14} style={{ color: RED }} />;
+        return (
+          <AlertCircle
+            size={14}
+            style={{ color: RED }}
+            aria-label="Falha na entrega"
+          >
+            <title>Falha na entrega. Se acontecer com várias mensagens, reconecte a instância.</title>
+          </AlertCircle>
+        );
       default:
         return <Check size={14} style={{ color: GRAY }} />;
     }
