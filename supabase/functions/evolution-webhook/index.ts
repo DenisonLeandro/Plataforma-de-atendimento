@@ -1188,6 +1188,40 @@ async function processMessageUpdate(payload: EvolutionWebhookPayload, supabase: 
 
     await advanceMessageStatus(supabase, messageId, mapped);
     console.log('[evolution-webhook] Message status →', mapped, 'for', messageId);
+
+    // Detecção de "burst" de falhas: se a mesma instância teve 3+ mensagens
+    // marcadas como failed nos últimos 5 minutos, marcamos como 'connecting'
+    // para o usuário perceber e reconectar (o Baileys costuma aceitar o
+    // send e depois responder ERROR quando o socket está degradado).
+    if (mapped === 'failed') {
+      try {
+        const { data: msg } = await supabase
+          .from('whatsapp_messages')
+          .select('conversation_id, whatsapp_conversations!inner(instance_id)')
+          .eq('message_id', messageId)
+          .maybeSingle();
+        const instanceId = (msg as any)?.whatsapp_conversations?.instance_id;
+        if (instanceId) {
+          const since = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+          const { count } = await supabase
+            .from('whatsapp_messages')
+            .select('id, whatsapp_conversations!inner(instance_id)', { count: 'exact', head: true })
+            .eq('status', 'failed')
+            .gte('created_at', since)
+            .eq('whatsapp_conversations.instance_id', instanceId);
+          if ((count ?? 0) >= 3) {
+            await supabase
+              .from('whatsapp_instances')
+              .update({ status: 'connecting' })
+              .eq('id', instanceId)
+              .eq('status', 'connected');
+            console.log('[evolution-webhook] Burst de falhas detectado, instância marcada como connecting:', instanceId);
+          }
+        }
+      } catch (e) {
+        console.error('[evolution-webhook] Erro em burst-detect:', e);
+      }
+    }
   } catch (error) {
     console.error('[evolution-webhook] Error in processMessageUpdate:', error);
   }
