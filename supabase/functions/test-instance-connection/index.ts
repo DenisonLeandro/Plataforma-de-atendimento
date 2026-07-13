@@ -163,6 +163,7 @@ serve(async (req) => {
       .from('whatsapp_instances')
       .update({
         status: newStatus,
+        ...(newStatus === 'connected' ? { qr_code: null } : {}),
         updated_at: new Date().toISOString(),
       })
       .eq('id', instanceId);

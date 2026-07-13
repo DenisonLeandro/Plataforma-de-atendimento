@@ -1457,7 +1457,12 @@ async function processConnectionUpdate(payload: EvolutionWebhookPayload, supabas
     // Update instance status
     const { error } = await supabase
       .from('whatsapp_instances')
-      .update({ status: nextStatus, metadata: nextMetadata, updated_at: new Date().toISOString() })
+      .update({
+        status: nextStatus,
+        metadata: nextMetadata,
+        ...(nextStatus === 'connected' ? { qr_code: null } : {}),
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', instanceRow.id);
 
     if (error) {
