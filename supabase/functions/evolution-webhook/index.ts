@@ -1173,7 +1173,12 @@ function mapEvolutionStatus(raw: any): string | null {
 
 // Atualiza status apenas se avançar (ou for failed). Usa filtro .in() para
 // evitar sobrescrever delivered/read com sent, etc.
-async function advanceMessageStatus(supabase: any, messageId: string, newStatus: string) {
+async function advanceMessageStatus(
+  supabase: any,
+  messageId: string,
+  newStatus: string,
+  metadataPatch: Record<string, any> = {}
+) {
   if (!messageId || !newStatus) return;
   let query = supabase.from('whatsapp_messages').update({ status: newStatus }).eq('message_id', messageId);
   if (newStatus !== 'failed') {
@@ -1188,6 +1193,20 @@ async function advanceMessageStatus(supabase: any, messageId: string, newStatus:
   }
   const { error } = await query;
   if (error) console.error('[evolution-webhook] advanceMessageStatus error:', error);
+
+  if (Object.keys(metadataPatch).length > 0) {
+    const { data: messages } = await supabase
+      .from('whatsapp_messages')
+      .select('id, metadata')
+      .eq('message_id', messageId);
+
+    for (const message of messages || []) {
+      await supabase
+        .from('whatsapp_messages')
+        .update({ metadata: { ...(message.metadata || {}), ...metadataPatch } })
+        .eq('id', message.id);
+    }
+  }
 }
 
 async function processMessageUpdate(payload: EvolutionWebhookPayload, supabase: any) {
@@ -1211,6 +1230,15 @@ async function processMessageUpdate(payload: EvolutionWebhookPayload, supabase: 
       updates.id ||
       data.id;
 
+    const updateRemoteJid =
+      updates.key?.remoteJid ||
+      data.key?.remoteJid ||
+      updates.remoteJid ||
+      data.remoteJid ||
+      updates.remote_jid ||
+      data.remote_jid ||
+      null;
+
     if (!mapped || !messageId) {
       console.log('[evolution-webhook] messages.update sem status/id utilizável:', {
         rawStatus,
@@ -1221,8 +1249,62 @@ async function processMessageUpdate(payload: EvolutionWebhookPayload, supabase: 
       return;
     }
 
-    await advanceMessageStatus(supabase, messageId, mapped);
+    const ackMetadata: Record<string, any> = {
+      last_evolution_ack: rawStatus,
+      ...(updateRemoteJid ? { ack_remote_jid: updateRemoteJid } : {}),
+      ...(mapped === 'failed' ? {
+        error: 'evolution_ack_error',
+        error_reason: 'Evolution reported ERROR in messages.update after accepting the send',
+        error_message_id: messageId,
+      } : {}),
+    };
+
+    await advanceMessageStatus(supabase, messageId, mapped, ackMetadata);
     console.log('[evolution-webhook] Message status →', mapped, 'for', messageId);
+
+    if (updateRemoteJid) {
+      const { data: msgForJid } = await supabase
+        .from('whatsapp_messages')
+        .select('conversation_id, whatsapp_conversations!inner(contact_id, metadata)')
+        .eq('message_id', messageId)
+        .maybeSingle();
+
+      const conversationId = (msgForJid as any)?.conversation_id;
+      const contactId = (msgForJid as any)?.whatsapp_conversations?.contact_id;
+      const conversationMetadata = (msgForJid as any)?.whatsapp_conversations?.metadata || {};
+
+      if (conversationId) {
+        await supabase
+          .from('whatsapp_conversations')
+          .update({
+            metadata: {
+              ...conversationMetadata,
+              last_remote_jid: updateRemoteJid,
+            },
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', conversationId);
+      }
+
+      if (contactId) {
+        const { data: contactForJid } = await supabase
+          .from('whatsapp_contacts')
+          .select('metadata')
+          .eq('id', contactId)
+          .maybeSingle();
+
+        await supabase
+          .from('whatsapp_contacts')
+          .update({
+            metadata: {
+              ...((contactForJid as any)?.metadata || {}),
+              last_remote_jid: updateRemoteJid,
+            },
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', contactId);
+      }
+    }
 
     // Detecção de "burst" de falhas: se a mesma instância teve 3+ mensagens
     // marcadas como failed nos últimos 5 minutos, marcamos como 'connecting'
