@@ -102,6 +102,31 @@ export function getMessageType(message: any): string {
   return 'text';
 }
 
+// Return the inner message after unwrapping ephemeral / view-once / deviceSent
+// envelopes. Callers use this to find `${type}Message` on the correct object.
+export function unwrapMessage(message: any): any {
+  if (!message) return message;
+  const inner =
+    message.ephemeralMessage?.message ||
+    message.viewOnceMessage?.message ||
+    message.viewOnceMessageV2?.message ||
+    message.viewOnceMessageV2Extension?.message ||
+    message.deviceSentMessage?.message ||
+    message.documentWithCaptionMessage?.message ||
+    message.editedMessage?.message ||
+    null;
+  return inner ? unwrapMessage(inner) : message;
+}
+
+// Return the media sub-message for a detected type, handling PTT audio which
+// lives under `pttMessage` on some Evolution/Baileys versions.
+export function getMediaSubMessage(message: any, type: string): any | null {
+  const m = unwrapMessage(message);
+  if (!m) return null;
+  if (type === 'audio') return m.audioMessage || m.pttMessage || null;
+  return m[`${type}Message`] || null;
+}
+
 // Detect if message is an edited message
 export function isEditedMessage(message: any): boolean {
   return !!(message?.editedMessage || message?.protocolMessage?.editedMessage);
