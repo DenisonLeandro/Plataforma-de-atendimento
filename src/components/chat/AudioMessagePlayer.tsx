@@ -94,6 +94,7 @@ export const AudioMessagePlayer = ({
   isFromMe,
 }: AudioMessagePlayerProps) => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const mediaUrlRef = useRef(mediaUrl);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -106,11 +107,19 @@ export const AudioMessagePlayer = ({
   const blobUrlRef = useRef<string | null>(null);
   const queryClient = useQueryClient();
 
-  // Build / rebuild audio element when mediaUrl changes
+  // Keep the latest URL in a ref so we can read it inside handlers without
+  // rebuilding the <audio> element every time the signed URL renews.
+  useEffect(() => {
+    mediaUrlRef.current = mediaUrl;
+  }, [mediaUrl]);
+
+  // Build the audio element ONCE per message. Rebuilding on every mediaUrl
+  // change (e.g. signed URL refresh) was destroying playback mid-play.
   useEffect(() => {
     const audio = new Audio();
-    audio.preload = "metadata";
-    audio.src = mediaUrl;
+    audio.preload = "auto";
+    audio.crossOrigin = "anonymous";
+    audio.src = mediaUrlRef.current;
     audioRef.current = audio;
     setError(false);
     triedFallbackRef.current = false;
@@ -131,9 +140,19 @@ export const AudioMessagePlayer = ({
         return;
       }
       triedFallbackRef.current = true;
+      // Only attempt the expensive AudioContext transcode on Safari (which
+      // cannot decode OGG/Opus natively). On Chromium/Firefox this fallback
+      // is a common source of "freezing", so we surface the error instead.
+      const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+      if (!isSafari) {
+        setError(true);
+        setIsLoading(false);
+        setIsPlaying(false);
+        return;
+      }
       try {
         setIsLoading(true);
-        const wavUrl = await transcodeToWav(mediaUrl);
+        const wavUrl = await transcodeToWav(mediaUrlRef.current);
         if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
         blobUrlRef.current = wavUrl;
         audio.src = wavUrl;
@@ -163,7 +182,7 @@ export const AudioMessagePlayer = ({
         blobUrlRef.current = null;
       }
     };
-  }, [mediaUrl]);
+  }, [messageId]);
 
   // Trigger transcription if missing
   useEffect(() => {
