@@ -66,7 +66,8 @@ Deno.serve(async (req) => {
         *,
         whatsapp_contacts!inner (
           phone_number,
-          name
+          name,
+          metadata
         ),
         whatsapp_instances!inner (
           id,
@@ -144,8 +145,16 @@ Deno.serve(async (req) => {
       console.warn('[send-whatsapp-message] Pré-check de estado falhou (ignorado):', e);
     }
 
-    // Determine destination number format
-    const destinationNumber = getDestinationNumber(contact.phone_number);
+    // Determine destination using the same JID that Evolution/WhatsApp uses for
+    // this conversation whenever possible. Some Brazilian numbers differ by the
+    // 9th digit in the saved contact, and sending to the stale phone_number is
+    // accepted by Evolution but immediately comes back as ACK ERROR.
+    const destinationNumber = await resolveDestinationNumber(
+      supabase,
+      body.conversationId,
+      contact.phone_number,
+      contact.metadata || {}
+    );
 
     // Para mensagens de mídia, baixamos o arquivo do Storage e enviamos como
     // base64. Isso evita que o envio falhe quando a Evolution API não consegue
@@ -287,7 +296,7 @@ Deno.serve(async (req) => {
       .upsert({
         conversation_id: body.conversationId,
         message_id: messageId,
-        remote_jid: contact.phone_number,
+        remote_jid: destinationNumber,
         content: messageContent,
         message_type: body.messageType,
         // Preferimos a nossa cópia no Storage (renderizável via signed URL). O
@@ -406,12 +415,78 @@ async function fetchMediaAsBase64(url: string, supabase: any): Promise<string> {
 }
 
 function getDestinationNumber(phoneNumber: string): string {
-  // If phone ends with @lid (LinkedIn format), use complete format
-  if (phoneNumber.includes('@lid')) {
+  // If the value is already a WhatsApp JID, keep it. Evolution can route with
+  // JIDs, and preserving them avoids stale Brazilian 9th-digit rewrites.
+  if (/@(s\.whatsapp\.net|g\.us|lid)$/i.test(phoneNumber)) {
     return phoneNumber;
   }
   // Otherwise, use only digits
   return phoneNumber.replace(/\D/g, '');
+}
+
+function isRoutableWhatsAppJid(value: unknown): value is string {
+  return typeof value === 'string' && /@(s\.whatsapp\.net|g\.us|lid)$/i.test(value);
+}
+
+function hasUsableDigits(value: unknown): value is string {
+  return typeof value === 'string' && value.replace(/\D/g, '').length >= 10;
+}
+
+async function resolveDestinationNumber(
+  supabase: any,
+  conversationId: string,
+  contactPhoneNumber: string,
+  contactMetadata: Record<string, any>
+): Promise<string> {
+  const candidates: string[] = [];
+
+  const addCandidate = (value: unknown) => {
+    if (typeof value !== 'string') return;
+    const trimmed = value.trim();
+    if (trimmed && !candidates.includes(trimmed)) candidates.push(trimmed);
+  };
+
+  try {
+    const { data: recentMessages, error } = await supabase
+      .from('whatsapp_messages')
+      .select('remote_jid, is_from_me, timestamp, created_at')
+      .eq('conversation_id', conversationId)
+      .not('remote_jid', 'is', null)
+      .order('timestamp', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(25);
+
+    if (error) {
+      console.warn('[send-whatsapp-message] Failed to inspect recent remote_jids:', error.message);
+    }
+
+    const messages = recentMessages || [];
+    const lastRoutable = messages.find((m: any) => isRoutableWhatsAppJid(m.remote_jid));
+    addCandidate(lastRoutable?.remote_jid);
+
+    const lastInboundRoutable = messages.find((m: any) => !m.is_from_me && isRoutableWhatsAppJid(m.remote_jid));
+    addCandidate(lastInboundRoutable?.remote_jid);
+
+    const lastWithDigits = messages.find((m: any) => hasUsableDigits(m.remote_jid));
+    addCandidate(lastWithDigits?.remote_jid);
+  } catch (error) {
+    console.warn('[send-whatsapp-message] Destination JID lookup failed:', error);
+  }
+
+  addCandidate(contactMetadata.last_remote_jid);
+  addCandidate(contactMetadata.remote_jid);
+  addCandidate(contactMetadata.raw_remote_jid);
+  addCandidate(contactPhoneNumber);
+
+  const routableJid = candidates.find(isRoutableWhatsAppJid);
+  const chosen = routableJid || candidates.find(hasUsableDigits) || contactPhoneNumber;
+  const destination = getDestinationNumber(chosen);
+
+  if (destination !== getDestinationNumber(contactPhoneNumber)) {
+    console.log('[send-whatsapp-message] Using conversation remote_jid as destination instead of contact phone');
+  }
+
+  return destination;
 }
 
 function buildEvolutionRequest(
