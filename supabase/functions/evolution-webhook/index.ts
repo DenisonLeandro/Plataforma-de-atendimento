@@ -21,6 +21,8 @@ const corsHeaders = {
 const WEBHOOK_MAX_ATTEMPTS = 5;
 const WEBHOOK_RETRY_BASE_MS = 15_000;
 const MEDIA_TYPES = ['audio', 'image', 'video', 'document', 'sticker'];
+const DELIVERY_FAILURE_THRESHOLD = 3;
+const DELIVERY_FAILURE_WINDOW_MS = 5 * 60 * 1000;
 
 // Auto sentiment analysis threshold (number of client messages to trigger analysis)
 const AUTO_SENTIMENT_THRESHOLD = 5;
@@ -72,6 +74,62 @@ async function findInstanceIdForWebhook(supabase: any, instanceIdentifier: strin
     .maybeSingle();
 
   return byExternalId?.id ?? null;
+}
+
+async function findInstanceForWebhook(supabase: any, instanceIdentifier: string): Promise<any | null> {
+  const { data: byName } = await supabase
+    .from('whatsapp_instances')
+    .select('id, instance_name, status, metadata')
+    .eq('instance_name', instanceIdentifier)
+    .maybeSingle();
+
+  if (byName?.id) return byName;
+
+  const { data: byExternalId } = await supabase
+    .from('whatsapp_instances')
+    .select('id, instance_name, status, metadata')
+    .eq('instance_id_external', instanceIdentifier)
+    .maybeSingle();
+
+  return byExternalId ?? null;
+}
+
+async function countRecentOutboundFailures(supabase: any, instanceId: string): Promise<number> {
+  const since = new Date(Date.now() - DELIVERY_FAILURE_WINDOW_MS).toISOString();
+  const { count } = await supabase
+    .from('whatsapp_messages')
+    .select('id, whatsapp_conversations!inner(instance_id)', { count: 'exact', head: true })
+    .eq('is_from_me', true)
+    .eq('status', 'failed')
+    .gte('created_at', since)
+    .eq('whatsapp_conversations.instance_id', instanceId);
+
+  return count ?? 0;
+}
+
+async function markInstanceDeliveryDegraded(supabase: any, instanceId: string, failureCount: number) {
+  const { data: instance } = await supabase
+    .from('whatsapp_instances')
+    .select('metadata')
+    .eq('id', instanceId)
+    .maybeSingle();
+
+  const metadata = (instance?.metadata || {}) as Record<string, any>;
+  await supabase
+    .from('whatsapp_instances')
+    .update({
+      status: 'connecting',
+      metadata: {
+        ...metadata,
+        delivery_degraded: true,
+        delivery_failure_count: failureCount,
+        delivery_degraded_at: new Date().toISOString(),
+        delivery_degraded_reason: 'A Evolution aceitou o envio, mas o WhatsApp retornou ERROR em seguida. A sessão pode estar conectada visualmente, porém inválida para entrega.',
+        recovery_hint: 'Faça uma reconexão limpa: derrube a sessão atual e leia o QR Code novamente.',
+      },
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', instanceId);
 }
 
 async function enqueueWebhookEvent(supabase: any, payload: EvolutionWebhookPayload) {
@@ -1254,8 +1312,9 @@ async function processMessageUpdate(payload: EvolutionWebhookPayload, supabase: 
       ...(updateRemoteJid ? { ack_remote_jid: updateRemoteJid } : {}),
       ...(mapped === 'failed' ? {
         error: 'evolution_ack_error',
-        error_reason: 'Evolution reported ERROR in messages.update after accepting the send',
+        error_reason: 'A Evolution aceitou o envio, mas o WhatsApp retornou ERROR em seguida. A sessão desta instância pode estar conectada visualmente, porém inválida para entrega.',
         error_message_id: messageId,
+        recovery_hint: 'Faça uma reconexão limpa da instância e leia o QR Code novamente.',
       } : {}),
     };
 
@@ -1306,10 +1365,9 @@ async function processMessageUpdate(payload: EvolutionWebhookPayload, supabase: 
       }
     }
 
-    // Detecção de "burst" de falhas: se a mesma instância teve 3+ mensagens
-    // marcadas como failed nos últimos 5 minutos, marcamos como 'connecting'
-    // para o usuário perceber e reconectar (o Baileys costuma aceitar o
-    // send e depois responder ERROR quando o socket está degradado).
+    // Detecção de "socket zumbi": a Evolution aceita o send, mas o WhatsApp
+    // devolve ERROR logo depois. Nesse caso a connectionState pode continuar
+    // "open", então marcamos a instância como degradada para não exibir saúde falsa.
     if (mapped === 'failed') {
       try {
         const { data: msg } = await supabase
@@ -1319,20 +1377,10 @@ async function processMessageUpdate(payload: EvolutionWebhookPayload, supabase: 
           .maybeSingle();
         const instanceId = (msg as any)?.whatsapp_conversations?.instance_id;
         if (instanceId) {
-          const since = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-          const { count } = await supabase
-            .from('whatsapp_messages')
-            .select('id, whatsapp_conversations!inner(instance_id)', { count: 'exact', head: true })
-            .eq('status', 'failed')
-            .gte('created_at', since)
-            .eq('whatsapp_conversations.instance_id', instanceId);
-          if ((count ?? 0) >= 3) {
-            await supabase
-              .from('whatsapp_instances')
-              .update({ status: 'connecting' })
-              .eq('id', instanceId)
-              .eq('status', 'connected');
-            console.log('[evolution-webhook] Burst de falhas detectado, instância marcada como connecting:', instanceId);
+          const failureCount = await countRecentOutboundFailures(supabase, instanceId);
+          if (failureCount >= DELIVERY_FAILURE_THRESHOLD) {
+            await markInstanceDeliveryDegraded(supabase, instanceId, failureCount);
+            console.log('[evolution-webhook] Socket zumbi detectado, instância marcada como connecting:', instanceId, 'falhas=', failureCount);
           }
         }
       } catch (e) {
@@ -1358,16 +1406,45 @@ async function processConnectionUpdate(payload: EvolutionWebhookPayload, supabas
     else if (state === 'connecting') status = 'connecting';
     else if (state === 'close' || state === 'closed') status = 'disconnected';
 
+    const instanceRow = await findInstanceForWebhook(supabase, instance);
+    if (!instanceRow?.id) {
+      console.warn('[evolution-webhook] connection.update sem instância cadastrada:', instance);
+      return;
+    }
+
+    const metadata = (instanceRow.metadata || {}) as Record<string, any>;
+    let nextStatus = status;
+    let nextMetadata = metadata;
+
+    if (status === 'connected' && metadata.delivery_degraded === true) {
+      const recentFailures = await countRecentOutboundFailures(supabase, instanceRow.id);
+      if (recentFailures >= DELIVERY_FAILURE_THRESHOLD) {
+        nextStatus = 'connecting';
+        nextMetadata = {
+          ...metadata,
+          delivery_failure_count: recentFailures,
+          delivery_degraded_reason: metadata.delivery_degraded_reason || 'A conexão está aberta, mas os envios recentes retornaram ERROR.',
+        };
+      } else {
+        nextMetadata = {
+          ...metadata,
+          delivery_degraded: false,
+          delivery_failure_count: recentFailures,
+          delivery_recovered_at: new Date().toISOString(),
+        };
+      }
+    }
+
     // Update instance status
     const { error } = await supabase
       .from('whatsapp_instances')
-      .update({ status })
-      .eq('instance_name', instance);
+      .update({ status: nextStatus, metadata: nextMetadata, updated_at: new Date().toISOString() })
+      .eq('id', instanceRow.id);
 
     if (error) {
       console.error('[evolution-webhook] Error updating instance status:', error);
     } else {
-      console.log('[evolution-webhook] Instance status updated to:', status);
+      console.log('[evolution-webhook] Instance status updated to:', nextStatus);
     }
   } catch (error) {
     console.error('[evolution-webhook] Error in processConnectionUpdate:', error);
