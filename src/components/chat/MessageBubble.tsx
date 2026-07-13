@@ -147,7 +147,7 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
       case 'failed':
         return (
           <span
-            title="Falha na entrega. Se acontecer com várias mensagens, reconecte a instância."
+            title="Falha na entrega. Se várias mensagens falharem na mesma instância, faça uma reconexão limpa e leia o QR Code novamente."
             className="inline-flex"
           >
             <AlertCircle size={14} style={{ color: RED }} />

@@ -7,6 +7,22 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const DELIVERY_FAILURE_THRESHOLD = 3;
+const DELIVERY_FAILURE_LOOKBACK_MS = 24 * 60 * 60 * 1000;
+
+async function countRecentOutboundFailures(supabaseAdmin: any, instanceId: string): Promise<number> {
+  const since = new Date(Date.now() - DELIVERY_FAILURE_LOOKBACK_MS).toISOString();
+  const { count } = await supabaseAdmin
+    .from('whatsapp_messages')
+    .select('id, whatsapp_conversations!inner(instance_id)', { count: 'exact', head: true })
+    .eq('is_from_me', true)
+    .eq('status', 'failed')
+    .gte('created_at', since)
+    .eq('whatsapp_conversations.instance_id', instanceId);
+
+  return count ?? 0;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -42,7 +58,7 @@ serve(async (req) => {
       });
     }
 
-    const { instanceId } = await req.json();
+    const { instanceId, clean = false } = await req.json();
     if (!instanceId) {
       return new Response(JSON.stringify({ error: 'instanceId required' }), {
         status: 400,
@@ -52,7 +68,7 @@ serve(async (req) => {
 
     const { data: instance, error: instanceError } = await supabaseAdmin
       .from('whatsapp_instances')
-      .select('instance_name, provider_type, instance_id_external')
+      .select('instance_name, provider_type, instance_id_external, metadata')
       .eq('id', instanceId)
       .single();
     if (instanceError || !instance) {
@@ -80,7 +96,13 @@ serve(async (req) => {
       ? instanceIdExternal
       : instance.instance_name;
 
-    const baseUrl = secrets.api_url.endsWith('/') ? secrets.api_url.slice(0, -1) : secrets.api_url;
+    const baseUrl = (secrets.api_url.endsWith('/') ? secrets.api_url.slice(0, -1) : secrets.api_url).replace(/\/manager$/, '');
+    const metadata = ((instance as any).metadata || {}) as Record<string, any>;
+    const recentDeliveryFailures = await countRecentOutboundFailures(supabaseAdmin, instanceId);
+    const needsCleanReconnect =
+      clean === true ||
+      metadata.delivery_degraded === true ||
+      recentDeliveryFailures >= DELIVERY_FAILURE_THRESHOLD;
 
     // 1) Checa estado atual antes de forçar nada. Bater em /instance/connect
     //    numa instância já `open` causava status "connecting" falso no banco.
@@ -93,7 +115,7 @@ serve(async (req) => {
     }
     const currentState = stateData?.state ?? stateData?.instance?.state;
 
-    if (currentState === 'open' || currentState === 'connected') {
+    if ((currentState === 'open' || currentState === 'connected') && !needsCleanReconnect) {
       // Já está conectada — só sincronizamos o banco e saímos.
       await supabaseAdmin
         .from('whatsapp_instances')
@@ -105,7 +127,43 @@ serve(async (req) => {
       );
     }
 
-    if (currentState === 'connecting') {
+    if (needsCleanReconnect) {
+      const logoutUrl = `${baseUrl}/instance/logout/${identifier}`;
+      const logoutResp = await fetchWithTimeout(logoutUrl, {
+        timeout: 20000,
+        method: 'DELETE',
+        headers: { apikey: secrets.api_key },
+      });
+      const logoutText = await logoutResp.text().catch(() => '');
+
+      if (!logoutResp.ok && logoutResp.status !== 404) {
+        console.error('[reconnect-instance] Falha no logout limpo:', logoutResp.status, logoutText);
+        return new Response(JSON.stringify({ error: 'Falha ao derrubar sessão atual', details: logoutText }), {
+          status: logoutResp.status,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      await supabaseAdmin
+        .from('whatsapp_instances')
+        .update({
+          status: 'connecting',
+          qr_code: null,
+          metadata: {
+            ...metadata,
+            delivery_degraded: false,
+            delivery_failure_count: recentDeliveryFailures,
+            clean_reconnect_started_at: new Date().toISOString(),
+            clean_reconnect_reason: metadata.delivery_degraded_reason || 'Reconexão limpa solicitada',
+          },
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', instanceId);
+
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+
+    if (currentState === 'connecting' && !needsCleanReconnect) {
       // Baileys já está tentando reconectar sozinho. Não força de novo.
       await supabaseAdmin
         .from('whatsapp_instances')
@@ -151,14 +209,21 @@ serve(async (req) => {
       .from('whatsapp_instances')
       .update({
         status: 'connecting',
-        ...(qr ? { qr_code: qr } : {}),
+        qr_code: qr,
+        metadata: {
+          ...metadata,
+          delivery_degraded: false,
+          delivery_failure_count: recentDeliveryFailures,
+          clean_reconnect_required: false,
+          reconnect_started_at: new Date().toISOString(),
+        },
         updated_at: new Date().toISOString(),
       })
       .eq('id', instanceId);
 
     console.log('[reconnect-instance] Reconexão disparada (qr=' + !!qr + ')');
     return new Response(
-      JSON.stringify({ success: true, qr }),
+      JSON.stringify({ success: true, qr, cleanReconnect: needsCleanReconnect }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
