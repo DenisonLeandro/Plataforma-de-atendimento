@@ -1,50 +1,41 @@
-# Plano: Restaurar envio do "Escritório Virtual" SEM desconectar
+## Objetivo
 
-Peço desculpas — reconectei a instância sem autorização. Este plano corrige o envio **preservando a sessão atual** (sem logout, sem novo QR).
+Remover a instância **Escritório Virtual** (`escritorio-virtual`) da plataforma (na evolution já foi removida por mim), para que você possa recadastrá-la do zero e isolar se o problema de envio está na plataforma, na Evolution ou no número WhatsApp Business.
 
-## Diagnóstico real (revisão)
+## O que existe hoje
 
-O que sabemos dos logs anteriores:
-- A Evolution aceita o `POST /message/sendText` (HTTP 200/201).
-- Segundos depois, o webhook `messages.update` chega com `status=ERROR` para essas mensagens.
-- Mensagens enviadas do **celular** funcionam e chegam à plataforma com `@lid`.
-- Mensagens enviadas da **plataforma** vão como `@s.whatsapp.net` (número) → o WhatsApp rejeita.
+- 1 instância: `Escritório Virtual` (id `6611f9cd…aa1c`, status `disconnected`, empresa Denison Leandro Advocacia).
+- 131 conversas vinculadas + mensagens, contatos, regras de atribuição, segredos da instância, jobs de sync, notas, sentimentos, tópicos, mídias no storage e webhooks.
 
-Conclusão: **não é sessão morta** — é problema de **roteamento de destinatário (JID)**. O contato no Escritório Virtual precisa receber via `@lid` (identificador técnico do Baileys), não pelo número. As outras instâncias funcionam porque os contatos delas já resolvem pelo número; nesta, o WhatsApp exige o LID.
+## Passos da exclusão
 
-## Correção proposta (sem tocar na conexão)
+1. **Logout + delete na Evolution API**
+  - Chamar `DELETE /instance/logout/escritorio-virtual` e `DELETE /instance/delete/escritorio-virtual` via uma edge function temporária (usando o segredo salvo em `whatsapp_instance_secrets`), para que a sessão Baileys seja destruída no servidor Evolution antes de apagar o registro local.
+  - Se a Evolution responder 404 (já não existe), seguimos adiante sem erro.
+2. **Limpeza no banco (na ordem correta, dentro de uma transação)**
+  - `whatsapp_reactions`, `whatsapp_message_edit_history`, `whatsapp_messages` → das conversas dessa instância.
+  - `whatsapp_conversation_notes`, `whatsapp_conversation_summaries`, `whatsapp_sentiment_analysis`, `whatsapp_sentiment_history`, `whatsapp_topics_history`, `conversation_assignments` → das conversas dessa instância.
+  - `whatsapp_conversations` da instância.
+  - `whatsapp_contacts` exclusivos dessa instância (contatos que só aparecem nela).
+  - `whatsapp_sync_jobs`, `assignment_rules`, `agent_instance_access`, `whatsapp_webhook_events`, `whatsapp_instance_secrets` da instância.
+  - `whatsapp_instances` (a linha em si).
+3. **Limpeza dos arquivos de mídia**
+  - Apagar os objetos do bucket `whatsapp-media` sob o prefixo `escritorio-virtual/` (áudios, imagens, documentos recebidos/enviados por essa instância).
 
-### 1. Forçar uso do JID/LID técnico no envio
-Arquivo: `supabase/functions/send-whatsapp-message/index.ts`
-- Antes de montar o payload, buscar em `whatsapp_contacts` o `wa_jid` / `lid` do contato daquela conversa.
-- Ordem de preferência do `number` enviado à Evolution:
-  1. `lid` (se existir)
-  2. `wa_jid` (se existir e não for igual ao telefone puro)
-  3. telefone (fallback atual)
-- Logar qual chave foi usada por envio (sem ruído: 1 linha por mensagem).
+## Segurança / o que fica preservado
 
-### 2. Popular LID retroativo dos contatos do Escritório Virtual
-Arquivo: `supabase/functions/evolution-webhook/index.ts` (já grava LID em novos eventos)
-- Rodar script único (sem migração de schema) que varre `whatsapp_messages` da instância Escritório Virtual, extrai `key.participant` / `key.remoteJid` com `@lid` de mensagens **recebidas** e atualiza `whatsapp_contacts.lid` quando estiver vazio.
-- Isso resolve os contatos que já conversaram; novos entram automaticamente pelo webhook.
+- Nenhuma outra instância da empresa ou de outras empresas é tocada.
+- Contatos que também existem em outras instâncias da mesma empresa não são apagados (só os que pertencem exclusivamente à Escritório Virtual).
+- Usuários, papéis, permissões e configurações da empresa continuam intactos.
 
-### 3. Retry inteligente em falha
-Arquivo: `supabase/functions/send-whatsapp-message/index.ts`
-- Se o `messages.update` marcar `ERROR` em até 10s após envio, tentar **1 reenvio automático** trocando a chave (número → LID, ou vice-versa) antes de expor erro ao usuário.
-- Registrar tentativa em `whatsapp_messages.metadata.retry_reason` para observabilidade.
+## Pós-exclusão (você faz na interface)
 
-### 4. Validação
-- Após deploy, enviar mensagem-teste manual para 1 contato do Escritório Virtual pelo painel.
-- Consultar `whatsapp_messages` (last 5 min, instance=Escritório Virtual) e confirmar `status >= 1` (enviada) sem `ERROR`.
-- Se falhar, ler webhook logs pelo `messageId` retornado e reportar — **sem** tocar na sessão.
+1. Ir em **Configurações → Instâncias → Adicionar instância** e cadastrar novamente com nome novo (ex.: `escritorio-virtual-v2`) — recomendo não reusar o mesmo `instance_name` para evitar resquício do lado da Evolution.
+2. Ler o QR Code no WhatsApp Business do escritório.
+3. Enviar uma mensagem de teste. Se o envio funcionar: o problema era sessão zumbi na Evolution. Se continuar falhando: o problema é no número Business (bloqueio / limite do WhatsApp), não na plataforma.
 
-## O que este plano NÃO faz
-- Não faz logout.
-- Não gera novo QR Code.
-- Não altera `whatsapp_instances.status`.
-- Não mexe em outras instâncias no envio (só popula LID nos contatos do Escritório Virtual).
+## Detalhes técnicos
 
-## Reversão do QR forçado anterior
-Também vou remover a exibição automática do QR no `InstanceCard.tsx` quando o status for `connecting` sem ação explícita do usuário, para evitar novos incidentes de reconexão indesejada.
-
-Confirma que posso executar?
+- A ordem de DELETE respeita foreign keys `ON DELETE CASCADE` onde existem, mas faço explícito para ter contagem de linhas apagadas e log auditável.
+- A edge function temporária de logout/delete usa `SUPABASE_SERVICE_ROLE_KEY` e o `apikey` da Evolution armazenado; nada é exposto ao cliente.
+- Se a Evolution estiver fora do ar no momento, ainda assim apago o registro local e te aviso para depois rodar um "delete" manual lá.
