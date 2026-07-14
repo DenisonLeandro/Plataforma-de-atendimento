@@ -1,41 +1,24 @@
-## Objetivo
+## Problema
 
-Remover a instância **Escritório Virtual** (`escritorio-virtual`) da plataforma (na evolution já foi removida por mim), para que você possa recadastrá-la do zero e isolar se o problema de envio está na plataforma, na Evolution ou no número WhatsApp Business.
+O `CardFooter` do `InstanceCard.tsx` tem 7 botões + um texto de progresso em uma única linha `flex gap-2` sem quebra. Em cards estreitos (grid multi-coluna), os botões estouram a largura do card, ficando cortados/fora do bloco (como mostra a imagem do card "Advocacia Cinco Conjuntos").
 
-## O que existe hoje
+## Correção
 
-- 1 instância: `Escritório Virtual` (id `6611f9cd…aa1c`, status `disconnected`, empresa Denison Leandro Advocacia).
-- 131 conversas vinculadas + mensagens, contatos, regras de atribuição, segredos da instância, jobs de sync, notas, sentimentos, tópicos, mídias no storage e webhooks.
+Ajustar apenas o `CardFooter` para que os botões se enquadrem corretamente dentro do card em qualquer largura.
 
-## Passos da exclusão
+### Mudanças em `src/components/settings/InstanceCard.tsx`
 
-1. **Logout + delete na Evolution API**
-  - Chamar `DELETE /instance/logout/escritorio-virtual` e `DELETE /instance/delete/escritorio-virtual` via uma edge function temporária (usando o segredo salvo em `whatsapp_instance_secrets`), para que a sessão Baileys seja destruída no servidor Evolution antes de apagar o registro local.
-  - Se a Evolution responder 404 (já não existe), seguimos adiante sem erro.
-2. **Limpeza no banco (na ordem correta, dentro de uma transação)**
-  - `whatsapp_reactions`, `whatsapp_message_edit_history`, `whatsapp_messages` → das conversas dessa instância.
-  - `whatsapp_conversation_notes`, `whatsapp_conversation_summaries`, `whatsapp_sentiment_analysis`, `whatsapp_sentiment_history`, `whatsapp_topics_history`, `conversation_assignments` → das conversas dessa instância.
-  - `whatsapp_conversations` da instância.
-  - `whatsapp_contacts` exclusivos dessa instância (contatos que só aparecem nela).
-  - `whatsapp_sync_jobs`, `assignment_rules`, `agent_instance_access`, `whatsapp_webhook_events`, `whatsapp_instance_secrets` da instância.
-  - `whatsapp_instances` (a linha em si).
-3. **Limpeza dos arquivos de mídia**
-  - Apagar os objetos do bucket `whatsapp-media` sob o prefixo `escritorio-virtual/` (áudios, imagens, documentos recebidos/enviados por essa instância).
+1. **Footer com wrap e alinhamento**
+   - Trocar `className="flex gap-2"` do `CardFooter` por `className="flex flex-wrap items-center gap-2"`.
+   - Isso permite que os botões quebrem para a linha de baixo em vez de vazarem.
 
-## Segurança / o que fica preservado
+2. **Botões com tamanho fixo e consistente**
+   - Padronizar cada `<Button size="sm">` de ação (ícone) com `className="h-9 w-9 p-0 shrink-0"` para virarem quadrados iguais e nunca encolherem/esticarem.
+   - Mantém os mesmos ícones/tooltips atuais.
 
-- Nenhuma outra instância da empresa ou de outras empresas é tocada.
-- Contatos que também existem em outras instâncias da mesma empresa não são apagados (só os que pertencem exclusivamente à Escritório Virtual).
-- Usuários, papéis, permissões e configurações da empresa continuam intactos.
+3. **Texto de progresso da sincronização**
+   - O `<span>` "Sincronizando… X conv. / Y msgs / Z contatos" hoje fica no meio dos botões. Passar para depois de todos os botões e envolver em um contêiner `w-full` para quebrar para a linha de baixo:
+     `<div className="w-full text-xs text-muted-foreground">…</div>`.
+   - Assim o texto nunca empurra os botões para fora do card.
 
-## Pós-exclusão (você faz na interface)
-
-1. Ir em **Configurações → Instâncias → Adicionar instância** e cadastrar novamente com nome novo (ex.: `escritorio-virtual-v2`) — recomendo não reusar o mesmo `instance_name` para evitar resquício do lado da Evolution.
-2. Ler o QR Code no WhatsApp Business do escritório.
-3. Enviar uma mensagem de teste. Se o envio funcionar: o problema era sessão zumbi na Evolution. Se continuar falhando: o problema é no número Business (bloqueio / limite do WhatsApp), não na plataforma.
-
-## Detalhes técnicos
-
-- A ordem de DELETE respeita foreign keys `ON DELETE CASCADE` onde existem, mas faço explícito para ter contagem de linhas apagadas e log auditável.
-- A edge function temporária de logout/delete usa `SUPABASE_SERVICE_ROLE_KEY` e o `apikey` da Evolution armazenado; nada é exposto ao cliente.
-- Se a Evolution estiver fora do ar no momento, ainda assim apago o registro local e te aviso para depois rodar um "delete" manual lá.
+Nenhuma alteração de lógica, permissões, dados ou de outros componentes.

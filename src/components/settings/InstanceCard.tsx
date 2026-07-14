@@ -272,13 +272,14 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
           </div>
         </CardContent>
 
-        <CardFooter className="flex gap-2">
+        <CardFooter className="flex flex-wrap items-center gap-2">
           <Button
             variant="outline"
             size="sm"
             onClick={handleTestConnection}
             disabled={testConnection.isPending}
             title="Testar conexão"
+            className="h-9 w-9 p-0 shrink-0"
           >
             <RefreshCw className={`h-4 w-4 ${testConnection.isPending ? "animate-spin" : ""}`} />
           </Button>
@@ -288,6 +289,7 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
             onClick={handleReconnect}
             disabled={reconnectInstance.isPending}
             title={isDeliveryDegraded ? "Reconexão limpa: derruba a sessão e gera novo QR Code" : "Reconectar (força o socket sem perder a sessão)"}
+            className="h-9 w-9 p-0 shrink-0"
           >
             {reconnectInstance.isPending ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -301,6 +303,7 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
             onClick={handleResolveLid}
             disabled={resolveLidConversations.isPending}
             title="Resolver conversas @lid (funde órfãs sem mensagens com a conversa real)"
+            className="h-9 w-9 p-0 shrink-0"
           >
             {resolveLidConversations.isPending ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -314,6 +317,7 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
             onClick={handleSyncWebhook}
             disabled={syncInstanceWebhook.isPending}
             title="Sincronizar webhook (habilita MESSAGES_UPDATE para receber os ✓ ✓✓ ✓✓ azul)"
+            className="h-9 w-9 p-0 shrink-0"
           >
             {syncInstanceWebhook.isPending ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -327,6 +331,7 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
             onClick={() => setShowSyncDialog(true)}
             disabled={instance.status !== "connected" || syncHistory.isPending || (isRunning && !isSyncStale)}
             title={isSyncStale ? "Retomar sincronização travada" : isSyncing ? "Sincronização em andamento" : "Sincronizar histórico"}
+            className="h-9 w-9 p-0 shrink-0"
           >
             {isSyncing ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -334,15 +339,11 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
               <Download className="h-4 w-4" />
             )}
           </Button>
-          {isRunning && (
-            <span className="text-xs text-muted-foreground self-center">
-              {isSyncStale ? "Parou; clique para retomar" : "Sincronizando…"} {syncJob.chats_synced} conv. / {syncJob.messages_synced} msgs / {syncJob.contacts_synced} contatos
-            </span>
-          )}
           <Button
             variant="outline"
             size="sm"
             onClick={() => setShowEditDialog(true)}
+            className="h-9 w-9 p-0 shrink-0"
           >
             <Pencil className="h-4 w-4" />
           </Button>
@@ -350,9 +351,15 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
             variant="outline"
             size="sm"
             onClick={() => setShowDeleteDialog(true)}
+            className="h-9 w-9 p-0 shrink-0"
           >
             <Trash2 className="h-4 w-4" />
           </Button>
+          {isRunning && (
+            <div className="w-full text-xs text-muted-foreground">
+              {isSyncStale ? "Parou; clique para retomar" : "Sincronizando…"} {syncJob.chats_synced} conv. / {syncJob.messages_synced} msgs / {syncJob.contacts_synced} contatos
+            </div>
+          )}
         </CardFooter>
       </Card>
 
