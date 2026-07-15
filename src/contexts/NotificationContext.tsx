@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback, useRef } f
 import { supabase } from "@/integrations/supabase/client";
 import { playNotificationSound } from "@/utils/notificationSound";
 import { useQuery } from "@tanstack/react-query";
+import { useCompanyContext } from "@/hooks/useCompanyContext";
 
 interface NotificationContextType {
   permission: NotificationPermission;
@@ -27,6 +28,7 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
   });
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const selectedConversationRef = useRef<string | null>(null);
+  const { companyId } = useCompanyContext();
 
   // Sync ref with state for realtime listener
   useEffect(() => {
@@ -35,11 +37,13 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
 
   // Calculate total unread count
   const { data: conversations } = useQuery({
-    queryKey: ["conversations-unread-count"],
+    queryKey: ["conversations-unread-count", companyId],
     queryFn: async () => {
+      if (!companyId) return [];
       const { data, error } = await supabase
         .from("whatsapp_conversations")
         .select("unread_count")
+        .eq("company_id", companyId)
         .neq("unread_count", 0);
       
       if (error) {
@@ -48,7 +52,8 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
       }
       return data;
     },
-    refetchInterval: 30000, // Refresh every 30s
+    refetchInterval: 60000, // Refresh every 60s (realtime cobre mudanças imediatas)
+    enabled: !!companyId,
     retry: false,
   });
 
