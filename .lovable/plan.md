@@ -1,24 +1,26 @@
-## Problema
+## Diagnóstico
 
-O `CardFooter` do `InstanceCard.tsx` tem 7 botões + um texto de progresso em uma única linha `flex gap-2` sem quebra. Em cards estreitos (grid multi-coluna), os botões estouram a largura do card, ficando cortados/fora do bloco (como mostra a imagem do card "Advocacia Cinco Conjuntos").
+O erro "Erro ao criar instância" ocorre porque a RLS de `whatsapp_instances` bloqueia o INSERT. Os logs do Postgres confirmam:
+
+```
+ERROR: new row violates row-level security policy for table "whatsapp_instances"
+```
+
+A policy exige uma destas condições:
+- `has_role(auth.uid(),'admin') AND company_id = get_user_company_id(auth.uid())` — ou seja, admin local **daquela** empresa; ou
+- `super_admin_can_write_company(auth.uid(), company_id)` — super admin com acesso explícito à empresa.
+
+Quem está tentando criar é o Denison (super admin), com a plataforma no modo "Entrar como Desenvol Informática". Na tabela `super_admin_company_access` ele só tem liberação para **Piscinas Ibipora** — não há linha para **Desenvol Informática**, então a RLS recusa o INSERT.
+
+O admin local da Desenvol (leandro@desenvol.com.br) até existe e teria permissão, mas quem está criando agora é o super admin no modo "view as".
 
 ## Correção
 
-Ajustar apenas o `CardFooter` para que os botões se enquadrem corretamente dentro do card em qualquer largura.
+Inserir em `super_admin_company_access` a autorização do Denison (`1ce45272-1241-4829-9435-6d841b959353`) para a empresa Desenvol Informática (`d68c2a97-9ebb-44f8-afe0-357857ec9007`), via migration. Isso libera criação/edição de instâncias, envio de mensagens e demais escritas de super admin nessa empresa — mesmo padrão já aprovado para Piscinas Ibipora.
 
-### Mudanças em `src/components/settings/InstanceCard.tsx`
+Nenhuma alteração de código é necessária: a policy e o fluxo já suportam esse cenário; falta apenas a linha de autorização.
 
-1. **Footer com wrap e alinhamento**
-   - Trocar `className="flex gap-2"` do `CardFooter` por `className="flex flex-wrap items-center gap-2"`.
-   - Isso permite que os botões quebrem para a linha de baixo em vez de vazarem.
+## Verificação
 
-2. **Botões com tamanho fixo e consistente**
-   - Padronizar cada `<Button size="sm">` de ação (ícone) com `className="h-9 w-9 p-0 shrink-0"` para virarem quadrados iguais e nunca encolherem/esticarem.
-   - Mantém os mesmos ícones/tooltips atuais.
-
-3. **Texto de progresso da sincronização**
-   - O `<span>` "Sincronizando… X conv. / Y msgs / Z contatos" hoje fica no meio dos botões. Passar para depois de todos os botões e envolver em um contêiner `w-full` para quebrar para a linha de baixo:
-     `<div className="w-full text-xs text-muted-foreground">…</div>`.
-   - Assim o texto nunca empurra os botões para fora do card.
-
-Nenhuma alteração de lógica, permissões, dados ou de outros componentes.
+- Rodar `SELECT super_admin_can_write_company('1ce45272...','d68c2a97...')` e confirmar `true`.
+- Recriar a instância "Desenvol Suporte" pela UI — deve salvar sem erro.
