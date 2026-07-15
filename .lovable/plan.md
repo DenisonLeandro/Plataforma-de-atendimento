@@ -1,26 +1,20 @@
-## Diagnóstico
+## Problema
 
-O erro "Erro ao criar instância" ocorre porque a RLS de `whatsapp_instances` bloqueia o INSERT. Os logs do Postgres confirmam:
+Leandro é `admin` local da Desenvol Informática (não é super admin) e mesmo assim aparece a barra laranja "Visualizando como: Desenvol Informática — MODO SOMENTE LEITURA".
 
-```
-ERROR: new row violates row-level security policy for table "whatsapp_instances"
-```
-
-A policy exige uma destas condições:
-- `has_role(auth.uid(),'admin') AND company_id = get_user_company_id(auth.uid())` — ou seja, admin local **daquela** empresa; ou
-- `super_admin_can_write_company(auth.uid(), company_id)` — super admin com acesso explícito à empresa.
-
-Quem está tentando criar é o Denison (super admin), com a plataforma no modo "Entrar como Desenvol Informática". Na tabela `super_admin_company_access` ele só tem liberação para **Piscinas Ibipora** — não há linha para **Desenvol Informática**, então a RLS recusa o INSERT.
-
-O admin local da Desenvol (leandro@desenvol.com.br) até existe e teria permissão, mas quem está criando agora é o super admin no modo "view as".
+Causa: em `AuthContext.tsx` o estado `viewingAsCompanyId` é lido diretamente do `sessionStorage` na inicialização e `isViewingAsCompany = !!viewingAsCompanyId`, sem checar se quem está logado é super admin. Como o `sessionStorage` persiste entre logouts/logins no mesmo tab, um valor deixado por uma sessão anterior de super admin acaba "vazando" para o Leandro, que fica travado em modo somente leitura.
 
 ## Correção
 
-Inserir em `super_admin_company_access` a autorização do Denison (`1ce45272-1241-4829-9435-6d841b959353`) para a empresa Desenvol Informática (`d68c2a97-9ebb-44f8-afe0-357857ec9007`), via migration. Isso libera criação/edição de instâncias, envio de mensagens e demais escritas de super admin nessa empresa — mesmo padrão já aprovado para Piscinas Ibipora.
+Em `src/contexts/AuthContext.tsx`:
 
-Nenhuma alteração de código é necessária: a policy e o fluxo já suportam esse cenário; falta apenas a linha de autorização.
+1. Derivar `isViewingAsCompany` como `isSuperAdmin && !!viewingAsCompanyId` — usuário não super admin nunca dispara a UI de view-as, nem o banner, nem o `isReadOnlyView`.
+2. Adicionar um efeito que limpa `viewingAsCompanyId` (state + `sessionStorage`) sempre que o usuário logado não é super admin, evitando resíduo entre sessões diferentes no mesmo navegador.
+3. Também limpar no `signOut` para garantir que o próximo login parta zerado.
+
+Nenhuma mudança em `ViewAsBanner.tsx` é necessária — ele já respeita `isViewingAsCompany`.
 
 ## Verificação
 
-- Rodar `SELECT super_admin_can_write_company('1ce45272...','d68c2a97...')` e confirmar `true`.
-- Recriar a instância "Desenvol Suporte" pela UI — deve salvar sem erro.
+- Login como Leandro → sem banner laranja, sem "somente leitura", pode editar normalmente.
+- Login como Denison (super admin) → banner continua funcionando ao entrar em uma empresa via `/super-admin`.

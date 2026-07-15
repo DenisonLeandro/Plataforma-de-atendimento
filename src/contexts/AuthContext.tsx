@@ -72,7 +72,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const isViewingAsCompany = !!viewingAsCompanyId;
+  const isViewingAsCompany = isSuperAdmin && !!viewingAsCompanyId;
+
+  // Clear any stale view-as state when the current user is not a super admin.
+  // Prevents a value left in sessionStorage by a previous super-admin session
+  // from leaking into a regular admin's session in the same tab.
+  useEffect(() => {
+    if (!isLoading && user && !isSuperAdmin && viewingAsCompanyId) {
+      setViewingAsCompanyIdState(null);
+      sessionStorage.removeItem('viewingAsCompanyId');
+    }
+  }, [isLoading, user, isSuperAdmin, viewingAsCompanyId]);
 
   // Super admin write exceptions: if the current user (super admin) has an
   // explicit row in super_admin_company_access for the company being viewed,
@@ -361,6 +371,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setRole(null);
     setIsSuperAdmin(false);
     setHasRedirectedToSetup(false);
+    setViewingAsCompanyIdState(null);
+    sessionStorage.removeItem('viewingAsCompanyId');
     toast({
       title: "Logout realizado",
       description: "Até logo!",
