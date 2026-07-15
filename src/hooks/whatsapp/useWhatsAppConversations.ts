@@ -60,13 +60,26 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
       const searchTerm = filters?.search?.trim();
       if (searchTerm) {
         const escaped = searchTerm.replace(/[%,]/g, ' ');
-        const { data: matchingContacts } = await supabase
-          .from('whatsapp_contacts')
-          .select('id')
-          .eq('company_id', companyId)
-          .or(`name.ilike.%${escaped}%,phone_number.ilike.%${escaped}%`)
-          .limit(500);
-        searchContactIds = (matchingContacts || []).map((c: { id: string }) => c.id);
+        // Duas queries paralelas — permite ao Postgres usar os índices GIN trigram
+        // (`.or()` no PostgREST atualmente força seq scan).
+        const [byName, byPhone] = await Promise.all([
+          supabase
+            .from('whatsapp_contacts')
+            .select('id')
+            .eq('company_id', companyId)
+            .ilike('name', `%${escaped}%`)
+            .limit(500),
+          supabase
+            .from('whatsapp_contacts')
+            .select('id')
+            .eq('company_id', companyId)
+            .ilike('phone_number', `%${escaped}%`)
+            .limit(500),
+        ]);
+        const idSet = new Set<string>();
+        (byName.data || []).forEach((c: { id: string }) => idSet.add(c.id));
+        (byPhone.data || []).forEach((c: { id: string }) => idSet.add(c.id));
+        searchContactIds = Array.from(idSet);
       }
 
       const applySearch = <T extends { or: (f: string) => T; in: (col: string, vals: string[]) => T }>(q: T): T => {
@@ -82,6 +95,7 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
       };
 
       // Query 1: Get paginated conversations
+      // count: 'estimated' — evita SELECT count(*) exato caro; o total real vem via RPC abaixo.
       let query = supabase
         .from('whatsapp_conversations')
         .select(`
@@ -89,7 +103,7 @@ export const useWhatsAppConversations = (filters?: ConversationsFilters) => {
           contact:whatsapp_contacts(*),
           assigned_profile:profiles(id, full_name, display_name, avatar_url),
           instance:whatsapp_instances(instance_name, name)
-        `, { count: 'exact' })
+        `, { count: 'estimated' })
         .eq('company_id', companyId)
         .order('last_message_at', { ascending: false, nullsFirst: false })
         .range(from, to);
