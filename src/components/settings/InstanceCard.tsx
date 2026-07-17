@@ -16,11 +16,13 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useWhatsAppInstances, useSyncWhatsAppHistory, useSyncJob, useSyncJobCompletion, type SyncJob } from "@/hooks/whatsapp";
-import { RefreshCw, Pencil, Trash2, Copy, Link, Download, Loader2, Plug, Users, Webhook, AlertTriangle } from "lucide-react";
+import { RefreshCw, Pencil, Trash2, Copy, Link, Download, Loader2, Plug, Users, Webhook, AlertTriangle, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { EditInstanceDialog } from "./EditInstanceDialog";
 
 type Instance = Tables<"whatsapp_instances">;
+
+const EVOLUTION_MANAGER_BASE = "https://evolution-api-hbbv.srv1746890.hstgr.cloud/manager/instance";
 
 interface InstanceCardProps {
   instance: Instance;
@@ -355,6 +357,23 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
           >
             <Trash2 className="h-4 w-4" />
           </Button>
+          {instance.instance_id_external && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                window.open(
+                  `${EVOLUTION_MANAGER_BASE}/${instance.instance_id_external}/dashboard`,
+                  "_blank",
+                  "noopener,noreferrer",
+                )
+              }
+              title="Abrir no Evolution"
+              className="h-9 w-9 p-0 shrink-0"
+            >
+              <ExternalLink className="h-4 w-4" />
+            </Button>
+          )}
           {isRunning && (
             <div className="w-full text-xs text-muted-foreground">
               {isSyncStale ? "Parou; clique para retomar" : "Sincronizando…"} {syncJob.chats_synced} conv. / {syncJob.messages_synced} msgs / {syncJob.contacts_synced} contatos
