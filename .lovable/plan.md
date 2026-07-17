@@ -1,54 +1,42 @@
 # Diagnóstico
 
-O documento existe. Foi enviado ontem 16:07 (16/07 19:07 UTC) para o Dr. Dalber:
+A mensagem `ERR_BLOCKED_BY_CLIENT` no Chrome é **sempre** causada por uma extensão do próprio navegador do usuário (adblocker, antivírus, Brave Shields, Kaspersky Protection, uBlock, AdGuard, etc.) que corta a requisição antes de sair da máquina. Confirmações:
 
-- Arquivo: `MINUTA_DE_ACORDO_-_WANDERLEI_X_BTC_ENG.pdf` (111 KB)
-- Path no Storage: `1ce45272-1241-4829-9435-6d841b959353/1784228842230-MINUTA_...pdf`
-- Bucket: `whatsapp-media` (privado)
+- Não é firewall corporativo (aí a mensagem seria diferente — "site bloqueado pelo administrador").
+- Não é problema do nosso backend: outros usuários abrem os mesmos arquivos normalmente.
+- Não é problema de permissão (URL assinada já está funcionando; nós validamos o Storage há pouco).
+- Como só o link do documento falha e o resto da plataforma funciona, a extensão tem alguma regra que reconhece o padrão da URL de mídia (subdomínio randômico + path `/storage/v1/object/...`) e bloqueia downloads.
 
-O arquivo **está no Storage**, mas ninguém consegue lê-lo. A causa é a política de SELECT do bucket `whatsapp-media`:
-
-```
-(storage.foldername(name))[1] deve ser igual a whatsapp_instances.instance_name
-```
-
-Ou seja, a policy só libera leitura se a **primeira pasta** do path for o `instance_name` (ex.: `piscinas-ibipora/...`, `desenvol/...`). Isso funciona para mídias baixadas pelo webhook (que usam esse padrão), mas **quebra para arquivos enviados pelo composer do frontend**, porque `MediaPreview.tsx` faz upload em `${user.id}/...` — um UUID de usuário que nunca bate com um `instance_name`.
-
-Resultado: a URL assinada falha (o signer respeita RLS) e o link do documento não abre nem baixa. Vale para qualquer PDF/áudio/imagem enviado pelo usuário — não é específico do Dr. Dalber.
+O domínio do backend do Lovable Cloud (`zmmuwinmtsczewmgysnl.supabase.co`) **não pode ser renomeado**, e as Edge Functions e o Storage também moram nele — não temos como servir os arquivos de outro host sem sair do Lovable Cloud.
 
 # Plano
 
-## 1. Corrigir RLS do bucket `whatsapp-media` (migration)
+## 1. Ação imediata para o usuário (sem código)
 
-Ampliar a policy de SELECT (e as de INSERT/UPDATE/DELETE por consistência) para aceitar **dois padrões** de prefixo, ambos escopados por empresa:
+Enviar instruções passo a passo para desbloquear no Chrome da máquina afetada. Duas rotas equivalentes:
 
-- **A. Prefixo por instância** (webhook, backfill): primeiro segmento = `instance_name` de uma `whatsapp_instances` da mesma empresa do usuário (ou super admin autorizado).
-- **B. Prefixo por usuário** (upload manual do composer): primeiro segmento = `auth.uid()::text` de um profile ativo/aprovado da mesma empresa do usuário logado (compara `profiles.company_id`).
+1. **Ícone do cadeado** ao lado da URL da plataforma → "Configurações do site" → em "Anúncios" e "Conteúdo intrusivo" marcar como **Permitir**. Em seguida, no ícone da extensão de adblock (uBlock/AdGuard/Brave Shield/Kaspersky), clicar em **desativar para este site** e recarregar.
+2. Se persistir, adicionar exceção explícita para `*.supabase.co` (e `chat-heartbeat-57.lovable.app`) na lista branca do adblock.
+3. Como validação, abrir uma aba anônima com todas as extensões desabilitadas — se o PDF abrir, é 100% extensão.
 
-Assim, tudo que já foi enviado historicamente (incluindo o PDF do Dr. Dalber) volta a ser acessível para colegas da mesma empresa, sem vazar entre empresas.
+## 2. Mitigação dentro da plataforma (código)
 
-## 2. Padronizar novos uploads do composer
+Melhorar a UX quando o `ERR_BLOCKED_BY_CLIENT` acontecer, para que qualquer usuário nessa situação já receba a orientação certa em vez de "não abre e pronto":
 
-Em `src/components/chat/input/MediaPreview.tsx`, mudar o path de upload de `${user.id}/...` para `${instance_name}/${user.id}/...`. Isso:
+- Em `MessageBubble.tsx` (renderização de `document`), envolver o clique no link com uma verificação: tentar `fetch(signedMediaUrl, { method: 'HEAD' })` antes de abrir. Se falhar com `TypeError` (que é o sintoma de `ERR_BLOCKED_BY_CLIENT` no fetch), abrir um modal com:
+  - Texto explicativo curto ("O download foi bloqueado por uma extensão do navegador").
+  - Botão "Tentar novamente".
+  - Link "Como desbloquear" que abre um Popover com o passo a passo da seção 1.
+- Aplicar o mesmo tratamento a imagens, áudios e vídeos (que também usam Storage).
+- Não mexer na RLS nem na policy — não é a causa.
 
-- Mantém compatibilidade com o padrão A (primeiro segmento = instance_name).
-- Preserva o `user.id` como segunda pasta, para auditoria e para a policy de UPDATE existente (que valida "dono do arquivo").
+## 3. Verificar se há filtro conhecido divulgado
 
-Passar o `instance_name` (ou o conversationId, resolvendo para a instância) via prop até o `MediaPreview`. Ajustar `MessageInputContainer` / `MediaUploadButton` para propagar.
-
-## 3. Ajustar policies de INSERT/UPDATE/DELETE
-
-Reescrever para aceitar os dois prefixos, mas sempre com checagem de `company_id` (leitura e escrita só dentro da empresa). Manter comportamento de super admin com exceção explícita (`super_admin_can_write_company`).
-
-## 4. Validação
-
-- Abrir a conversa do Dr. Dalber como o remetente original e como outro membro da mesma empresa: o documento deve abrir e baixar.
-- Enviar um novo PDF pelo composer: confirmar que o path novo é `instance_name/user_id/...` e que abre imediatamente para colegas.
-- Confirmar que usuário de outra empresa continua sem acesso (URL assinada nega).
+Enquanto o usuário aplica a exceção, checar em `easylist`/`easyprivacy` se algum padrão bloqueia `*.supabase.co/storage/*`. Se houver, orientar como reportar como falso positivo à lista usada. (Isso é ação fora do código, informativa.)
 
 # Detalhes técnicos
 
-- Nenhuma mudança de UI além do fluxo de upload; `MessageBubble` já usa `useSignedUrl`, então corrigida a RLS o link volta a funcionar sem alteração de componente.
-- Não há necessidade de mover arquivos antigos no Storage: a policy A+B cobre o path histórico `user_id/...`.
-- Sem impacto em áudio recebido/enviado pelo webhook (continua no padrão `instance_name/...`).
-- Migration em `supabase/migrations/` recriando as 4 policies do bucket com a lógica combinada.
+- `ERR_BLOCKED_BY_CLIENT` não é retornável pelo servidor; o navegador nunca faz a requisição. Por isso não há como "desbloquear pelo Supabase".
+- Edge Functions também rodam sob `*.supabase.co/functions/v1/...` → montar um proxy em Edge Function **não resolve**, seria bloqueado pela mesma regra.
+- A única forma real de mudar o hostname seria usar Supabase self-hosted com domínio próprio — fora do escopo do Lovable Cloud.
+- Mudança na UI é isolada em `src/components/chat/MessageBubble.tsx` + um pequeno componente `MediaBlockedByClientHint.tsx`. Nenhum impacto em backend, RLS ou banco.
