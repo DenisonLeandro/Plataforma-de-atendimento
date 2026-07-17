@@ -19,6 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import { AudioMessagePlayer } from "./AudioMessagePlayer";
 import { isRawWhatsAppMediaUrl } from "@/utils/mediaUtils";
 import { useSignedUrl } from "@/utils/signedUrl";
+import { MediaBlockedByClientHint } from "./MediaBlockedByClientHint";
 
 type Message = Tables<'whatsapp_messages'>;
 type Reaction = Tables<'whatsapp_reactions'>;
@@ -35,6 +36,7 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isFetchingMedia, setIsFetchingMedia] = useState(false);
   const [fetchFailed, setFetchFailed] = useState(false);
+  const [blockedByClient, setBlockedByClient] = useState(false);
   const autoFetchedRef = useRef(false);
   const isFromMe = message.is_from_me;
   const time = format(new Date(message.timestamp), 'HH:mm');
