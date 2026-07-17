@@ -115,41 +115,77 @@ Deno.serve(async (req) => {
     baseUrl = baseUrl.replace(/\/manager$/, '');
 
     const endpoint = `${baseUrl}/chat/updateMessage/${(conversation as any).whatsapp_instances.instance_name}`;
-    
-    // Extract phone number from remote_jid
-    const phoneNumber = message.remote_jid.replace(/@.*$/, '');
-    
-    const requestBody = {
-      number: phoneNumber,
-      text: body.newContent,
-      key: {
-        remoteJid: message.remote_jid,
-        fromMe: true,
-        id: body.messageId,
-      },
-    };
 
-    // Get correct auth headers based on provider type
+    // Evolution valida que `number` (após createJid) bate com key.remoteJid.
+    // Para conversas @lid, o key.remoteJid original é @lid, mas nós armazenamos
+    // o remote_jid normalizado como @s.whatsapp.net. O JID técnico correto vive
+    // em metadata.ack_remote_jid (quando disponível). Tentamos os candidatos
+    // em ordem até um funcionar.
+    const ackJid = (message.metadata as any)?.ack_remote_jid as string | undefined;
+    const candidates: string[] = [];
+    if (ackJid) candidates.push(ackJid);
+    if (message.remote_jid && !candidates.includes(message.remote_jid)) {
+      candidates.push(message.remote_jid);
+    }
+
     const providerType = (conversation as any).whatsapp_instances.provider_type || 'self_hosted';
     const authHeaders = getEvolutionAuthHeaders(secrets.api_key, providerType);
 
-    // Call Evolution API to edit message
-    const evolutionResponse = await fetchWithTimeout(endpoint, {
-      timeout: 15000,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...authHeaders,
-      },
-      body: JSON.stringify(requestBody),
-    });
+    let evolutionOk = false;
+    let lastStatus = 0;
+    let lastBody = '';
+    for (const jid of candidates) {
+      const requestBody = {
+        number: jid,
+        text: body.newContent,
+        key: {
+          remoteJid: jid,
+          fromMe: true,
+          id: body.messageId,
+        },
+      };
+      console.log('[edit-whatsapp-message] attempt', {
+        endpoint,
+        instance: (conversation as any).whatsapp_instances.instance_name,
+        messageId: body.messageId,
+        jid,
+      });
+      try {
+        const evolutionResponse = await fetchWithTimeout(endpoint, {
+          timeout: 15000,
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeaders },
+          body: JSON.stringify(requestBody),
+        });
+        if (evolutionResponse.ok) {
+          await evolutionResponse.text().catch(() => '');
+          evolutionOk = true;
+          console.log('[edit-whatsapp-message] Evolution accepted with jid=', jid);
+          break;
+        }
+        lastStatus = evolutionResponse.status;
+        lastBody = (await evolutionResponse.text().catch(() => '')).slice(0, 500);
+        console.error('[edit-whatsapp-message] Evolution rejected', {
+          jid,
+          status: lastStatus,
+          body: lastBody,
+        });
+      } catch (err) {
+        lastStatus = 0;
+        lastBody = err instanceof Error ? err.message : String(err);
+        console.error('[edit-whatsapp-message] Evolution fetch error', { jid, err: lastBody });
+      }
+    }
 
-    if (!evolutionResponse.ok) {
-      const errorText = await evolutionResponse.text();
-      console.error('[edit-whatsapp-message] Evolution API error:', errorText);
+    if (!evolutionOk) {
       return new Response(
-        JSON.stringify({ success: false, error: 'Falha ao editar mensagem no WhatsApp' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({
+          success: false,
+          error: `Falha ao editar mensagem no WhatsApp${lastBody ? `: ${lastBody}` : ''}`,
+          code: 'EVOLUTION_REJECTED',
+          evolutionStatus: lastStatus,
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -187,8 +223,8 @@ Deno.serve(async (req) => {
     if (updateError) {
       console.error('[edit-whatsapp-message] Error updating message:', updateError);
       return new Response(
-        JSON.stringify({ success: false, error: 'Erro ao atualizar mensagem no banco de dados' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ success: false, error: 'Erro ao atualizar mensagem no banco de dados', code: 'DB_UPDATE_FAILED' }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -201,9 +237,10 @@ Deno.serve(async (req) => {
 
   } catch (error) {
     console.error('[edit-whatsapp-message] Unexpected error:', error);
+    const msg = error instanceof Error ? error.message : 'Erro interno do servidor';
     return new Response(
-      JSON.stringify({ success: false, error: 'Erro interno do servidor' }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      JSON.stringify({ success: false, error: msg, code: 'UNEXPECTED' }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 });
