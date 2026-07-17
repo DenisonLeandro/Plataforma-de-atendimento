@@ -19,6 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import { AudioMessagePlayer } from "./AudioMessagePlayer";
 import { isRawWhatsAppMediaUrl } from "@/utils/mediaUtils";
 import { useSignedUrl } from "@/utils/signedUrl";
+import { MediaBlockedByClientHint } from "./MediaBlockedByClientHint";
 
 type Message = Tables<'whatsapp_messages'>;
 type Reaction = Tables<'whatsapp_reactions'>;
@@ -35,6 +36,7 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isFetchingMedia, setIsFetchingMedia] = useState(false);
   const [fetchFailed, setFetchFailed] = useState(false);
+  const [blockedByClient, setBlockedByClient] = useState(false);
   const autoFetchedRef = useRef(false);
   const isFromMe = message.is_from_me;
   const time = format(new Date(message.timestamp), 'HH:mm');
@@ -63,6 +65,21 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
     isRawWhatsAppMediaUrl(message.media_url);
 
   const messageTextClass = "min-w-0 max-w-full whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word]";
+
+  /**
+   * Abre a mídia em nova aba, mas antes valida se uma extensão do navegador
+   * bloqueou o request (ERR_BLOCKED_BY_CLIENT). Nesse caso o fetch estoura
+   * `TypeError: Failed to fetch` sem status HTTP — mostramos o modal de ajuda.
+   */
+  const openMediaWithBlockCheck = async (url: string | undefined) => {
+    if (!url) return;
+    try {
+      await fetch(url, { method: "HEAD", mode: "cors" });
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch {
+      setBlockedByClient(true);
+    }
+  };
 
   const handleFetchMedia = async () => {
     setIsFetchingMedia(true);
@@ -236,6 +253,7 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
                 alt="Imagem"
                 className="max-w-full sm:max-w-xs rounded-md cursor-pointer hover:opacity-90 transition-opacity"
                 onClick={() => setViewerImage(signedMediaUrl ?? null)}
+                onError={() => setBlockedByClient(true)}
               />
             )}
             {message.content && <p className={cn("text-sm", messageTextClass)}>{message.content}</p>}
@@ -251,6 +269,7 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
                 alt="Sticker"
                 className="max-w-[150px] cursor-pointer hover:scale-105 transition-transform"
                 onClick={() => setViewerImage(signedMediaUrl ?? null)}
+                onError={() => setBlockedByClient(true)}
               />
             )}
           </div>
@@ -276,7 +295,7 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
         return (
           <div className="space-y-2">
             {message.media_url && (
-              <video controls className="w-full max-w-xs rounded-md">
+              <video controls className="w-full max-w-xs rounded-md" onError={() => setBlockedByClient(true)}>
                 <source src={signedMediaUrl} type={message.media_mimetype || 'video/mp4'} />
               </video>
             )}
@@ -288,14 +307,16 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
         return (
           <div className="space-y-2">
             {message.media_url && (
-              <a
-                href={signedMediaUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex min-w-0 max-w-full items-start gap-2 text-sm underline [overflow-wrap:anywhere] [word-break:break-word]"
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  openMediaWithBlockCheck(signedMediaUrl);
+                }}
+                className="flex min-w-0 max-w-full items-start gap-2 text-sm underline text-left [overflow-wrap:anywhere] [word-break:break-word]"
               >
                 📄 {message.content || 'Documento'}
-              </a>
+              </button>
             )}
           </div>
         );
@@ -431,6 +452,15 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
         currentContent={message.content}
         onSave={handleEditSave}
         isLoading={editMessage.isPending}
+      />
+
+      <MediaBlockedByClientHint
+        open={blockedByClient}
+        onOpenChange={setBlockedByClient}
+        onRetry={() => {
+          setBlockedByClient(false);
+          if (signedMediaUrl) openMediaWithBlockCheck(signedMediaUrl);
+        }}
       />
     </div>
   );
