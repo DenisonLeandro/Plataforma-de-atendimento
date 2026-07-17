@@ -453,6 +453,15 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
         onSave={handleEditSave}
         isLoading={editMessage.isPending}
       />
+
+      <MediaBlockedByClientHint
+        open={blockedByClient}
+        onOpenChange={setBlockedByClient}
+        onRetry={() => {
+          setBlockedByClient(false);
+          if (signedMediaUrl) openMediaWithBlockCheck(signedMediaUrl);
+        }}
+      />
     </div>
   );
 };
