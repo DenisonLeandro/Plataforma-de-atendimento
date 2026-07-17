@@ -1,39 +1,20 @@
 ## Objetivo
 
-Manter Denison (super admin) com poder de escrita apenas nas empresas dele — **Denison Leandro Advocacia** e **Piscinas Ibipora**. Nas demais (hoje **Desenvol Informática**, e qualquer nova daqui pra frente) ele fica só como visualizador.
-
-## Situação atual
-
-Tabela `super_admin_company_access` para o Denison (`1ce4…9353`):
-
-| company_id | empresa | manter? |
-|---|---|---|
-| `ab4c0aad…048b` | Piscinas Ibipora | sim |
-| `d68c2a97…9007` | Desenvol Informática | **remover** |
-
-- Advocacia é a empresa-mãe do Denison (via `profiles.company_id`), então ele escreve lá como admin normal — não precisa de linha na `super_admin_company_access`.
-- Sem linha nessa tabela, o `super_admin_can_write_company` retorna false → UI entra em "Modo somente leitura" ao visualizar a empresa. Que é exatamente o comportamento desejado.
+Adicionar um botão em cada card de instância que abre o painel do Evolution já na página da instância correspondente, para facilitar reconexão manual.
 
 ## Mudança
 
-Executar um `DELETE` (via ferramenta de dados, não migração — é edição de dados, não de schema):
+Arquivo único: `src/components/settings/InstanceCard.tsx`
 
-```sql
-DELETE FROM public.super_admin_company_access
-WHERE super_admin_id = '1ce45272-1241-4829-9435-6d841b959353'
-  AND company_id     = 'd68c2a97-9ebb-44f8-afe0-357857ec9007';
-```
+- Adicionar constante `EVOLUTION_MANAGER_BASE = "https://evolution-api-hbbv.srv1746890.hstgr.cloud/manager/instance"`.
+- Novo botão (ícone `ExternalLink` do lucide-react) na linha de botões inferior do card, ao lado dos existentes (Reconectar, QR, Sync, etc.).
+- Só renderiza quando `instance.instance_id_external` existir.
+- `onClick` abre `${EVOLUTION_MANAGER_BASE}/${instance.instance_id_external}/dashboard` em nova aba (`window.open(url, "_blank", "noopener,noreferrer")`).
+- Tooltip "Abrir no Evolution".
+- Segue o mesmo tamanho/variante dos outros botões do rodapé para manter o alinhamento com `flex-wrap` que já existe.
 
-## Regra para o futuro
+## Fora de escopo
 
-Nenhuma alteração de código é necessária. O fluxo já é:
-
-- Toda nova empresa nasce **sem** linha em `super_admin_company_access` para o Denison → ele vê tudo em modo leitura por padrão.
-- Quando você me avisar que uma nova empresa passou a ser dele, eu insiro a linha correspondente e o modo escrita libera.
-
-## Verificação pós-execução
-
-1. Rodar `SELECT ... FROM super_admin_company_access` e conferir que sobrou só Piscinas Ibipora para o Denison.
-2. Denison entra em Desenvol via "Entrar como…" → banner deve virar amarelo "Modo somente leitura", campos bloqueados.
-3. Denison em Piscinas Ibipora → banner verde "Acesso total", edição liberada.
-4. Denison em Advocacia (empresa própria) → sem banner de visualização, tudo normal.
+- Nada de mudanças em banco, edge functions ou RLS.
+- URL fica hard-coded (conforme confirmado: sempre o mesmo servidor).
+- Botão aparece em toda instância que tenha `instance_id_external`, independente de `provider_type`.
