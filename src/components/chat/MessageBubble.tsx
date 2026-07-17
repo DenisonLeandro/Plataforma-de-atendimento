@@ -253,6 +253,7 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
                 alt="Imagem"
                 className="max-w-full sm:max-w-xs rounded-md cursor-pointer hover:opacity-90 transition-opacity"
                 onClick={() => setViewerImage(signedMediaUrl ?? null)}
+                onError={() => setBlockedByClient(true)}
               />
             )}
             {message.content && <p className={cn("text-sm", messageTextClass)}>{message.content}</p>}
@@ -268,6 +269,7 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
                 alt="Sticker"
                 className="max-w-[150px] cursor-pointer hover:scale-105 transition-transform"
                 onClick={() => setViewerImage(signedMediaUrl ?? null)}
+                onError={() => setBlockedByClient(true)}
               />
             )}
           </div>
@@ -293,7 +295,7 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
         return (
           <div className="space-y-2">
             {message.media_url && (
-              <video controls className="w-full max-w-xs rounded-md">
+              <video controls className="w-full max-w-xs rounded-md" onError={() => setBlockedByClient(true)}>
                 <source src={signedMediaUrl} type={message.media_mimetype || 'video/mp4'} />
               </video>
             )}
@@ -305,14 +307,16 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
         return (
           <div className="space-y-2">
             {message.media_url && (
-              <a
-                href={signedMediaUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex min-w-0 max-w-full items-start gap-2 text-sm underline [overflow-wrap:anywhere] [word-break:break-word]"
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  openMediaWithBlockCheck(signedMediaUrl);
+                }}
+                className="flex min-w-0 max-w-full items-start gap-2 text-sm underline text-left [overflow-wrap:anywhere] [word-break:break-word]"
               >
                 📄 {message.content || 'Documento'}
-              </a>
+              </button>
             )}
           </div>
         );
