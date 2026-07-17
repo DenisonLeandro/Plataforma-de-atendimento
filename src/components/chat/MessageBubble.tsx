@@ -66,6 +66,21 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
 
   const messageTextClass = "min-w-0 max-w-full whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word]";
 
+  /**
+   * Abre a mídia em nova aba, mas antes valida se uma extensão do navegador
+   * bloqueou o request (ERR_BLOCKED_BY_CLIENT). Nesse caso o fetch estoura
+   * `TypeError: Failed to fetch` sem status HTTP — mostramos o modal de ajuda.
+   */
+  const openMediaWithBlockCheck = async (url: string | undefined) => {
+    if (!url) return;
+    try {
+      await fetch(url, { method: "HEAD", mode: "cors" });
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch {
+      setBlockedByClient(true);
+    }
+  };
+
   const handleFetchMedia = async () => {
     setIsFetchingMedia(true);
     setFetchFailed(false);
