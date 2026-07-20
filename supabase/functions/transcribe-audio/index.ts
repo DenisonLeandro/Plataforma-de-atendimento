@@ -1,5 +1,10 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { fetchWithTimeout } from "../_shared/fetch-with-timeout.ts";
+import { logAiUsage } from "../_shared/ai-usage.ts";
+
+// Esta função usa o endpoint dedicado de speech-to-text, que não devolve
+// `usage` — o log fica com 0 tokens / custo 0 (ver AI_MODEL abaixo).
+const AI_MODEL = "openai/gpt-4o-mini-transcribe";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -88,7 +93,7 @@ Deno.serve(async (req) => {
 
     const { data: message, error: msgError } = await supabase
       .from("whatsapp_messages")
-      .select("id, message_type, media_url, media_mimetype, transcription_status, audio_transcription, metadata")
+      .select("id, company_id, conversation_id, message_type, media_url, media_mimetype, transcription_status, audio_transcription, metadata")
       .eq("id", messageId)
       .single();
 
@@ -179,7 +184,7 @@ Deno.serve(async (req) => {
     const { ext, mime } = mimetypeToExt(message.media_mimetype);
     const audioBlob = new Blob([bytes], { type: mime });
     const form = new FormData();
-    form.append("model", "openai/gpt-4o-mini-transcribe");
+    form.append("model", AI_MODEL);
     form.append("file", audioBlob, `audio.${ext}`);
 
     const aiRes = await fetchWithTimeout("https://ai.gateway.lovable.dev/v1/audio/transcriptions", {
@@ -228,6 +233,17 @@ Deno.serve(async (req) => {
 
     const aiJson = await aiRes.json().catch(() => null) as { text?: string } | null;
     const transcription = (aiJson?.text ?? "").trim();
+
+    // Log de custo (fire-and-forget)
+    logAiUsage({
+      supabase,
+      companyId: message.company_id,
+      feature: "transcription",
+      model: AI_MODEL,
+      aiJson,
+      conversationId: message.conversation_id,
+      messageId,
+    });
 
     if (!transcription) {
       console.error("[transcribe-audio] empty transcription", JSON.stringify(aiJson).slice(0, 400));

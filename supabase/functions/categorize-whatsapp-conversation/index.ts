@@ -1,11 +1,14 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { fetchWithTimeout } from "../_shared/fetch-with-timeout.ts";
+import { companyIdFromConversation, logAiUsage } from "../_shared/ai-usage.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+const AI_MODEL = 'google/gemini-2.5-flash';
 
 const systemPrompt = `Você é um especialista em categorizar conversas de atendimento ao cliente via WhatsApp.
 
@@ -344,7 +347,7 @@ serve(async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
+        model: AI_MODEL,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: `CONVERSA:\n\n${formattedMessages}` }
@@ -371,6 +374,19 @@ serve(async (req) => {
     }
 
     const aiData = await response.json();
+
+    // Log de custo (fire-and-forget)
+    companyIdFromConversation(supabase, conversationId).then((companyId) =>
+      logAiUsage({
+        supabase,
+        companyId,
+        feature: 'categorization',
+        model: AI_MODEL,
+        aiJson: aiData,
+        conversationId,
+      })
+    );
+
     const aiResponse = aiData.choices[0].message.content.trim();
 
     // 4. Parse JSON (remover markdown se houver)

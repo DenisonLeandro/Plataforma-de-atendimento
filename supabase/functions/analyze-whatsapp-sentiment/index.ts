@@ -1,11 +1,14 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { fetchWithTimeout } from "../_shared/fetch-with-timeout.ts";
+import { logAiUsage } from "../_shared/ai-usage.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+const AI_MODEL = 'google/gemini-2.5-flash';
 
 interface AnalyzeRequest {
   conversationId: string;
@@ -81,6 +84,7 @@ serve(async (req) => {
       .select(`
         id,
         contact_id,
+        company_id,
         whatsapp_contacts (
           id,
           name,
@@ -127,7 +131,7 @@ Analise o contexto geral e determine o sentimento predominante.`;
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
+        model: AI_MODEL,
         messages: [
           { role: 'user', content: prompt }
         ],
@@ -197,6 +201,16 @@ Analise o contexto geral e determine o sentimento predominante.`;
     }
 
     const aiData = await aiResponse.json();
+
+    // Log de custo (fire-and-forget)
+    logAiUsage({
+      supabase,
+      companyId: conversation.company_id,
+      feature: 'sentiment',
+      model: AI_MODEL,
+      aiJson: aiData,
+      conversationId,
+    });
 
     // Extract sentiment result from tool call
     const toolCall = aiData.choices?.[0]?.message?.tool_calls?.[0];

@@ -15,6 +15,8 @@ interface ComposeParams {
   message: string;
   action: ComposerAction;
   targetLanguage?: string;
+  /** Usado apenas para atribuir o custo da chamada de IA à empresa correta. */
+  conversationId?: string;
 }
 
 interface ComposeResponse {
@@ -25,11 +27,11 @@ interface ComposeResponse {
 
 export function useWhatsAppComposer() {
   const composeMutation = useMutation({
-    mutationFn: async ({ message, action, targetLanguage }: ComposeParams) => {
+    mutationFn: async ({ message, action, targetLanguage, conversationId }: ComposeParams) => {
       const { data, error } = await supabase.functions.invoke(
         'compose-whatsapp-message',
         {
-          body: { message, action, targetLanguage }
+          body: { message, action, targetLanguage, conversationId }
         }
       );
 

@@ -1,11 +1,14 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.7.1";
 import { fetchWithTimeout } from "../_shared/fetch-with-timeout.ts";
+import { logAiUsage } from "../_shared/ai-usage.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+const AI_MODEL = 'google/gemini-2.5-flash';
 
 interface SmartReplySuggestion {
   text: string;
@@ -56,7 +59,7 @@ serve(async (req) => {
     // Buscar dados do contato
     const { data: conversation } = await supabase
       .from('whatsapp_conversations')
-      .select('contact:whatsapp_contacts(name)')
+      .select('company_id, contact:whatsapp_contacts(name)')
       .eq('id', conversationId)
       .single();
 
@@ -120,7 +123,7 @@ ${recentMessages}`;
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
+        model: AI_MODEL,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: 'Gere 3 sugestões de resposta com tons diferentes.' }
@@ -196,6 +199,16 @@ ${recentMessages}`;
     }
 
     const aiData = await aiResponse.json();
+
+    // Log de custo (fire-and-forget)
+    logAiUsage({
+      supabase,
+      companyId: conversation?.company_id,
+      feature: 'smart_replies',
+      model: AI_MODEL,
+      aiJson: aiData,
+      conversationId,
+    });
 
     // Extrair sugestões do tool call
     const toolCall = aiData.choices?.[0]?.message?.tool_calls?.[0];

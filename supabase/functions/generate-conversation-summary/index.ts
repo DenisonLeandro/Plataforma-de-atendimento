@@ -1,11 +1,14 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { fetchWithTimeout } from "../_shared/fetch-with-timeout.ts";
+import { logAiUsage } from "../_shared/ai-usage.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+const AI_MODEL = 'google/gemini-2.5-flash';
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -98,7 +101,7 @@ Retorne APENAS um JSON válido sem markdown:
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
+        model: AI_MODEL,
         messages: [
           {
             role: 'system',
@@ -126,6 +129,17 @@ Retorne APENAS um JSON válido sem markdown:
     }
 
     const aiData = await aiResponse.json();
+
+    // Log de custo (fire-and-forget)
+    logAiUsage({
+      supabase,
+      companyId: conversation.company_id,
+      feature: 'summary',
+      model: AI_MODEL,
+      aiJson: aiData,
+      conversationId,
+    });
+
     const aiContent = aiData.choices[0].message.content;
 
     // Extrair JSON

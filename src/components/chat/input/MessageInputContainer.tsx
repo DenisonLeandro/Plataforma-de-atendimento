@@ -167,6 +167,7 @@ export const MessageInputContainer = ({
           message={message}
           onComposed={(newMessage) => setMessage(newMessage)}
           disabled={disabled}
+          conversationId={conversationId}
         />
         
         <Textarea

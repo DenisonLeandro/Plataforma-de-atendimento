@@ -1,11 +1,14 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.7.1";
 import { fetchWithTimeout } from "../_shared/fetch-with-timeout.ts";
+import { companyIdFromConversation, logAiUsage } from "../_shared/ai-usage.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+const AI_MODEL = 'google/gemini-2.5-flash';
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -13,7 +16,8 @@ serve(async (req) => {
   }
 
   try {
-    const { message, action, targetLanguage } = await req.json();
+    // conversationId é opcional: só serve para atribuir o custo à empresa certa
+    const { message, action, targetLanguage, conversationId } = await req.json();
 
     if (!message || !action) {
       throw new Error('Message and action are required');
@@ -148,7 +152,7 @@ Responda apenas com a tradução.`;
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
+        model: AI_MODEL,
         messages: [
           { role: 'user', content: prompt }
         ],
@@ -169,6 +173,24 @@ Responda apenas com a tradução.`;
     }
 
     const aiData = await aiResponse.json();
+
+    // Log de custo (fire-and-forget). Precisa de service_role: o client acima usa
+    // a anon key, que não tem permissão de INSERT em ai_usage_logs.
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    if (serviceRoleKey && conversationId) {
+      const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
+      companyIdFromConversation(supabaseAdmin, conversationId).then((companyId) =>
+        logAiUsage({
+          supabase: supabaseAdmin,
+          companyId,
+          feature: 'composer',
+          model: AI_MODEL,
+          aiJson: aiData,
+          conversationId,
+        })
+      );
+    }
+
     const composedText = aiData.choices?.[0]?.message?.content;
 
     if (!composedText) {

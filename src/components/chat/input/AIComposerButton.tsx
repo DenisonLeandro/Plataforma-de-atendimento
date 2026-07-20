@@ -22,6 +22,8 @@ interface AIComposerButtonProps {
   message: string;
   onComposed: (newMessage: string) => void;
   disabled?: boolean;
+  /** Usado apenas para atribuir o custo da chamada de IA à empresa correta. */
+  conversationId?: string;
 }
 
 interface MenuItem {
@@ -52,7 +54,7 @@ const menuOptions: MenuItem[] = [
   }
 ];
 
-export function AIComposerButton({ message, onComposed, disabled }: AIComposerButtonProps) {
+export function AIComposerButton({ message, onComposed, disabled, conversationId }: AIComposerButtonProps) {
   const [open, setOpen] = useState(false);
   const [showTranslateSubmenu, setShowTranslateSubmenu] = useState(false);
   const { compose, isComposing } = useWhatsAppComposer();
@@ -61,7 +63,7 @@ export function AIComposerButton({ message, onComposed, disabled }: AIComposerBu
     if (!message.trim()) return;
 
     try {
-      const result = await compose({ message, action, targetLanguage });
+      const result = await compose({ message, action, targetLanguage, conversationId });
       onComposed(result.composed);
       setOpen(false);
       setShowTranslateSubmenu(false);
