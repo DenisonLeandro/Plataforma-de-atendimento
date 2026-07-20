@@ -173,7 +173,7 @@ ${recentMessages}`;
             suggestions: defaultSuggestions,
             context: { contactName, lastMessage: lastClientMessage.content }
           }),
-          { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
@@ -184,7 +184,7 @@ ${recentMessages}`;
             suggestions: defaultSuggestions,
             context: { contactName, lastMessage: lastClientMessage.content }
           }),
-          { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
