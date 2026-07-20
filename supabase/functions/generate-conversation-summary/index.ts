@@ -116,13 +116,13 @@ Retorne APENAS um JSON válido sem markdown:
       if (aiResponse.status === 429) {
         return new Response(
           JSON.stringify({ error: 'Limite de requisições atingido. Tente novamente mais tarde.' }),
-          { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
       if (aiResponse.status === 402) {
         return new Response(
           JSON.stringify({ error: 'Créditos insuficientes. Adicione créditos à sua workspace.' }),
-          { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
       throw new Error(`Erro na geração: ${aiResponse.status}`);
