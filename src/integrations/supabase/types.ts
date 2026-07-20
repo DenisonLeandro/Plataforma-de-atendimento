@@ -70,6 +70,70 @@ export type Database = {
           },
         ]
       }
+      ai_usage_logs: {
+        Row: {
+          company_id: string
+          conversation_id: string | null
+          created_at: string | null
+          estimated_cost_brl: number | null
+          estimated_cost_usd: number | null
+          feature: string
+          id: string
+          input_tokens: number | null
+          message_id: string | null
+          model: string
+          output_tokens: number | null
+        }
+        Insert: {
+          company_id: string
+          conversation_id?: string | null
+          created_at?: string | null
+          estimated_cost_brl?: number | null
+          estimated_cost_usd?: number | null
+          feature: string
+          id?: string
+          input_tokens?: number | null
+          message_id?: string | null
+          model: string
+          output_tokens?: number | null
+        }
+        Update: {
+          company_id?: string
+          conversation_id?: string | null
+          created_at?: string | null
+          estimated_cost_brl?: number | null
+          estimated_cost_usd?: number | null
+          feature?: string
+          id?: string
+          input_tokens?: number | null
+          message_id?: string | null
+          model?: string
+          output_tokens?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_usage_logs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_usage_logs_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_usage_logs_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       assignment_rules: {
         Row: {
           company_id: string | null
@@ -1206,6 +1270,23 @@ export type Database = {
         Returns: boolean
       }
       generate_company_code: { Args: never; Returns: string }
+      get_ai_usage_summary: {
+        Args: {
+          _company_ids?: string[]
+          _end_date?: string
+          _start_date?: string
+        }
+        Returns: {
+          company_id: string
+          company_name: string
+          feature: string
+          total_calls: number
+          total_cost_brl: number
+          total_cost_usd: number
+          total_input_tokens: number
+          total_output_tokens: number
+        }[]
+      }
       get_assignable_agents: {
         Args: { _instance_id: string }
         Returns: {
