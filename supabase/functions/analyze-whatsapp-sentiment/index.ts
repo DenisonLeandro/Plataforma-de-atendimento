@@ -180,7 +180,7 @@ Analise o contexto geral e determine o sentimento predominante.`;
             success: false, 
             error: 'Rate limit excedido. Tente novamente em alguns segundos.' 
           }),
-          { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
@@ -190,7 +190,7 @@ Analise o contexto geral e determine o sentimento predominante.`;
             success: false, 
             error: 'Créditos insuficientes. Adicione créditos ao workspace.' 
           }),
-          { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
