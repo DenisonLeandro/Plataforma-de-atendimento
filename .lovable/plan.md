@@ -1,28 +1,23 @@
-## Problema
+## Causa raiz
 
-A agente Eduarda não consegue criar uma nova conversa. As policies de INSERT em `whatsapp_contacts` e `whatsapp_conversations` exigem papel `admin` ou `supervisor` (ou super admin com acesso). Agentes são bloqueados pelo RLS mesmo tendo acesso à instância.
+O modal "Nova Conversa" faz `upsert` em `whatsapp_contacts` com `onConflict: instance_id,phone_number`. Quando o contato já existe na instância (caso do Lucas em Advocacia Centro), o PostgREST executa **UPDATE**, e a policy de UPDATE de `whatsapp_contacts` exige `can_access_conversation` — que, para agentes, só é verdadeira quando a conversa está atribuída ao próprio agente. A Eduarda enxerga a conversa (via `can_view_conversation`), mas não é a dona → UPDATE bloqueado → o erro exibido é "new row violates row-level security policy for table whatsapp_contacts".
 
-## Solução
+Não tem nada a ver com criação. É o `upsert` reescrevendo um contato existente.
 
-Ajustar as policies de INSERT nas duas tabelas para também permitir que **agentes** criem registros, desde que:
-- Sejam da mesma empresa da instância (`company_id = get_user_company_id(auth.uid())`)
-- Tenham acesso à instância alvo via `can_user_see_instance(auth.uid(), instance_id)` (cobre `agent_instance_access` e admin/supervisor da empresa)
-- Estejam ativos e aprovados
+## Correção
 
-## Alterações no banco (via migration)
+Alinhar a policy de UPDATE de `whatsapp_contacts` à mesma regra de visibilidade das outras operações da tabela: qualquer agente que **enxerga** uma conversa vinculada ao contato pode atualizar os dados do contato. Isso mantém o escopo por instância/empresa (via `can_view_conversation`, que já checa `agent_instance_access`, admin/supervisor da empresa e super admin com acesso), sem exigir posse da conversa.
 
-1. `whatsapp_contacts`
-   - Substituir a policy `ALL` "Supervisors can manage contacts" por policies separadas:
-     - Manter INSERT/UPDATE/DELETE atuais para admin/supervisor/super admin.
-     - Adicionar policy INSERT para `authenticated` permitindo agentes com `can_user_see_instance(auth.uid(), instance_id)` e mesma empresa; exigir profile ativo/aprovado.
+### Migration
 
-2. `whatsapp_conversations`
-   - Ampliar a policy INSERT "Service can insert conversations" para incluir agentes com `can_user_see_instance(auth.uid(), instance_id)` e mesma empresa (profile ativo/aprovado), preservando super admin e admin/supervisor.
+Substituir a policy `Agents can update contacts of accessible conversations` em `public.whatsapp_contacts`:
 
-Nenhuma mudança em SELECT/UPDATE/DELETE. Nenhuma mudança de código frontend — `useCreateConversation` já envia `instance_id` e `company_id` (via trigger `set_company_id_from_instance`).
+- USING e WITH CHECK trocam `can_access_conversation(auth.uid(), c.id)` por `can_view_conversation(auth.uid(), c.id)`.
+- Mantém o predicado `EXISTS (SELECT 1 FROM whatsapp_conversations c WHERE c.contact_id = whatsapp_contacts.id AND ...)`, então continua exigindo que exista pelo menos uma conversa que o usuário enxerga apontando pro contato — impede escrita cross-empresa.
+- Não mexer em SELECT, INSERT, DELETE nem no upsert do frontend.
 
-## Verificação
+### Verificação
 
-- Rodar security linter após a migration.
-- Confirmar via `supabase--read_query` que as policies novas existem.
-- Pedir para Eduarda tentar novamente após deploy.
+1. Rodar `supabase--linter` após a migration.
+2. Confirmar via `read_query` que a policy nova reflete `can_view_conversation`.
+3. Pedir para Eduarda repetir "Nova conversa" com o Lucas em Advocacia Centro.
