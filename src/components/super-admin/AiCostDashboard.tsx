@@ -10,6 +10,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Separator } from '@/components/ui/separator';
 import { BarChart3, Building2, ChevronDown, Loader2, RefreshCw } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface CompanyOption {
   id: string;
@@ -77,12 +78,21 @@ export function AiCostDashboard({ companies }: AiCostDashboardProps) {
     }
   }, [preset, customStart, customEnd]);
 
-  const { data, isLoading, error, refetch } = useAiUsageDashboard({
+  const { data, isLoading, isFetching, error, refetch } = useAiUsageDashboard({
     companyIds: selectedIds,
     startDate,
     endDate,
     enabled: isSuperAdmin,
   });
+
+  const handleRefresh = async () => {
+    try {
+      await refetch();
+      toast.success('Dados atualizados');
+    } catch (err) {
+      toast.error('Erro ao atualizar dados');
+    }
+  };
 
   // Totais por feature (todas as empresas do resultado)
   const byFeature = useMemo(() => {
@@ -249,8 +259,8 @@ export function AiCostDashboard({ companies }: AiCostDashboardProps) {
           </Popover>
         </div>
 
-        <Button variant="ghost" size="sm" onClick={() => refetch()} disabled={isLoading}>
-          <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+        <Button variant="ghost" size="sm" onClick={handleRefresh} disabled={isFetching}>
+          <RefreshCw className={`mr-2 h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
           Atualizar
         </Button>
       </div>
