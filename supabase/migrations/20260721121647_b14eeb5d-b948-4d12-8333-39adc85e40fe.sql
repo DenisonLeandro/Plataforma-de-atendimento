@@ -1,0 +1,1 @@
+GRANT EXECUTE ON FUNCTION public._diag_upsert_contact(uuid,uuid,text,text) TO service_role, postgres, authenticated;
