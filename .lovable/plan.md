@@ -1,23 +1,23 @@
-## Causa raiz
+## Ainda o mesmo erro no upsert de `whatsapp_contacts`
 
-O modal "Nova Conversa" faz `upsert` em `whatsapp_contacts` com `onConflict: instance_id,phone_number`. Quando o contato já existe na instância (caso do Lucas em Advocacia Centro), o PostgREST executa **UPDATE**, e a policy de UPDATE de `whatsapp_contacts` exige `can_access_conversation` — que, para agentes, só é verdadeira quando a conversa está atribuída ao próprio agente. A Eduarda enxerga a conversa (via `can_view_conversation`), mas não é a dona → UPDATE bloqueado → o erro exibido é "new row violates row-level security policy for table whatsapp_contacts".
+Confirmei via network log: request `POST /rest/v1/whatsapp_contacts?on_conflict=instance_id%2Cphone_number` com body `{instance_id, phone_number: 5543984933258, name: "Lucas"}` retorna `42501`. Já existe um contato com esse par `(instance_id, phone_number)` — id `5e2cd06d…`, company `001`, com uma conversa vinculada — então o PostgREST usa o caminho `ON CONFLICT DO UPDATE`. As policies novas de `whatsapp_contacts` estão exatamente como o plano anterior previu: INSERT e UPDATE agora permitem agentes com `can_user_see_instance` / `can_view_conversation`, e Eduarda satisfaz todos os predicados quando avaliados individualmente. Ainda assim o Postgres nega.
 
-Não tem nada a ver com criação. É o `upsert` reescrevendo um contato existente.
+Como não consigo assumir o papel `authenticated` a partir do exec do sandbox, preciso reproduzir o erro dentro do próprio Postgres com o `auth.uid()` da Eduarda para descobrir qual predicado retorna false.
 
-## Correção
+## Diagnóstico proposto (temporário, reversível)
 
-Alinhar a policy de UPDATE de `whatsapp_contacts` à mesma regra de visibilidade das outras operações da tabela: qualquer agente que **enxerga** uma conversa vinculada ao contato pode atualizar os dados do contato. Isso mantém o escopo por instância/empresa (via `can_view_conversation`, que já checa `agent_instance_access`, admin/supervisor da empresa e super admin com acesso), sem exigir posse da conversa.
+1. Criar função `public._diag_upsert_contact()` SECURITY DEFINER que:
+   - Faz `SET LOCAL role authenticated`.
+   - Faz `SET LOCAL "request.jwt.claims"` com `sub = 1e9affd3-…` (Eduarda).
+   - Executa o mesmo `INSERT … ON CONFLICT (instance_id, phone_number) DO UPDATE SET name = EXCLUDED.name` da requisição real.
+   - Captura e retorna `SQLSTATE`/`SQLERRM` num JSONB.
+2. Rodar a função via `supabase--read_query` (SELECT) e ler o erro exato.
+3. Além disso, avaliar isoladamente, dentro da mesma função, cada sub-expressão usada nas policies (`can_user_see_instance`, `can_view_conversation`, `super_admin_can_write_company`, `get_user_company_id`) sob o contexto simulado — para localizar qual retorna null/false.
+4. Com base no resultado, aplicar a correção real (pode ser: `SECURITY DEFINER` faltando em algum helper, `search_path`, ou algum predicado que retorna null em vez de false por causa de linha inexistente).
+5. Ao final, `DROP FUNCTION public._diag_upsert_contact();` — nada temporário fica no schema.
 
-### Migration
+Este diagnóstico é executado como uma única migration criando a função, depois consultas SELECT invocando-a, e finalmente uma migration de cleanup + a correção real assim que a causa raiz for identificada.
 
-Substituir a policy `Agents can update contacts of accessible conversations` em `public.whatsapp_contacts`:
+## Nada muda no frontend nesta etapa
 
-- USING e WITH CHECK trocam `can_access_conversation(auth.uid(), c.id)` por `can_view_conversation(auth.uid(), c.id)`.
-- Mantém o predicado `EXISTS (SELECT 1 FROM whatsapp_conversations c WHERE c.contact_id = whatsapp_contacts.id AND ...)`, então continua exigindo que exista pelo menos uma conversa que o usuário enxerga apontando pro contato — impede escrita cross-empresa.
-- Não mexer em SELECT, INSERT, DELETE nem no upsert do frontend.
-
-### Verificação
-
-1. Rodar `supabase--linter` após a migration.
-2. Confirmar via `read_query` que a policy nova reflete `can_view_conversation`.
-3. Pedir para Eduarda repetir "Nova conversa" com o Lucas em Advocacia Centro.
+Só depois de saber qual predicado falha eu proponho a correção definitiva (que pode ser em RLS, em uma função helper, ou no hook `useCreateConversation`).
