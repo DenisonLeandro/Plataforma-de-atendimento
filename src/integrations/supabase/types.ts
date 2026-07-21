@@ -1249,6 +1249,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      _diag_upsert_contact: {
+        Args: {
+          _instance_id: string
+          _name: string
+          _phone: string
+          _uid: string
+        }
+        Returns: Json
+      }
       assign_conversation: {
         Args: {
           _assigned_to: string
