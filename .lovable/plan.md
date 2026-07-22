@@ -1,17 +1,30 @@
-## Diagnóstico
+## Problema
 
-O botão **Atualizar** chama `refetch()` normalmente — a função existe e a RPC é disparada. O problema é de percepção: hoje o ícone só gira e o botão só desabilita quando `isLoading` é `true`, e `isLoading` do React Query só é `true` na **primeira** carga. Nos cliques seguintes o estado que muda é `isFetching`, então o clique acontece, a requisição vai, mas nada muda visualmente e o usuário conclui que o botão "não funciona".
+A Eduarda (agent) conseguiu criar o contato, mas não conseguiu **assumir/transferir** a conversa. A RPC `assign_conversation` chama `can_access_conversation`, que para agents comuns só libera se:
 
-(Confirmei lendo `src/components/super-admin/AiCostDashboard.tsx` e `src/hooks/useAiUsageDashboard.ts`; nenhum overlay bloqueia o clique — a toolbar flutuante no screenshot é do editor Lovable, não da app.)
+- a conversa já está atribuída a ela, **ou**
+- está sem dono E existe uma `assignment_rule` que a inclui.
 
-## Correção
+Se outro atendente já assumiu, ou não há regra de atribuição, a agent recebe "Sem permissão para atribuir esta conversa".
 
-Escopo: apenas frontend, arquivo `src/components/super-admin/AiCostDashboard.tsx` e o hook `src/hooks/useAiUsageDashboard.ts`.
+## Objetivo
 
-1. Expor `isFetching` do React Query em `useAiUsageDashboard` (além de `isLoading`).
-2. Em `AiCostDashboard`:
-   - Usar `isFetching` para girar o ícone `RefreshCw` e desabilitar o botão durante qualquer refetch (não só o primeiro load).
-   - Manter `isLoading` só para o placeholder grande "Carregando custos de IA...".
-   - Adicionar um `toast.success('Dados atualizados')` no `onSuccess` do `refetch()` para dar confirmação explícita ao clique.
+Qualquer usuário ativo/aprovado que enxerga a instância deve poder **assumir, transferir ou devolver** conversas daquela instância.
 
-Nada de mudança em RPC, RLS ou lógica de negócio.
+## Mudança (única, no banco)
+
+Redefinir `public.assign_conversation` trocando o guarda de permissão:
+
+- **Antes:** `IF NOT public.can_access_conversation(_caller, _conversation_id) THEN RAISE ...`
+- **Depois:** permitir se o caller for super admin com acesso à empresa da conversa **OU** `public.can_user_see_instance(_caller, <instance_id da conversa>)` for verdadeiro (o que já cobre admin/supervisor da empresa e agents com `agent_instance_access`).
+
+Mantém:
+- Verificação de autenticação (`auth.uid()`).
+- Validação do destinatário (`_assigned_to`) já existente: precisa ser ativo/aprovado e da mesma empresa da conversa (ou super admin com exceção).
+- Registro em `conversation_assignments` e `UPDATE` em `whatsapp_conversations`.
+
+Nada muda no frontend nem nas policies de RLS de leitura — a visibilidade da conversa para agents (já ajustada anteriormente via `can_view_conversation`) continua permitindo que a Eduarda veja e agora também atue sobre conversas da instância dela.
+
+## Verificação
+
+Após aplicar, testar como a Eduarda: assumir uma conversa atribuída a outro atendente e transferir de volta. Confirmar que aparece linha nova em `conversation_assignments`.
