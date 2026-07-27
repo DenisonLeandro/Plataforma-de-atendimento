@@ -47,8 +47,9 @@ export function usePlatformFixedCosts(enabled = true) {
   useEffect(() => {
     if (!enabled) return;
 
+    const channelName = `platform-fixed-costs:${crypto.randomUUID()}`;
     const channel = supabase
-      .channel('platform-fixed-costs')
+      .channel(channelName)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'platform_fixed_costs' },
