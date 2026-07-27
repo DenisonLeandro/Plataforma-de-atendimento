@@ -1,30 +1,16 @@
 ## Problema
 
-A Eduarda (agent) conseguiu criar o contato, mas não conseguiu **assumir/transferir** a conversa. A RPC `assign_conversation` chama `can_access_conversation`, que para agents comuns só libera se:
+O Painel de Empresas (`/super-admin`) não carrega nada porque a tabela `public.companies` **não tem GRANTs** para os roles `authenticated`/`service_role`. Sem GRANT, o PostgREST rejeita a consulta antes mesmo das policies RLS serem avaliadas — resultado: nenhuma empresa aparece, mesmo para o super admin.
 
-- a conversa já está atribuída a ela, **ou**
-- está sem dono E existe uma `assignment_rule` que a inclui.
+Verificado agora:
+- RLS/policies estão corretas (super admin vê tudo, usuário vê a própria empresa).
+- `SELECT grantee, privilege_type FROM information_schema.role_table_grants WHERE table_name='companies'` retornou vazio.
 
-Se outro atendente já assumiu, ou não há regra de atribuição, a agent recebe "Sem permissão para atribuir esta conversa".
+## Correção (uma migration)
 
-## Objetivo
+```sql
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.companies TO authenticated;
+GRANT ALL ON public.companies TO service_role;
+```
 
-Qualquer usuário ativo/aprovado que enxerga a instância deve poder **assumir, transferir ou devolver** conversas daquela instância.
-
-## Mudança (única, no banco)
-
-Redefinir `public.assign_conversation` trocando o guarda de permissão:
-
-- **Antes:** `IF NOT public.can_access_conversation(_caller, _conversation_id) THEN RAISE ...`
-- **Depois:** permitir se o caller for super admin com acesso à empresa da conversa **OU** `public.can_user_see_instance(_caller, <instance_id da conversa>)` for verdadeiro (o que já cobre admin/supervisor da empresa e agents com `agent_instance_access`).
-
-Mantém:
-- Verificação de autenticação (`auth.uid()`).
-- Validação do destinatário (`_assigned_to`) já existente: precisa ser ativo/aprovado e da mesma empresa da conversa (ou super admin com exceção).
-- Registro em `conversation_assignments` e `UPDATE` em `whatsapp_conversations`.
-
-Nada muda no frontend nem nas policies de RLS de leitura — a visibilidade da conversa para agents (já ajustada anteriormente via `can_view_conversation`) continua permitindo que a Eduarda veja e agora também atue sobre conversas da instância dela.
-
-## Verificação
-
-Após aplicar, testar como a Eduarda: assumir uma conversa atribuída a outro atendente e transferir de volta. Confirmar que aparece linha nova em `conversation_assignments`.
+Sem mudanças em código front-end. Após aprovar, a listagem de empresas volta a funcionar tanto no `/super-admin` quanto no `useCompanyContext` (nome da empresa no header).
