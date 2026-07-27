@@ -291,6 +291,33 @@ export type Database = {
           },
         ]
       }
+      platform_fixed_costs: {
+        Row: {
+          active: boolean
+          amount_brl: number
+          created_at: string | null
+          id: string
+          label: string
+          updated_at: string | null
+        }
+        Insert: {
+          active?: boolean
+          amount_brl?: number
+          created_at?: string | null
+          id?: string
+          label: string
+          updated_at?: string | null
+        }
+        Update: {
+          active?: boolean
+          amount_brl?: number
+          created_at?: string | null
+          id?: string
+          label?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
