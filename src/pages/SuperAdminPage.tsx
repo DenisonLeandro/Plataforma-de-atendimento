@@ -11,7 +11,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { AiCostDashboard } from '@/components/super-admin/AiCostDashboard';
+import { PlatformCostDashboard } from '@/components/super-admin/PlatformCostDashboard';
 import { Building2, Plus, ArrowLeft, Loader2, Copy, Check, Users, Info, ShieldAlert, Ban, CheckCircle, Trash2 } from 'lucide-react';
 
 const PROTECTED_COMPANY_ID = '00000000-0000-0000-0000-000000000001';
@@ -507,8 +507,8 @@ export default function SuperAdminPage() {
           </div>
         )}
 
-        {/* Dashboard de custos de IA (aditivo — não altera nada acima) */}
-        <AiCostDashboard companies={companies.map((c) => ({ id: c.id, name: c.name }))} />
+        {/* Dashboard de custos da plataforma (aditivo — não altera nada acima) */}
+        <PlatformCostDashboard companies={companies.map((c) => ({ id: c.id, name: c.name, status: c.status }))} />
 
         {/* Modal for Creating Admin */}
         <Dialog open={isAdminOpen} onOpenChange={(open) => {
