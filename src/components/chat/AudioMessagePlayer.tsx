@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { logActivity } from "@/lib/activity-log";
 
 interface AudioMessagePlayerProps {
   messageId: string;
@@ -263,6 +264,8 @@ export const AudioMessagePlayer = ({
                     ? "Não foi possível baixar este áudio para transcrição."
                 : "Não foi possível transcrever este áudio.");
         toast.error(msg);
+      } else {
+        logActivity("ai.transcription", { targetType: "message", targetId: messageId });
       }
       await queryClient.invalidateQueries({
         queryKey: ["whatsapp", "messages", conversationId],

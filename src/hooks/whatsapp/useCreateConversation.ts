@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Tables } from '@/integrations/supabase/types';
+import { logActivity } from '@/lib/activity-log';
 
 type Conversation = Tables<'whatsapp_conversations'>;
 type Contact = Tables<'whatsapp_contacts'>;
@@ -80,6 +81,14 @@ export const useCreateConversation = () => {
         .single();
 
       if (convError) throw convError;
+
+      // Conversa recém-criada (o caminho de conversa já existente retorna antes).
+      logActivity('conversation.create', {
+        targetType: 'conversation',
+        targetId: conversation.id,
+        targetLabel: contact.name,
+        companyId: conversation.company_id ?? undefined,
+      });
 
       return { conversation, contact };
     },

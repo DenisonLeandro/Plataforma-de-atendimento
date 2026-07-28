@@ -12,3 +12,4 @@ export { InstanceSetupCollapsible } from "./InstanceSetupCollapsible";
 export { SetupGuideCollapsible } from "./SetupGuideCollapsible";
 export { SecuritySettings } from "./SecuritySettings";
 export { InstanceAccessManager } from "./InstanceAccessManager";
+export { ActivityLogTab } from "./ActivityLogTab";

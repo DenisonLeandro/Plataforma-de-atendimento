@@ -1,6 +1,7 @@
 import { useMutation } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { logActivity } from '@/lib/activity-log';
 
 export type ComposerAction =
   | 'expand'
@@ -45,6 +46,13 @@ export function useWhatsAppComposer() {
       }
 
       return data as ComposeResponse;
+    },
+    onSuccess: (_data, variables) => {
+      logActivity('ai.composer', {
+        targetType: 'conversation',
+        targetId: variables.conversationId ?? undefined,
+        metadata: { action: variables.action },
+      });
     },
     onError: (error: Error) => {
       console.error('Composition error:', error);

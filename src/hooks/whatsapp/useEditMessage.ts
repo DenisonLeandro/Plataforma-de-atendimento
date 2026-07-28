@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { logActivity } from '@/lib/activity-log';
 
 interface EditMessageParams {
   messageId: string;
@@ -25,6 +26,11 @@ export const useEditMessage = () => {
         toast.success('Mensagem editada com sucesso');
         queryClient.invalidateQueries({ queryKey: ['whatsapp', 'messages', variables.conversationId] });
         queryClient.invalidateQueries({ queryKey: ['message-edit-history', variables.messageId] });
+        logActivity('message.edit', {
+          targetType: 'message',
+          targetId: variables.messageId,
+          metadata: { conversationId: variables.conversationId },
+        });
       } else {
         toast.error(data.error || 'Erro ao editar mensagem');
       }

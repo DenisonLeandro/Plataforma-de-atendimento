@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Tables } from '@/integrations/supabase/types';
+import { logActivity } from '@/lib/activity-log';
 
 type SentimentAnalysis = Tables<'whatsapp_sentiment_analysis'>;
 
@@ -38,6 +39,7 @@ export const useWhatsAppSentiment = (conversationId: string | null) => {
       if (conversationId) {
         queryClient.invalidateQueries({ queryKey: ['whatsapp', 'sentiment', conversationId] });
       }
+      logActivity('ai.sentiment', { targetType: 'conversation', targetId: conversationId ?? undefined });
     },
   });
 

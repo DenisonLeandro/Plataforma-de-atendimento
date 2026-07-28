@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Tables } from '@/integrations/supabase/types';
 import { useToast } from '@/hooks/use-toast';
+import { logActivity } from '@/lib/activity-log';
 
 type Message = Tables<'whatsapp_messages'>;
 
@@ -103,6 +104,11 @@ export const useWhatsAppSend = () => {
       // de erro mantemos o balão 'failed' visível (não invalidamos a query).
       queryClient.invalidateQueries({ queryKey: ['whatsapp', 'messages', variables.conversationId] });
       queryClient.invalidateQueries({ queryKey: ['whatsapp', 'conversations'] });
+      logActivity('message.send', {
+        targetType: 'conversation',
+        targetId: variables.conversationId,
+        metadata: { messageType: variables.messageType },
+      });
     },
   });
 

@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { logActivity } from '@/lib/activity-log';
 
 interface SendReactionParams {
   messageId: string;
@@ -24,8 +25,13 @@ export const useMessageReaction = () => {
       return data;
     },
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ 
-        queryKey: ['whatsapp', 'reactions', variables.conversationId] 
+      queryClient.invalidateQueries({
+        queryKey: ['whatsapp', 'reactions', variables.conversationId]
+      });
+      logActivity('message.react', {
+        targetType: 'message',
+        targetId: variables.messageId,
+        metadata: { emoji: variables.emoji, conversationId: variables.conversationId },
       });
     },
     onError: (error) => {

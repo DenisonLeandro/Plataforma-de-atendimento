@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useState } from 'react';
+import { logActivity } from '@/lib/activity-log';
 
 export interface ConversationSummary {
   id: string;
@@ -61,6 +62,7 @@ export const useConversationSummaries = (conversationId: string | null) => {
 
       toast.success('Resumo gerado com sucesso!');
       queryClient.invalidateQueries({ queryKey: ['conversation-summaries', conversationId] });
+      logActivity('ai.summary', { targetType: 'conversation', targetId: conversationId });
     } catch (error) {
       console.error('Erro ao gerar resumo:', error);
       toast.error('Erro ao gerar resumo. Tente novamente.');

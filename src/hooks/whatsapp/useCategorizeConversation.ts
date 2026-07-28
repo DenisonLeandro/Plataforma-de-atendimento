@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { logActivity } from '@/lib/activity-log';
 
 export const useCategorizeConversation = () => {
   const queryClient = useQueryClient();
@@ -22,9 +23,10 @@ export const useCategorizeConversation = () => {
         queryKey: ['conversation-topics', conversationId] 
       });
       // Invalidar lista de conversas (para atualizar badges)
-      queryClient.invalidateQueries({ 
-        queryKey: ['whatsapp', 'conversations'] 
+      queryClient.invalidateQueries({
+        queryKey: ['whatsapp', 'conversations']
       });
+      logActivity('ai.categorization', { targetType: 'conversation', targetId: conversationId });
     },
     onError: (error: any) => {
       console.error('Erro ao categorizar:', error);

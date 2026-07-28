@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { logActivity } from "@/lib/activity-log";
 
 export interface SmartReplySuggestion {
   text: string;
@@ -58,6 +59,7 @@ export const useSmartReply = (conversationId: string | null) => {
     onSuccess: (data) => {
       queryClient.setQueryData(['smart-replies', conversationId], data);
       toast.success('Novas sugestões geradas!');
+      logActivity('ai.smart_replies', { targetType: 'conversation', targetId: conversationId ?? undefined });
     },
     onError: (error: any) => {
       console.error('Refresh error:', error);
