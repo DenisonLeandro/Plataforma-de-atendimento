@@ -16,9 +16,10 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useWhatsAppInstances, useSyncWhatsAppHistory, useSyncJob, useSyncJobCompletion, type SyncJob } from "@/hooks/whatsapp";
-import { RefreshCw, Pencil, Trash2, Copy, Link, Download, Loader2, Plug, Users, Webhook, AlertTriangle, ExternalLink } from "lucide-react";
+import { RefreshCw, Pencil, Trash2, Copy, Link, Download, Loader2, Plug, Users, Webhook, AlertTriangle, ExternalLink, UserCog } from "lucide-react";
 import { toast } from "sonner";
 import { EditInstanceDialog } from "./EditInstanceDialog";
+import { supabase } from "@/integrations/supabase/client";
 
 type Instance = Tables<"whatsapp_instances">;
 
@@ -35,6 +36,7 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showSyncDialog, setShowSyncDialog] = useState(false);
+  const [isFixingNames, setIsFixingNames] = useState(false);
 
   const { data: syncJob } = useSyncJob(instance.id);
 
@@ -155,6 +157,29 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
       }
     } catch (error: any) {
       toast.error(error?.message || "Falha ao sincronizar webhook");
+    }
+  };
+
+  const handleFixContactNames = async () => {
+    setIsFixingNames(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('fix-contact-names', {
+        body: { instanceId: instance.id },
+      });
+      if (error) throw error;
+      const total = data?.total ?? 0;
+      if (total === 0) {
+        toast.info("Nenhum contato precisando de correção nesta instância.");
+      } else {
+        toast.success(
+          `Contatos processados: ${data.updated} atualizados, ${data.renamed} @lid resolvidos, ${data.skipped_duplicate} duplicados, ${data.unresolved} sem retorno da Evolution (de ${total}).`,
+          { duration: 12000 },
+        );
+      }
+    } catch (error: any) {
+      toast.error(error?.message || "Falha ao corrigir nomes de contatos");
+    } finally {
+      setIsFixingNames(false);
     }
   };
 
@@ -311,6 +336,20 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <Users className="h-4 w-4" />
+            )}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleFixContactNames}
+            disabled={isFixingNames}
+            title="Corrigir nomes de contatos (resolve @lid e busca pushName na Evolution)"
+            className="h-9 w-9 p-0 shrink-0"
+          >
+            {isFixingNames ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <UserCog className="h-4 w-4" />
             )}
           </Button>
           <Button
