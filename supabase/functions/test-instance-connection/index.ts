@@ -152,6 +152,10 @@ serve(async (req) => {
     let newStatus: string;
     if (isDeliveryDegraded) {
       newStatus = 'connecting';
+    } else if (mapped === 'disconnected') {
+      // Evolution respondeu explicitamente que o socket está fechado.
+      // Ação manual do usuário — refletir imediatamente sem streak.
+      newStatus = 'disconnected';
     } else if (mapped === 'connected' || mapped === 'connecting') {
       newStatus = 'connected';
     } else {
