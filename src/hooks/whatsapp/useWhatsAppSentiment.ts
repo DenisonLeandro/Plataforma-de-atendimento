@@ -2,12 +2,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Tables } from '@/integrations/supabase/types';
-import { logActivity } from '@/lib/activity-log';
+import { useLogActivity } from '@/hooks/useLogActivity';
 
 type SentimentAnalysis = Tables<'whatsapp_sentiment_analysis'>;
 
 export const useWhatsAppSentiment = (conversationId: string | null) => {
   const queryClient = useQueryClient();
+  const logActivity = useLogActivity();
 
   const { data: sentiment, isLoading, error, refetch } = useQuery({
     queryKey: ['whatsapp', 'sentiment', conversationId],

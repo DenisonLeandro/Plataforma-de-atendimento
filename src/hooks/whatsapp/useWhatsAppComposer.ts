@@ -1,7 +1,7 @@
 import { useMutation } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { logActivity } from '@/lib/activity-log';
+import { useLogActivity } from '@/hooks/useLogActivity';
 
 export type ComposerAction =
   | 'expand'
@@ -27,6 +27,7 @@ interface ComposeResponse {
 }
 
 export function useWhatsAppComposer() {
+  const logActivity = useLogActivity();
   const composeMutation = useMutation({
     mutationFn: async ({ message, action, targetLanguage, conversationId }: ComposeParams) => {
       const { data, error } = await supabase.functions.invoke(

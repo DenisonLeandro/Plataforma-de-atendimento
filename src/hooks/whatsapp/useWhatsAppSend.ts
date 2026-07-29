@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Tables } from '@/integrations/supabase/types';
 import { useToast } from '@/hooks/use-toast';
-import { logActivity } from '@/lib/activity-log';
+import { useLogActivity } from '@/hooks/useLogActivity';
 
 type Message = Tables<'whatsapp_messages'>;
 
@@ -20,6 +20,7 @@ interface SendMessageParams {
 export const useWhatsAppSend = () => {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const logActivity = useLogActivity();
 
   const mutation = useMutation({
     mutationFn: async (params: SendMessageParams) => {

@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { logActivity } from "@/lib/activity-log";
+import { useLogActivity } from "@/hooks/useLogActivity";
 
 export interface SmartReplySuggestion {
   text: string;
@@ -19,6 +19,7 @@ export interface SmartReplyResponse {
 
 export const useSmartReply = (conversationId: string | null) => {
   const queryClient = useQueryClient();
+  const logActivity = useLogActivity();
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['smart-replies', conversationId],

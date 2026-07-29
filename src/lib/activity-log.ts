@@ -51,7 +51,7 @@ export function activityLabel(action: string): { label: string; icon: string } {
 
 export type ActivityAction = keyof typeof ACTIVITY_LABELS;
 
-interface LogActivityOptions {
+export interface LogActivityOptions {
   targetType?: string;
   targetId?: string | null;
   targetLabel?: string | null;

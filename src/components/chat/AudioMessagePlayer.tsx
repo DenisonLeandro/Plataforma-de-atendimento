@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { logActivity } from "@/lib/activity-log";
+import { useLogActivity } from "@/hooks/useLogActivity";
 
 interface AudioMessagePlayerProps {
   messageId: string;
@@ -140,6 +140,7 @@ export const AudioMessagePlayer = ({
   const triedFallbackRef = useRef(false);
   const blobUrlRef = useRef<string | null>(null);
   const queryClient = useQueryClient();
+  const logActivity = useLogActivity();
 
   // Keep the latest URL in a ref so we can read it inside handlers without
   // rebuilding the <audio> element every time the signed URL renews.

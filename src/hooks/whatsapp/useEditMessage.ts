@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { logActivity } from '@/lib/activity-log';
+import { useLogActivity } from '@/hooks/useLogActivity';
 
 interface EditMessageParams {
   messageId: string;
@@ -11,6 +11,7 @@ interface EditMessageParams {
 
 export const useEditMessage = () => {
   const queryClient = useQueryClient();
+  const logActivity = useLogActivity();
 
   const mutation = useMutation({
     mutationFn: async (params: EditMessageParams) => {

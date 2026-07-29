@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { logActivity } from '@/lib/activity-log';
+import { useLogActivity } from '@/hooks/useLogActivity';
 
 interface SendReactionParams {
   messageId: string;
@@ -14,6 +14,7 @@ interface SendReactionParams {
 export const useMessageReaction = () => {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const logActivity = useLogActivity();
 
   const sendReaction = useMutation({
     mutationFn: async ({ messageId, conversationId, emoji }: SendReactionParams) => {
