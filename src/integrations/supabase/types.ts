@@ -14,6 +14,56 @@ export type Database = {
   }
   public: {
     Tables: {
+      activity_logs: {
+        Row: {
+          action: string
+          actor_name: string | null
+          actor_role: string | null
+          actor_user_id: string | null
+          company_id: string | null
+          created_at: string | null
+          id: string
+          metadata: Json
+          target_id: string | null
+          target_label: string | null
+          target_type: string | null
+        }
+        Insert: {
+          action: string
+          actor_name?: string | null
+          actor_role?: string | null
+          actor_user_id?: string | null
+          company_id?: string | null
+          created_at?: string | null
+          id?: string
+          metadata?: Json
+          target_id?: string | null
+          target_label?: string | null
+          target_type?: string | null
+        }
+        Update: {
+          action?: string
+          actor_name?: string | null
+          actor_role?: string | null
+          actor_user_id?: string | null
+          company_id?: string | null
+          created_at?: string | null
+          id?: string
+          metadata?: Json
+          target_id?: string | null
+          target_label?: string | null
+          target_type?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "activity_logs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       agent_instance_access: {
         Row: {
           company_id: string | null
@@ -1276,6 +1326,18 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      _write_activity_log: {
+        Args: {
+          _action: string
+          _actor: string
+          _company_id: string
+          _metadata: Json
+          _target_id: string
+          _target_label: string
+          _target_type: string
+        }
+        Returns: undefined
+      }
       assign_conversation: {
         Args: {
           _assigned_to: string
@@ -1297,6 +1359,30 @@ export type Database = {
         Returns: boolean
       }
       generate_company_code: { Args: never; Returns: string }
+      get_activity_logs: {
+        Args: {
+          _actions?: string[]
+          _actor_user_id?: string
+          _company_id?: string
+          _end_date?: string
+          _limit?: number
+          _start_date?: string
+        }
+        Returns: {
+          action: string
+          actor_name: string
+          actor_role: string
+          actor_user_id: string
+          company_id: string
+          company_name: string
+          created_at: string
+          id: string
+          metadata: Json
+          target_id: string
+          target_label: string
+          target_type: string
+        }[]
+      }
       get_ai_usage_summary: {
         Args: {
           _company_ids?: string[]
@@ -1358,6 +1444,17 @@ export type Database = {
       }
       is_first_user: { Args: never; Returns: boolean }
       is_super_admin: { Args: { _user_id?: string }; Returns: boolean }
+      log_activity: {
+        Args: {
+          _action: string
+          _company_id?: string
+          _metadata?: Json
+          _target_id?: string
+          _target_label?: string
+          _target_type?: string
+        }
+        Returns: undefined
+      }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
       super_admin_can_write_company: {
