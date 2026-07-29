@@ -120,6 +120,31 @@ Deno.serve(async (req) => {
     // "Error: Connection Closed". Antes de enviar, conferimos o estado e, se
     // estiver fechado, tentamos um connect leve para reabrir o socket.
     let preState: string | null = null;
+    const readConnectionState = async (): Promise<string | null> => {
+      try {
+        const resp = await fetchWithTimeout(`${baseEvolutionUrl}/instance/connectionState/${instanceIdentifier}`, {
+          timeout: 10000,
+          headers: { apikey: secrets.api_key },
+        });
+        if (!resp.ok) return null;
+        const txt = await resp.text();
+        if (!txt) return null;
+        try {
+          const data: any = JSON.parse(txt);
+          return data?.state ?? data?.instance?.state ?? null;
+        } catch { return null; }
+      } catch { return null; }
+    };
+    const waitForOpen = async (maxMs: number): Promise<string | null> => {
+      const started = Date.now();
+      let last: string | null = null;
+      while (Date.now() - started < maxMs) {
+        last = await readConnectionState();
+        if (last === 'open') return last;
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+      return last;
+    };
     try {
       const stateResp = await fetchWithTimeout(`${baseEvolutionUrl}/instance/connectionState/${instanceIdentifier}`, {
         timeout: 15000,
@@ -130,13 +155,13 @@ Deno.serve(async (req) => {
         let stateData: any = {};
         if (stateText) { try { stateData = JSON.parse(stateText); } catch (e) { console.warn('[send-whatsapp-message] Falha ao parsear estado da conexão:', e); } }
         preState = stateData?.state ?? stateData?.instance?.state ?? null;
-        if (preState === 'close' || preState === 'closed') {
+        if (preState !== 'open') {
           console.warn('[send-whatsapp-message] Socket fechado antes do envio, tentando reabrir');
           await fetchWithTimeout(`${baseEvolutionUrl}/instance/connect/${instanceIdentifier}`, {
             timeout: 20000,
             headers: { apikey: secrets.api_key },
           }).catch(() => null);
-          await new Promise((r) => setTimeout(r, 1500));
+          preState = await waitForOpen(15000);
         }
       } else {
         console.warn('[send-whatsapp-message] PRÉ-envio connectionState HTTP', stateResp.status);
@@ -264,8 +289,14 @@ Deno.serve(async (req) => {
           .from('whatsapp_instances')
           .update({ status: 'connecting', updated_at: new Date().toISOString() })
           .eq('id', instanceRowId);
-        await new Promise((r) => setTimeout(r, 2500));
-        attempt = await doSendWith(usedCandidate);
+        // Aguarda o socket voltar ao estado "open" antes de reenviar; se não
+        // voltar em ~15s, não adianta martelar — devolvemos a mensagem amigável.
+        const finalState = await waitForOpen(15000);
+        if (finalState === 'open') {
+          attempt = await doSendWith(usedCandidate);
+        } else {
+          console.warn('[send-whatsapp-message] Socket não voltou para "open" após reconexão. Estado final:', finalState);
+        }
       } catch (e) {
         console.error('[send-whatsapp-message] Falha ao tentar recuperar socket:', e);
       }
