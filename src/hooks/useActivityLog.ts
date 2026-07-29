@@ -18,8 +18,11 @@ export interface ActivityLogRow {
 }
 
 interface UseActivityLogParams {
-  /** null = todas as empresas visíveis (super_admin). Admin é auto-escopado pela RPC. */
-  companyIds?: string[] | null;
+  /**
+   * Empresa a consultar (uma só). Para super_admin é a empresa em view-as/logada;
+   * para admin a RPC força a própria empresa de qualquer forma. Nunca "todas".
+   */
+  companyId?: string | null;
   actorUserId?: string | null;
   actions?: string[] | null;
   startDate: Date;
@@ -34,7 +37,7 @@ interface UseActivityLogParams {
  * cada 60s + INSERT em activity_logs via Realtime.
  */
 export function useActivityLog({
-  companyIds = null,
+  companyId = null,
   actorUserId = null,
   actions = null,
   startDate,
@@ -46,17 +49,16 @@ export function useActivityLog({
 
   const startIso = startDate.toISOString();
   const endIso = endDate.toISOString();
-  const companyKey = companyIds ? [...companyIds].sort().join(',') : 'all';
   const actionsKey = actions ? [...actions].sort().join(',') : 'all';
 
-  const queryKey = ['activity-logs', companyKey, actorUserId ?? 'all', actionsKey, startIso, endIso, limit];
+  const queryKey = ['activity-logs', companyId ?? 'none', actorUserId ?? 'all', actionsKey, startIso, endIso, limit];
 
   const query = useQuery<ActivityLogRow[]>({
     queryKey,
-    enabled,
+    enabled: enabled && !!companyId,
     queryFn: async () => {
       const { data, error } = await (supabase.rpc as any)('get_activity_logs', {
-        _company_ids: companyIds && companyIds.length > 0 ? companyIds : null,
+        _company_id: companyId,
         _actor_user_id: actorUserId || null,
         _actions: actions && actions.length > 0 ? actions : null,
         _start_date: startIso,

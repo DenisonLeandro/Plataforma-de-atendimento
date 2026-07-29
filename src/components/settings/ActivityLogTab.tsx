@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
+import { useCompanyContext } from '@/hooks/useCompanyContext';
 import { useActivityLog, type ActivityLogRow } from '@/hooks/useActivityLog';
-import { useSuperAdminCompanies } from '@/hooks/useSuperAdminCompanies';
 import { activityLabel, ACTIVITY_GROUPS } from '@/lib/activity-log';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,9 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Separator } from '@/components/ui/separator';
-import { Badge } from '@/components/ui/badge';
-import { Building2, ChevronDown, Loader2, RefreshCw, History, Filter } from 'lucide-react';
+import { ChevronDown, Loader2, RefreshCw, History, Filter } from 'lucide-react';
 
 type Preset = '24h' | '7d' | '30d';
 
@@ -34,14 +31,13 @@ function relativeTime(iso: string): string {
 }
 
 export function ActivityLogTab() {
-  const { isSuperAdmin, isAdmin } = useAuth();
+  // Empresa atual: para super_admin respeita o view-as; para admin é a própria.
+  // Sem seletor de empresa — cada um vê só a sua (isolamento entre empresas).
+  const { companyId, companyName } = useCompanyContext();
 
   const [preset, setPreset] = useState<Preset>('7d');
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]); // vazio = todos
-  const [selectedCompanies, setSelectedCompanies] = useState<string[] | null>(null); // null = todas
   const [search, setSearch] = useState('');
-
-  const { companies } = useSuperAdminCompanies(isSuperAdmin);
 
   const { startDate, endDate } = useMemo(() => {
     const now = new Date();
@@ -49,22 +45,19 @@ export function ActivityLogTab() {
     return { startDate: new Date(now.getTime() - ms), endDate: now };
   }, [preset]);
 
-  // Ações selecionadas: expande os grupos escolhidos em actions concretas
   const actions = useMemo(() => {
     if (selectedGroups.length === 0) return null;
     return ACTIVITY_GROUPS.filter((g) => selectedGroups.includes(g.label)).flatMap((g) => g.actions);
   }, [selectedGroups]);
 
   const { data, isLoading, isFetching, refetch } = useActivityLog({
-    companyIds: isSuperAdmin ? selectedCompanies : null,
+    companyId,
     actions,
     startDate,
     endDate,
     limit: 500,
-    enabled: isAdmin,
   });
 
-  // Busca textual no cliente (ator / alvo)
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return data;
@@ -79,21 +72,7 @@ export function ActivityLogTab() {
     setSelectedGroups((cur) => (cur.includes(label) ? cur.filter((x) => x !== label) : [...cur, label]));
   };
 
-  const toggleCompany = (id: string) => {
-    setSelectedCompanies((cur) => {
-      const base = cur ?? companies.map((c) => c.id);
-      const next = base.includes(id) ? base.filter((x) => x !== id) : [...base, id];
-      return next.length === 0 || next.length === companies.length ? null : next;
-    });
-  };
-
   const groupsLabel = selectedGroups.length === 0 ? 'Todas as ações' : `${selectedGroups.length} tipo(s)`;
-  const companiesLabel =
-    selectedCompanies === null
-      ? 'Todas as empresas'
-      : selectedCompanies.length === 1
-        ? (companies.find((c) => c.id === selectedCompanies[0])?.name ?? '1 empresa')
-        : `${selectedCompanies.length} empresas`;
 
   return (
     <div className="space-y-6">
@@ -103,13 +82,11 @@ export function ActivityLogTab() {
           Atividades dos usuários
         </h2>
         <p className="text-muted-foreground text-sm">
-          {isSuperAdmin
-            ? 'Histórico de ações de todas as empresas. Atualiza automaticamente.'
-            : 'Histórico de ações da sua empresa. Atualiza automaticamente.'}
+          Histórico de ações {companyName ? <>da empresa <strong>{companyName}</strong></> : 'da sua empresa'}. Atualiza automaticamente.
         </p>
       </div>
 
-      {/* Filtros */}
+      {/* Filtros (sem empresa — cada um vê só a própria) */}
       <div className="flex flex-col lg:flex-row lg:items-end gap-4">
         <div className="space-y-2">
           <Label className="text-xs text-muted-foreground">Período</Label>
@@ -157,44 +134,6 @@ export function ActivityLogTab() {
           </Popover>
         </div>
 
-        {isSuperAdmin && (
-          <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground">Empresas</Label>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="justify-between min-w-[180px]">
-                  <span className="flex items-center gap-2 truncate">
-                    <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
-                    <span className="truncate">{companiesLabel}</span>
-                  </span>
-                  <ChevronDown className="h-4 w-4 opacity-50 shrink-0" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-64 p-2" align="start">
-                <div className="max-h-72 overflow-y-auto space-y-1">
-                  <label className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer text-sm font-medium">
-                    <Checkbox checked={selectedCompanies === null} onCheckedChange={() => setSelectedCompanies(null)} />
-                    Todas
-                  </label>
-                  <Separator className="my-1" />
-                  {companies.map((company) => (
-                    <label
-                      key={company.id}
-                      className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer text-sm"
-                    >
-                      <Checkbox
-                        checked={selectedCompanies === null || selectedCompanies.includes(company.id)}
-                        onCheckedChange={() => toggleCompany(company.id)}
-                      />
-                      <span className="truncate">{company.name}</span>
-                    </label>
-                  ))}
-                </div>
-              </PopoverContent>
-            </Popover>
-          </div>
-        )}
-
         <div className="space-y-2 flex-1 min-w-[160px]">
           <Label htmlFor="activity-search" className="text-xs text-muted-foreground">Buscar (usuário / alvo)</Label>
           <Input
@@ -233,13 +172,12 @@ export function ActivityLogTab() {
                     <TableHead>Usuário</TableHead>
                     <TableHead>Ação</TableHead>
                     <TableHead>Alvo</TableHead>
-                    {isSuperAdmin && <TableHead>Empresa</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {rows.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={isSuperAdmin ? 5 : 4} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
                         Nenhuma atividade registrada no período.
                       </TableCell>
                     </TableRow>
@@ -270,15 +208,6 @@ export function ActivityLogTab() {
                           <TableCell className="max-w-[220px] truncate" title={row.target_label ?? ''}>
                             {row.target_label || <span className="text-muted-foreground">—</span>}
                           </TableCell>
-                          {isSuperAdmin && (
-                            <TableCell>
-                              {row.company_name ? (
-                                <Badge variant="outline" className="font-normal">{row.company_name}</Badge>
-                              ) : (
-                                <span className="text-muted-foreground">—</span>
-                              )}
-                            </TableCell>
-                          )}
                         </TableRow>
                       );
                     })
