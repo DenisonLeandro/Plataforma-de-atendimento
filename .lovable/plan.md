@@ -1,24 +1,20 @@
-## Problema
+## Objetivo
+Encerrar em massa as conversas da empresa **Acquadu** (`692489ea-feda-4df1-8dbd-e1c88375eaef`) cuja última mensagem foi antes de **27/07/2026**.
 
-A tela quebra com:
-`cannot add 'postgres_changes' callbacks for realtime:platform-fixed-costs after subscribe()`
+## Escopo confirmado
+- 153 conversas atualmente com status diferente de `closed`/`archived` e `last_message_at < 2026-07-27` (inclui as sem `last_message_at`).
+- Sem geração de resumo por IA (seria custoso e não foi pedido).
 
-Isso é lançado em `src/hooks/usePlatformFixedCosts.ts` (linha ~34/52). O hook cria um canal Realtime com nome **fixo** `'platform-fixed-costs'`. Quando o efeito roda duas vezes (StrictMode em dev, ou o componente `PlatformFixedCostsEditor` monta enquanto o `PlatformCostDashboard` pai já montou outro consumidor), `supabase.channel('platform-fixed-costs')` devolve a **mesma instância já inscrita**, e chamar `.on(...)` depois do `.subscribe()` derruba a árvore React inteira → tela em branco / ErrorBoundary.
+## SQL a executar (via ferramenta de insert/update)
+```sql
+UPDATE public.whatsapp_conversations
+SET status = 'closed', updated_at = now()
+WHERE company_id = '692489ea-feda-4df1-8dbd-e1c88375eaef'
+  AND status NOT IN ('closed','archived')
+  AND (last_message_at < '2026-07-27'::timestamptz OR last_message_at IS NULL);
+```
 
-## Correção (mínima, só no hook)
-
-Arquivo: `src/hooks/usePlatformFixedCosts.ts`
-
-1. Gerar um nome de canal único por instância do hook:
-   ```
-   const channelName = `platform-fixed-costs:${crypto.randomUUID()}`;
-   ```
-   dentro do `useEffect`, para que StrictMode / múltiplos consumidores nunca colidam.
-2. Manter o padrão correto: `channel().on(...).subscribe()` em uma única cadeia, e `supabase.removeChannel(channel)` no cleanup (já está).
-3. Nenhuma outra mudança de lógica, RLS, query ou UI.
-
-## Verificação
-
-- Recarregar `/super-admin` → dashboard de custos da plataforma carrega sem ErrorBoundary.
-- Console sem o erro `cannot add postgres_changes ... after subscribe()`.
-- Editar/adicionar/remover um custo fixo continua atualizando em tempo real.
+## Observações
+- Só altera `status` (histórico de mensagens preservado).
+- Reabertura futura pode ser feita normalmente pela UI ou via SQL inverso.
+- Se quiser excluir as conversas sem `last_message_at`, me avise antes de aprovar.
