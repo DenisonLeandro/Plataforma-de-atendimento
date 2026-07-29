@@ -133,15 +133,31 @@ serve(async (req) => {
         const recentDeliveryFailures = await countRecentOutboundFailures(supabaseAdmin, instance.id);
         const isDeliveryDegraded = recentDeliveryFailures >= DELIVERY_FAILURE_THRESHOLD;
 
-        // Não rebaixa connected -> disconnected/connecting por estado transitório:
-        // só atualiza se vier `open` (zerando falhas) ou se já estávamos fora de connected.
-        // Exceção: socket zumbi. Se envios recentes voltaram ERROR, connectionState
-        // "open" não é suficiente para considerar saudável.
+        // `connecting` do Baileys é transiente. Só mantemos localmente se
+        // insistir por várias checagens seguidas; caso contrário, se a
+        // Evolution respondeu 200 e não há falha de envio recente, tratamos
+        // como conectado.
+        const CONNECTING_STREAK_LIMIT = 3;
+        const prevConnectingStreak = Number(currentMeta.connecting_streak || 0);
+        let connectingStreak = 0;
+
         let newStatus = currentStatus || 'disconnected';
         if (isDeliveryDegraded) {
           newStatus = 'connecting';
         } else if (mapped === 'connected') {
           newStatus = 'connected';
+        } else if (mapped === 'connecting') {
+          connectingStreak = prevConnectingStreak + 1;
+          if (connectingStreak >= CONNECTING_STREAK_LIMIT) {
+            // Insistiu em "connecting" — provavelmente Evolution está OK mas
+            // socket renovando. Considerar conectado para não travar a UI.
+            newStatus = 'connected';
+            connectingStreak = 0;
+          } else if (currentStatus !== 'connected') {
+            newStatus = 'connecting';
+          } else {
+            newStatus = 'connected';
+          }
         } else if (currentStatus !== 'connected') {
           newStatus = mapped;
         }
@@ -151,15 +167,19 @@ serve(async (req) => {
           consecutive_failures: 0,
           last_check_error: null,
           delivery_failure_count: recentDeliveryFailures,
+          connecting_streak: connectingStreak,
           ...(isDeliveryDegraded
             ? {
                 delivery_degraded: true,
                 delivery_degraded_reason: currentMeta.delivery_degraded_reason || 'A conexão está aberta, mas envios recentes retornaram ERROR.',
                 recovery_hint: 'Faça uma reconexão limpa: derrube a sessão atual e leia o QR Code novamente.',
               }
-            : currentMeta.delivery_degraded
-              ? { delivery_degraded: false, delivery_recovered_at: new Date().toISOString() }
-              : {}),
+            : {
+                delivery_degraded: false,
+                ...(currentMeta.delivery_degraded ? { delivery_recovered_at: new Date().toISOString() } : {}),
+                delivery_degraded_reason: null,
+                recovery_hint: null,
+              }),
         };
         await supabaseAdmin
           .from('whatsapp_instances')
