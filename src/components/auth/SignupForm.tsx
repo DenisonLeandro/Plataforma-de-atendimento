@@ -116,6 +116,34 @@ export function SignupForm() {
           description: translateAuthError(error.message),
         });
       } else {
+        // Guarda o código de empresa para o caso de o usuário confirmar o email
+        // depois (fluxo com confirmação): o AuthContext usa esse valor para
+        // vincular o profile à empresa na primeira sessão válida.
+        try {
+          sessionStorage.setItem('pendingCompanyCode', companyCode);
+        } catch {}
+
+        // Finalização explícita: se já temos sessão (auto-confirm ligado), força
+        // o vínculo profile.company_id + user_roles.company_id na hora, sem
+        // depender do metadata do auth.signUp chegar ao trigger.
+        const { data: sess } = await supabase.auth.getSession();
+        if (sess?.session?.access_token) {
+          const { error: finalizeError } = await supabase.functions.invoke(
+            'finalize-company-signup',
+            { body: { companyCode } },
+          );
+          if (finalizeError) {
+            toast({
+              variant: 'destructive',
+              title: 'Cadastro criado, mas não vinculado à empresa',
+              description: 'Tente entrar novamente. Se persistir, avise o administrador.',
+            });
+            setIsLoading(false);
+            return;
+          }
+          try { sessionStorage.removeItem('pendingCompanyCode'); } catch {}
+        }
+
         if (requireApproval) {
           toast({
             title: 'Conta criada com sucesso!',
