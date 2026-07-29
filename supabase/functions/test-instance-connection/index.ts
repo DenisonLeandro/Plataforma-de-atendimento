@@ -146,14 +146,13 @@ serve(async (req) => {
     const metadata = ((instance as any).metadata || {}) as Record<string, any>;
     const isDeliveryDegraded = metadata.delivery_degraded === true;
 
-    // Importante: `connecting` é um estado intermediário do Baileys que aparece
-    // por alguns segundos quando o socket renova. Se a instância já estava
-    // `connected`, NÃO rebaixamos — isso evitava o falso "Desconectado" depois
-    // de clicar em testar.
+    // `connecting` do Baileys é transiente. Se Evolution respondeu 200 e não
+    // há degradação real de envio, tratamos como conectado — evita travar a
+    // instância em "Reconectando" após o usuário clicar em Testar conexão.
     let newStatus: string;
     if (isDeliveryDegraded) {
       newStatus = 'connecting';
-    } else if (mapped === 'connecting' && currentStatus === 'connected') {
+    } else if (mapped === 'connected' || mapped === 'connecting') {
       newStatus = 'connected';
     } else {
       newStatus = mapped;
