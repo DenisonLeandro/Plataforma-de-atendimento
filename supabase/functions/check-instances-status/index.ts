@@ -140,6 +140,9 @@ serve(async (req) => {
         const CONNECTING_STREAK_LIMIT = 3;
         const prevConnectingStreak = Number(currentMeta.connecting_streak || 0);
         let connectingStreak = 0;
+        const DISCONNECTED_STREAK_LIMIT = 2;
+        const prevDisconnectedStreak = Number(currentMeta.disconnected_streak || 0);
+        let disconnectedStreak = 0;
 
         let newStatus = currentStatus || 'disconnected';
         if (isDeliveryDegraded) {
@@ -158,8 +161,17 @@ serve(async (req) => {
           } else {
             newStatus = 'connected';
           }
-        } else if (currentStatus !== 'connected') {
-          newStatus = mapped;
+        } else {
+          // mapped === 'disconnected' — Evolution reporta socket fechado.
+          // Se já não estava conectado, refletir imediatamente. Se estava,
+          // exigir N leituras seguidas para evitar flap de 1 tick.
+          disconnectedStreak = prevDisconnectedStreak + 1;
+          if (currentStatus !== 'connected' || disconnectedStreak >= DISCONNECTED_STREAK_LIMIT) {
+            newStatus = 'disconnected';
+            disconnectedStreak = 0;
+          } else {
+            newStatus = currentStatus;
+          }
         }
 
         const newMeta = {
@@ -168,6 +180,7 @@ serve(async (req) => {
           last_check_error: null,
           delivery_failure_count: recentDeliveryFailures,
           connecting_streak: connectingStreak,
+          disconnected_streak: disconnectedStreak,
           ...(isDeliveryDegraded
             ? {
                 delivery_degraded: true,
