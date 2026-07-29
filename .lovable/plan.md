@@ -1,46 +1,35 @@
-## Problema
+## Diagnóstico (confirmado no banco)
 
-Quando a instância é desconectada no Evolution (estado `close`/`closed`), a plataforma continua marcando ela como **conectado**. Isso já foi confirmado agora com a instância de Ibiporã.
+O perfil da Giovana (`gi.casagrande@yahoo.com.br`, id `7d857d18…`) foi criado, mas ficou **sem vínculo com a empresa Acquadu**:
 
-## Causa
+- `profiles.company_id` = **NULL**
+- `user_roles`: existe uma linha (`role = agent`), mas com `company_id` = **NULL**
+- `agent_instance_access`: **0 linhas** (nenhuma instância liberada para ela)
 
-Em `supabase/functions/check-instances-status/index.ts`, a lógica de decisão só rebaixa o status quando `currentStatus !== 'connected'`:
+Como toda a RLS de conversas/contatos/mensagens é escopada por `company_id` e o filtro do front (`useWhatsAppConversations`) exige `companyId` para sequer disparar a query, ela não enxerga nada — nem as conversas da Acquadu, nem qualquer outra. Isso também explica os avisos no console:
 
-```ts
-} else if (currentStatus !== 'connected') {
-  newStatus = mapped;   // <- só cai aqui se JÁ não estivesse "connected"
-}
+```
+[AuthContext] No profile found for user: 7d857d18…
+[AuthContext] No role found for user: 7d857d18…
 ```
 
-Ou seja: se o banco diz `connected` e o Evolution passa a responder `close`, o código simplesmente ignora o `disconnected` retornado pelo mapeamento — o registro nunca é atualizado. O mesmo vale para `test-instance-connection`, que hoje força qualquer `connecting`/`connected` do Evolution para `connected` e nunca reduz para `disconnected` quando o Evolution já reporta socket fechado.
+(o contexto exige `company_id` para considerar o perfil "válido").
 
-Esse comportamento foi introduzido nas correções anteriores para evitar que `connecting` transitório derrubasse a UI — mas ele passou a esconder desconexões reais.
+A empresa e a instância existem e batem:
 
-## Correção proposta (backend, sem mudar UI)
+- Empresa Acquadu: `692489ea-feda-4df1-8dbd-e1c88375eaef`
+- Instância Acquadu: `6d5c6a9c-9bbe-4587-8aac-a277ffa8bca5`
 
-### 1. `supabase/functions/check-instances-status/index.ts`
-- Tratar `mapped === 'disconnected'` (Evolution reporta `close`/`closed`) de forma independente do estado atual:
-  - Introduzir contador `disconnected_streak` em `metadata` (igual ao `connecting_streak`).
-  - Ao receber `disconnected` do Evolution: incrementar contador; se `>= 2` checagens seguidas (≈ dois ciclos do cron), atualizar `status = 'disconnected'` mesmo que estivesse `connected`. Isso evita derrubar por um único flap, mas garante que uma desconexão real refletida por 2 leituras do Evolution vira `disconnected` na plataforma.
-  - Zerar `disconnected_streak` quando voltar a `connected`.
-- Manter a lógica atual de `connecting_streak` (transiente) sem mudança.
-- Ao mudar para `disconnected`, limpar `qr_code` fica como está e preservar `delivery_degraded` já é feito.
+## Correção (apenas dados, sem mudança de código nem de RLS)
 
-### 2. `supabase/functions/test-instance-connection/index.ts`
-- Quando o usuário clica em **Testar conexão** e o Evolution responde `close`/`closed` explicitamente, marcar `status = 'disconnected'` imediatamente (sem streak — é ação manual do usuário e o retorno é autoritativo).
-- Continuar tratando `connecting` como `connected` só quando **não** há `delivery_degraded` (comportamento atual preservado).
+Uma migration curta que faz três coisas para o `user_id = 7d857d18-814c-4683-bec8-1ffcb1bb5b97`:
 
-### 3. Sem mudanças em
-- `evolution-webhook` (já processa `connection.update` corretamente quando o Evolution envia o evento).
-- Frontend / `useInstanceStatusMonitor` / `InstanceCard` — o realtime da tabela já reflete a mudança assim que o backend atualizar.
-- Schema, RLS, cron, políticas.
+1. `UPDATE profiles SET company_id = '<Acquadu>' WHERE id = <giovana>` (só se estiver NULL).
+2. `UPDATE user_roles SET company_id = '<Acquadu>' WHERE user_id = <giovana> AND company_id IS NULL`.
+3. `INSERT INTO agent_instance_access (user_id, instance_id, company_id, created_by)` para a instância Acquadu, com `ON CONFLICT DO NOTHING` para ser idempotente.
 
-## Como validar
-1. Após o deploy, aguardar o próximo tick do `check-instances-status` (ou disparar manualmente pelo botão "Testar conexão" no card de Ibiporã).
-2. Confirmar via `supabase--read_query` que `whatsapp_instances.status = 'disconnected'` para Ibiporã e que `metadata.disconnected_streak` foi zerado quando o usuário reconectar.
-3. Reconectar no Evolution e verificar que o status volta para `connected` no próximo ciclo.
+Depois disso ela precisa **recarregar a página** (o `AuthContext` recarrega profile/role no próximo login/refresh) e as conversas da Acquadu passam a aparecer normalmente, respeitando a mesma RLS de agente que os outros atendentes da empresa.
 
-## Fora de escopo
-- Alterar frequência do cron.
-- Redesenhar o card de instância ou banners.
-- Mudanças em envio/recebimento de mensagens.
+## Observação de processo (fora do escopo desta correção)
+
+O fluxo de "convidar membro" deveria já gravar `company_id` no profile e criar `agent_instance_access` no ato do convite. Se você quiser, num próximo passo posso auditar `invite-team-member` / cadastro de novo agente para evitar que outro usuário caia no mesmo estado — mas isso é mudança de código e fica separado desta correção pontual.
