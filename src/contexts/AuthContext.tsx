@@ -165,6 +165,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.warn('⚠️ [AuthContext] No profile found for user:', userId);
       }
 
+      // Fallback de vínculo com a empresa: se o profile está sem company_id e
+      // existe um código de empresa guardado do cadastro (ex.: fluxo com
+      // confirmação de email), completa o vínculo agora, uma única vez.
+      const pendingCode = (() => {
+        try { return sessionStorage.getItem('pendingCompanyCode'); } catch { return null; }
+      })();
+      if (
+        !profileError &&
+        profileData &&
+        !(profileData as any).company_id &&
+        pendingCode
+      ) {
+        try {
+          const { error: finalizeErr } = await supabase.functions.invoke(
+            'finalize-company-signup',
+            { body: { companyCode: pendingCode } },
+          );
+          if (!finalizeErr) {
+            try { sessionStorage.removeItem('pendingCompanyCode'); } catch {}
+            // Recarrega o profile com o company_id preenchido.
+            const { data: refreshed } = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('id', userId)
+              .maybeSingle();
+            if (refreshed) setProfile(refreshed as Profile);
+          }
+        } catch (e) {
+          console.warn('[AuthContext] finalize-company-signup failed:', e);
+        }
+      }
+
       // Load role (exclude super_admin — treated separately via is_super_admin())
       const { data: roleData, error: roleError } = await supabase
         .from('user_roles')
