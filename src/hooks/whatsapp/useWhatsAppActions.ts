@@ -181,6 +181,35 @@ export const useWhatsAppActions = () => {
     },
   });
 
+  // Delete contact (hard delete — CASCADE apaga conversas e mensagens do contato).
+  // A RLS restringe a admin/supervisor da empresa (e super_admin). O log de
+  // auditoria 'contact.delete' é gravado por trigger no banco.
+  const deleteContactMutation = useMutation({
+    mutationFn: async (contactId: string) => {
+      const { error, count } = await supabase
+        .from('whatsapp_contacts')
+        .delete({ count: 'exact' })
+        .eq('id', contactId);
+      if (error) throw error;
+      // RLS não gera erro quando bloqueia — apenas apaga 0 linhas. Detectamos isso.
+      if (!count) throw new Error('permission_denied');
+    },
+    onSuccess: () => {
+      toast.success('Contato excluído');
+      queryClient.invalidateQueries({ queryKey: ['whatsapp', 'conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['whatsapp-contacts'] });
+      queryClient.invalidateQueries({ queryKey: ['contact-details'] });
+    },
+    onError: (error: unknown) => {
+      console.error('Erro ao excluir contato:', error);
+      if ((error as Error)?.message === 'permission_denied') {
+        toast.error('Você não tem permissão para excluir este contato.');
+      } else {
+        toast.error('Erro ao excluir contato');
+      }
+    },
+  });
+
   return {
     archiveConversation: archiveMutation.mutate,
     isArchiving: archiveMutation.isPending,
@@ -196,5 +225,8 @@ export const useWhatsAppActions = () => {
 
     updateContact: updateContactMutation.mutate,
     isUpdatingContact: updateContactMutation.isPending,
+
+    deleteContact: deleteContactMutation.mutate,
+    isDeletingContact: deleteContactMutation.isPending,
   };
 };

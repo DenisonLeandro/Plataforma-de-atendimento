@@ -15,6 +15,7 @@ export const ACTIVITY_LABELS: Record<string, { label: string; icon: string }> = 
   'conversation.assign': { label: 'Atribuiu/transferiu conversa', icon: '👥' },
   // Contato (via trigger)
   'contact.update': { label: 'Editou contato', icon: '✏️' },
+  'contact.delete': { label: 'Excluiu contato', icon: '🗑️' },
   // Mensagem (via front)
   'message.send': { label: 'Respondeu', icon: '💬' },
   'message.edit': { label: 'Editou mensagem', icon: '📝' },
@@ -39,7 +40,7 @@ export const ACTIVITY_LABELS: Record<string, { label: string; icon: string }> = 
 export const ACTIVITY_GROUPS: { label: string; actions: string[] }[] = [
   { label: 'Conversas', actions: ['conversation.archive', 'conversation.close', 'conversation.reopen', 'conversation.status_change', 'conversation.create', 'conversation.assign'] },
   { label: 'Mensagens', actions: ['message.send', 'message.edit', 'message.react'] },
-  { label: 'Contatos', actions: ['contact.update'] },
+  { label: 'Contatos', actions: ['contact.update', 'contact.delete'] },
   { label: 'IA', actions: ['ai.transcription', 'ai.sentiment', 'ai.categorization', 'ai.summary', 'ai.smart_replies', 'ai.composer'] },
   { label: 'Exclusões', actions: ['instance.delete', 'note.delete', 'summary.delete', 'rule.delete', 'macro.delete', 'company.delete'] },
 ];

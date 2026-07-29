@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import {
   Dialog,
@@ -7,10 +7,22 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Trash2 } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
 import { useWhatsAppActions } from '@/hooks/whatsapp/useWhatsAppActions';
 import { normalizeBrazilianPhone, isValidBrazilianPhone, formatBrazilianPhone } from '@/utils/phoneUtils';
 
@@ -39,7 +51,21 @@ export function EditContactModal({
   contactNotes,
   onSuccess,
 }: EditContactModalProps) {
-  const { updateContact, isUpdatingContact } = useWhatsAppActions();
+  const { updateContact, isUpdatingContact, deleteContact, isDeletingContact } = useWhatsAppActions();
+  const { isAdmin, isSupervisor, isReadOnlyView } = useAuth();
+  const canDelete = (isAdmin || isSupervisor) && !isReadOnlyView;
+  const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
+
+  const handleDelete = () => {
+    deleteContact(contactId, {
+      onSuccess: () => {
+        setIsConfirmDeleteOpen(false);
+        onOpenChange(false);
+        onSuccess?.();
+      },
+    });
+  };
+
   const { register, handleSubmit, watch, setValue, formState: { errors }, reset } = useForm<ContactFormData>({
     defaultValues: {
       name: contactName,
@@ -138,20 +164,62 @@ export function EditContactModal({
             </div>
           </div>
 
-          <DialogFooter>
-            <Button 
-              type="button" 
-              variant="outline" 
-              onClick={() => onOpenChange(false)}
-            >
-              Cancelar
-            </Button>
-            <Button type="submit" disabled={isUpdatingContact}>
-              {isUpdatingContact ? 'Salvando...' : 'Salvar'}
-            </Button>
+          <DialogFooter className="sm:justify-between gap-2">
+            {canDelete ? (
+              <Button
+                type="button"
+                variant="ghost"
+                className="text-destructive hover:bg-destructive/10 hover:text-destructive sm:mr-auto"
+                onClick={() => setIsConfirmDeleteOpen(true)}
+                disabled={isDeletingContact}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Excluir contato
+              </Button>
+            ) : (
+              <span />
+            )}
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+              >
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={isUpdatingContact}>
+                {isUpdatingContact ? 'Salvando...' : 'Salvar'}
+              </Button>
+            </div>
           </DialogFooter>
         </form>
       </DialogContent>
+
+      <AlertDialog open={isConfirmDeleteOpen} onOpenChange={setIsConfirmDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir contato {contactName}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta ação é permanente e não pode ser desfeita. Excluir este contato
+              também <strong>apaga todas as conversas e mensagens</strong> associadas a
+              ele. O registro da exclusão ficará visível na aba Atividades.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeletingContact}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                handleDelete();
+              }}
+              disabled={isDeletingContact}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeletingContact ? 'Excluindo...' : 'Excluir definitivamente'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 }
