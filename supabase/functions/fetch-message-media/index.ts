@@ -47,6 +47,11 @@ Deno.serve(async (req) => {
       case "not_media":
         return json({ error: result.error }, 400);
       case "failed":
+        // Linha inexistente (mensagem otimista/removida): não é erro recuperável.
+        // Devolve 200 "unavailable" para o cliente parar de tentar.
+        if (result.httpStatus === 404) {
+          return json({ success: false, unavailable: true, error: result.error });
+        }
         return json({ error: result.error }, result.httpStatus);
       default:
         console.error("[fetch-message-media] unexpected recover status", result);
