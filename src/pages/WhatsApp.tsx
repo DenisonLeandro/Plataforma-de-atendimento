@@ -78,18 +78,18 @@ const WhatsApp = () => {
       <DisconnectedInstancesBanner instances={disconnectedInstances} />
       
       <div className="flex flex-1 overflow-hidden">
-      {/* Sidebar */}
-      {showSidebar && (
-        <div className={`${isMobile ? "w-full" : isConversationsSidebarCollapsed ? "w-14" : "w-[240px] lg:w-[280px] xl:w-[320px] 2xl:w-[350px]"} flex-shrink-0 border-r border-border`}>
-          <ConversationsSidebar
-            selectedId={selectedConversation}
-            onSelect={handleSelectConversation}
-            instanceId={selectedInstanceId}
-            isCollapsed={!isMobile && isConversationsSidebarCollapsed}
-            onToggleCollapse={() => setIsConversationsSidebarCollapsed(!isConversationsSidebarCollapsed)}
-          />
-        </div>
-      )}
+      {/* Sidebar — mantida MONTADA sempre (escondida via CSS no mobile ao abrir
+          uma conversa) para preservar filtros/busca/scroll ao navegar. O estado
+          só zera quando a página é atualizada/fechada (remonta do zero). */}
+      <div className={`${showSidebar ? "" : "hidden "}${isMobile ? "w-full" : isConversationsSidebarCollapsed ? "w-14" : "w-[240px] lg:w-[280px] xl:w-[320px] 2xl:w-[350px]"} flex-shrink-0 border-r border-border`}>
+        <ConversationsSidebar
+          selectedId={selectedConversation}
+          onSelect={handleSelectConversation}
+          instanceId={selectedInstanceId}
+          isCollapsed={!isMobile && isConversationsSidebarCollapsed}
+          onToggleCollapse={() => setIsConversationsSidebarCollapsed(!isConversationsSidebarCollapsed)}
+        />
+      </div>
 
       {/* Chat Area */}
       {showChat && (
