@@ -64,15 +64,10 @@ export function ChatHeaderMenu({ conversation, onRefresh, disabled }: ChatHeader
             Editar contato
           </DropdownMenuItem>
 
-          {conversation.status === 'closed' ? (
+          {conversation.status === 'closed' && (
             <DropdownMenuItem onClick={handleReopen} disabled={isReopening}>
               <RotateCcw className="mr-2 h-4 w-4" />
               Reabrir conversa
-            </DropdownMenuItem>
-          ) : (
-            <DropdownMenuItem onClick={() => setShowCloseDialog(true)}>
-              <CheckCircle className="mr-2 h-4 w-4" />
-              Encerrar conversa
             </DropdownMenuItem>
           )}
 
