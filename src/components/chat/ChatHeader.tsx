@@ -180,6 +180,20 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
             </Button>
           )}
 
+          {showEncerrar && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowCloseDialog(true)}
+              disabled={isReadOnlyView || isClosing}
+              title="Encerrar conversa"
+              className="h-7 flex-shrink-0 px-2.5 text-xs"
+            >
+              <CheckCircle className="h-3.5 w-3.5 mr-1.5" />
+              <span>{isClosing ? 'Encerrando...' : 'Encerrar'}</span>
+            </Button>
+          )}
+
           <SentimentCard sentiment={sentiment} />
           
           <Button
