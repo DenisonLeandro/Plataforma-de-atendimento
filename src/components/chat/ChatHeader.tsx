@@ -1,6 +1,6 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, Settings, UserPlus, Repeat, Pencil } from "lucide-react";
+import { RefreshCw, Settings, UserPlus, Repeat, Pencil, CheckCircle } from "lucide-react";
 import { SentimentCard } from "./SentimentCard";
 import { Tables } from "@/integrations/supabase/types";
 import { Link } from "react-router-dom";
@@ -16,6 +16,18 @@ import { useConversationAssignment } from "@/hooks/whatsapp/useConversationAssig
 import { isContactNameMissing, isLidValue } from "@/utils/contactUtils";
 import { useContactAvatar } from "@/hooks/useContactAvatar";
 import { cn } from "@/lib/utils";
+import { useWhatsAppActions } from "@/hooks/whatsapp/useWhatsAppActions";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 type Contact = Tables<'whatsapp_contacts'>;
 type Sentiment = Tables<'whatsapp_sentiment_analysis'>;
@@ -36,7 +48,10 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
   const [isEditContactModalOpen, setIsEditContactModalOpen] = useState(false);
   const { user, isAdmin, isSupervisor, isReadOnlyView } = useAuth();
   const { assignConversation } = useConversationAssignment();
+  const { closeConversation, isClosing } = useWhatsAppActions();
   const avatarUrl = useContactAvatar(contact?.profile_picture_url ?? null);
+  const [showCloseDialog, setShowCloseDialog] = useState(false);
+  const [generateSummary, setGenerateSummary] = useState(true);
 
   if (!contact) return null;
   
@@ -49,11 +64,25 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
   const canManageOthers = isAdmin || isSupervisor;
   const showAssumir = (isInQueue || canManageOthers) && !isAssignedToMe;
   const showTransferir = isInQueue || isAssignedToMe || canManageOthers;
+  const showEncerrar = conversation && conversation.status !== 'closed';
 
   const handleAssumeFromQueue = () => {
     if (conversationId && user?.id) {
       assignConversation({ conversationId, assignedTo: user.id });
     }
+  };
+
+  const handleClose = () => {
+    if (!conversationId) return;
+    closeConversation(
+      { conversationId, generateSummary },
+      {
+        onSuccess: () => {
+          setShowCloseDialog(false);
+          if (onRefresh) onRefresh();
+        },
+      }
+    );
   };
 
   const getInitials = (name: string) => {
@@ -151,6 +180,20 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
             </Button>
           )}
 
+          {showEncerrar && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowCloseDialog(true)}
+              disabled={isReadOnlyView || isClosing}
+              title="Encerrar conversa"
+              className="h-7 flex-shrink-0 px-2.5 text-xs"
+            >
+              <CheckCircle className="h-3.5 w-3.5 mr-1.5" />
+              <span>{isClosing ? 'Encerrando...' : 'Encerrar'}</span>
+            </Button>
+          )}
+
           <SentimentCard sentiment={sentiment} />
           
           <Button
@@ -203,6 +246,40 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
           if (onRefresh) onRefresh();
         }}
       />
+
+      {/* Close Conversation Dialog */}
+      <AlertDialog open={showCloseDialog} onOpenChange={setShowCloseDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Encerrar conversa?</AlertDialogTitle>
+            <AlertDialogDescription>
+              A conversa será marcada como concluída e você poderá visualizá-la
+              nos filtros de conversas encerradas.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="flex items-center space-x-2 py-4">
+            <Checkbox
+              id="summary"
+              checked={generateSummary}
+              onCheckedChange={(checked) => setGenerateSummary(checked as boolean)}
+            />
+            <label
+              htmlFor="summary"
+              className="text-sm font-medium leading-none cursor-pointer"
+            >
+              Gerar resumo automático com IA (recomendado)
+            </label>
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleClose} disabled={isClosing}>
+              {isClosing ? 'Encerrando...' : 'Encerrar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
