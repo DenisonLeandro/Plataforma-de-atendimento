@@ -48,7 +48,10 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
   const [isEditContactModalOpen, setIsEditContactModalOpen] = useState(false);
   const { user, isAdmin, isSupervisor, isReadOnlyView } = useAuth();
   const { assignConversation } = useConversationAssignment();
+  const { closeConversation, isClosing } = useWhatsAppActions();
   const avatarUrl = useContactAvatar(contact?.profile_picture_url ?? null);
+  const [showCloseDialog, setShowCloseDialog] = useState(false);
+  const [generateSummary, setGenerateSummary] = useState(true);
 
   if (!contact) return null;
   
@@ -61,11 +64,25 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
   const canManageOthers = isAdmin || isSupervisor;
   const showAssumir = (isInQueue || canManageOthers) && !isAssignedToMe;
   const showTransferir = isInQueue || isAssignedToMe || canManageOthers;
+  const showEncerrar = conversation && conversation.status !== 'closed';
 
   const handleAssumeFromQueue = () => {
     if (conversationId && user?.id) {
       assignConversation({ conversationId, assignedTo: user.id });
     }
+  };
+
+  const handleClose = () => {
+    if (!conversationId) return;
+    closeConversation(
+      { conversationId, generateSummary },
+      {
+        onSuccess: () => {
+          setShowCloseDialog(false);
+          if (onRefresh) onRefresh();
+        },
+      }
+    );
   };
 
   const getInitials = (name: string) => {
