@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import { MoreVertical, Edit, Archive, Download, CheckCircle, RotateCcw } from 'lucide-react';
-import { Checkbox } from '@/components/ui/checkbox';
+import { MoreVertical, Edit, Archive, Download, RotateCcw } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
