@@ -31,15 +31,11 @@ interface ChatHeaderMenuProps {
 
 export function ChatHeaderMenu({ conversation, onRefresh, disabled }: ChatHeaderMenuProps) {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [showCloseDialog, setShowCloseDialog] = useState(false);
-  const [generateSummary, setGenerateSummary] = useState(true);
 
   const { 
     archiveConversation, 
-    closeConversation, 
     reopenConversation, 
     isArchiving, 
-    isClosing, 
     isReopening 
   } = useWhatsAppActions();
 
@@ -47,18 +43,6 @@ export function ChatHeaderMenu({ conversation, onRefresh, disabled }: ChatHeader
     archiveConversation(conversation.id, {
       onSuccess: () => onRefresh?.(),
     });
-  };
-
-  const handleClose = () => {
-    closeConversation(
-      { conversationId: conversation.id, generateSummary },
-      {
-        onSuccess: () => {
-          setShowCloseDialog(false);
-          onRefresh?.();
-        },
-      }
-    );
   };
 
   const handleReopen = () => {
