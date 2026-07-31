@@ -1,21 +1,46 @@
 ## Objetivo
-Definir a senha da conta **Maria Eduarda** (`mariaeduardasilva.me2003@gmail.com`, empresa Acquadu) como a senha informada e confirmar que o login funciona.
+Tornar o botão "Encerrar conversa" visível diretamente no cabeçalho do chat, ao lado do botão "Transferir", para eliminar a necessidade de abrir o menu de 3 pontinhos.
 
-## Situação verificada
-- A conta existe, e-mail confirmado, perfil ativo e aprovado, vinculado à empresa Acquadu.
-- Último acesso: 29/07 (o vínculo de empresa já foi corrigido anteriormente).
-- Portanto o problema é apenas de credencial de acesso.
+## Escopo
+Mudança apenas de UI/UX no cabeçalho da conversa. Nenhuma alteração em regras de negócio, banco de dados, Edge Functions ou permissões.
 
-## Passos
-1. Redefinir a senha da conta diretamente no backend de autenticação (operação administrativa pontual, executada por ferramenta — nada é escrito no código do projeto).
-2. Testar o login de verdade: abrir a tela de login da aplicação em navegador automatizado, entrar com o e-mail e a nova senha, e confirmar que a sessão é criada e a plataforma carrega as conversas da instância Acquadu.
-3. Reportar o resultado do teste (sucesso ou erro exato).
+## Implementação
 
-## Regra de segurança respeitada
-- A senha **não** será escrita em nenhum arquivo do projeto, nem em migração, nem em comentário, nem em variável de ambiente versionada — ou seja, nada disso vai para o GitHub.
-- O teste usará a senha apenas em memória, dentro do script temporário fora do repositório, que é descartado.
-- Recomendação: peça para ela trocar a senha no próprio perfil depois do primeiro acesso.
+1. **Extrair o diálogo de encerramento**
+   - Mover o estado `showCloseDialog` e o checkbox `generateSummary` de `ChatHeaderMenu.tsx` para `ChatHeader.tsx` (ou para um pequeno componente `CloseConversationDialog` compartilhado).
+   - Garantir que o fluxo de encerramento continue igual: ao confirmar, chamar `closeConversation` com a flag `generateSummary` e, no sucesso, invalidar a lista de conversas.
 
-## Detalhes técnicos
-- Atualização feita na conta de autenticação (`auth`) pelo canal administrativo, não por SQL direto na tabela de senhas.
-- Verificação de login feita contra o app rodando localmente com o cliente de autenticação real, garantindo que o fluxo completo (sessão + perfil + acesso à instância) funciona.
+2. **Adicionar o botão "Encerrar" no cabeçalho**
+   - Em `src/components/chat/ChatHeader.tsx`, posicionar o novo botão imediatamente ao lado do botão "Transferir".
+   - Usar o mesmo visual do botão "Transferir": `variant="outline"`, `size="sm"`, altura `h-7`, ícone + label.
+   - Ícone: `CheckCircle` (do lucide-react).
+   - Label: "Encerrar".
+   - Condições de exibição:
+     - A conversa deve existir e `conversation.status !== 'closed'`.
+     - Respeitar `disabled={isReadOnlyView}`.
+     - Desabilitar e mostrar spinner/texto "Encerrando..." quando `isClosing` for true.
+   - Ao clicar, abrir o diálogo de confirmação.
+
+3. **Ajustar o menu de 3 pontinhos**
+   - Em `src/components/chat/ChatHeaderMenu.tsx`, remover a opção "Encerrar conversa" do menu.
+   - Manter a opção "Reabrir conversa" quando a conversa já estiver encerrada.
+   - Manter "Editar contato", "Arquivar conversa" e "Exportar conversa" no menu.
+
+4. **Responsividade e consistência**
+   - Manter o botão na faixa horizontal de ações existente, que já é scrollável em telas pequenas.
+   - Garantir que o botão não quebre a linha em viewports estreitas.
+
+5. **Validação**
+   - Verificar que a ação de encerrar funciona para usuários com permissão de leitura/escrita na conversa.
+   - Confirmar que, ao encerrar, a conversa some da lista de abertos e o diálogo fecha.
+   - Garantir que a opção de reabrir continue acessível no menu de 3 pontinhos quando a conversa já estiver encerrada.
+
+## Arquivos alterados
+- `src/components/chat/ChatHeader.tsx`
+- `src/components/chat/ChatHeaderMenu.tsx`
+
+## Não alterar
+- Lógica de encerramento (`useWhatsAppActions`).
+- Permissões/RLS.
+- Edge Functions.
+- Outros menus ou cards.
