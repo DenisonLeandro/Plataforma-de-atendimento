@@ -1,6 +1,6 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, Settings, UserPlus, Repeat, Pencil } from "lucide-react";
+import { RefreshCw, Settings, UserPlus, Repeat, Pencil, CheckCircle } from "lucide-react";
 import { SentimentCard } from "./SentimentCard";
 import { Tables } from "@/integrations/supabase/types";
 import { Link } from "react-router-dom";
@@ -16,6 +16,18 @@ import { useConversationAssignment } from "@/hooks/whatsapp/useConversationAssig
 import { isContactNameMissing, isLidValue } from "@/utils/contactUtils";
 import { useContactAvatar } from "@/hooks/useContactAvatar";
 import { cn } from "@/lib/utils";
+import { useWhatsAppActions } from "@/hooks/whatsapp/useWhatsAppActions";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 type Contact = Tables<'whatsapp_contacts'>;
 type Sentiment = Tables<'whatsapp_sentiment_analysis'>;
