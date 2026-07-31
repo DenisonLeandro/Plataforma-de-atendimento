@@ -94,39 +94,6 @@ export function ChatHeaderMenu({ conversation, onRefresh, disabled }: ChatHeader
         contactNotes={conversation.contact.notes}
         onSuccess={onRefresh}
       />
-
-      <AlertDialog open={showCloseDialog} onOpenChange={setShowCloseDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Encerrar conversa?</AlertDialogTitle>
-            <AlertDialogDescription>
-              A conversa será marcada como concluída e você poderá visualizá-la 
-              nos filtros de conversas encerradas.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-
-          <div className="flex items-center space-x-2 py-4">
-            <Checkbox 
-              id="summary" 
-              checked={generateSummary}
-              onCheckedChange={(checked) => setGenerateSummary(checked as boolean)}
-            />
-            <label 
-              htmlFor="summary" 
-              className="text-sm font-medium leading-none cursor-pointer"
-            >
-              Gerar resumo automático com IA (recomendado)
-            </label>
-          </div>
-
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleClose} disabled={isClosing}>
-              {isClosing ? 'Encerrando...' : 'Encerrar'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 }
