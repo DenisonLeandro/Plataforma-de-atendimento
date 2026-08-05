@@ -80,6 +80,16 @@ serve(async (req) => {
 
     const connectionState = await fetchJson(`${baseUrl}/instance/connectionState/${identifier}`, headers);
     const fetchInstances = await fetchJson(`${baseUrl}/instance/fetchInstances?instanceName=${encodeURIComponent(identifier)}`, headers);
+    const webhookInfo = await fetchJson(`${baseUrl}/webhook/find/${identifier}`, headers);
+
+    // Último evento efetivamente recebido pelo nosso webhook (silêncio = webhook mudo)
+    const { data: lastEvent } = await supabase
+      .from('whatsapp_webhook_events')
+      .select('event, created_at')
+      .eq('instance_identifier', identifier)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
     // Tenta extrair info útil do payload de fetchInstances
     let instanceDetails: any = null;
@@ -90,6 +100,21 @@ serve(async (req) => {
     }
 
     const evolutionState = connectionState.body?.state ?? connectionState.body?.instance?.state ?? null;
+    const expectedWebhookUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/evolution-webhook`;
+    const webhookBody: any = webhookInfo.body || {};
+    const webhookCfg = {
+      http: webhookInfo.status,
+      url: webhookBody?.url ?? webhookBody?.webhook?.url ?? null,
+      enabled: webhookBody?.enabled ?? webhookBody?.webhook?.enabled ?? null,
+      events: webhookBody?.events ?? webhookBody?.webhook?.events ?? null,
+      expectedUrl: expectedWebhookUrl,
+      urlMatches: (webhookBody?.url ?? webhookBody?.webhook?.url ?? null) === expectedWebhookUrl,
+      lastEventAt: lastEvent?.created_at ?? null,
+      lastEventType: lastEvent?.event ?? null,
+      silentHours: lastEvent?.created_at
+        ? Math.round((Date.now() - new Date(lastEvent.created_at).getTime()) / 36e5)
+        : null,
+    };
 
     const result = {
       identifier,
@@ -105,8 +130,12 @@ serve(async (req) => {
         fetchInstancesHttp: fetchInstances.status,
         instanceDetails,
       },
+      webhook: webhookCfg,
       verdict: (() => {
         if (!connectionState.ok) return 'evolution_unreachable';
+        if (webhookCfg.http === 200 && (webhookCfg.enabled === false || webhookCfg.urlMatches === false)) {
+          return 'webhook_misconfigured';
+        }
         if (evolutionState === 'open' || evolutionState === 'connected') return 'evolution_says_connected';
         if (evolutionState === 'connecting') return 'evolution_reconnecting';
         if (evolutionState === 'close' || evolutionState === 'closed') return 'evolution_socket_closed';
