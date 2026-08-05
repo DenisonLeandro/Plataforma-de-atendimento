@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { QRCodeSVG } from "qrcode.react";
+import { useQuery } from "@tanstack/react-query";
 import { Tables } from "@/integrations/supabase/types";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -80,6 +81,27 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
   const instanceMetadata = (instance.metadata || {}) as Record<string, any>;
   const isDeliveryDegraded = instanceMetadata.delivery_degraded === true;
   const shouldShowQr = instance.status === "connecting" && !!instance.qr_code;
+
+  // Silêncio de webhook: se a Evolution parou de entregar eventos, a instância
+  // pode aparecer "conectada" e mesmo assim não receber mensagem nenhuma.
+  const { data: lastEventAt } = useQuery({
+    queryKey: ["instance-last-webhook-event", instance.id],
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("whatsapp_webhook_events")
+        .select("created_at")
+        .eq("instance_id", instance.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      return data?.created_at ?? null;
+    },
+  });
+  const silentHours = lastEventAt
+    ? Math.floor((Date.now() - new Date(lastEventAt).getTime()) / 36e5)
+    : null;
+  const isSilent = silentHours !== null && silentHours >= 6;
 
   const webhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/evolution-webhook`;
 
@@ -260,6 +282,19 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
                 <p className="font-medium">Sessão conectada, mas rejeitando envios.</p>
                 <p className="text-xs text-destructive/90">
                   Clique em Reconectar para derrubar a sessão atual e ler o QR Code novamente.
+                </p>
+              </div>
+            </div>
+          )}
+          {isSilent && (
+            <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div className="space-y-1">
+                <p className="font-medium">
+                  Sem eventos recebidos há {silentHours! >= 48 ? `${Math.floor(silentHours! / 24)} dias` : `${silentHours} horas`}.
+                </p>
+                <p className="text-xs opacity-90">
+                  Nenhuma mensagem está chegando por esta instância. Use "Sincronizar webhook" e, se persistir, "Reconectar" e leia o QR Code.
                 </p>
               </div>
             </div>
