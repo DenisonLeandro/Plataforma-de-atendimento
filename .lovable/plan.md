@@ -1,46 +1,23 @@
-## Objetivo
-Tornar o botão "Encerrar conversa" visível diretamente no cabeçalho do chat, ao lado do botão "Transferir", para eliminar a necessidade de abrir o menu de 3 pontinhos.
+# Encerrar conversas antigas — instância Acquadu
 
-## Escopo
-Mudança apenas de UI/UX no cabeçalho da conversa. Nenhuma alteração em regras de negócio, banco de dados, Edge Functions ou permissões.
+## Situação atual (verificada no banco)
+Na instância **Acquadu** existem hoje **287 conversas em aberto**:
+- **1** com mensagem a partir de 05/08 00:00 (horário de Brasília)
+- **286** com última mensagem anterior a essa data (ou sem mensagem)
 
-## Implementação
+Ou seja, o encerramento em massa ainda não foi aplicado no banco.
 
-1. **Extrair o diálogo de encerramento**
-   - Mover o estado `showCloseDialog` e o checkbox `generateSummary` de `ChatHeaderMenu.tsx` para `ChatHeader.tsx` (ou para um pequeno componente `CloseConversationDialog` compartilhado).
-   - Garantir que o fluxo de encerramento continue igual: ao confirmar, chamar `closeConversation` com a flag `generateSummary` e, no sucesso, invalidar a lista de conversas.
+## O que será feito
+Encerrar (status "closed") as **286 conversas** da instância Acquadu cuja última mensagem é anterior a 05/08/2026 00:00 (Brasília), mantendo abertas apenas as conversas com atividade a partir dessa data.
 
-2. **Adicionar o botão "Encerrar" no cabeçalho**
-   - Em `src/components/chat/ChatHeader.tsx`, posicionar o novo botão imediatamente ao lado do botão "Transferir".
-   - Usar o mesmo visual do botão "Transferir": `variant="outline"`, `size="sm"`, altura `h-7`, ícone + label.
-   - Ícone: `CheckCircle` (do lucide-react).
-   - Label: "Encerrar".
-   - Condições de exibição:
-     - A conversa deve existir e `conversation.status !== 'closed'`.
-     - Respeitar `disabled={isReadOnlyView}`.
-     - Desabilitar e mostrar spinner/texto "Encerrando..." quando `isClosing` for true.
-   - Ao clicar, abrir o diálogo de confirmação.
+- Conversas sem data de última mensagem também serão encerradas (são conversas sem atividade).
+- Conversas já encerradas ou arquivadas não são tocadas.
+- Nenhuma mensagem, contato ou histórico é apagado — apenas o status muda.
+- Se uma nova mensagem chegar depois, a conversa permanece encerrada (a reabertura automática está desativada nesta empresa); é possível reabrir manualmente pelo menu do chat.
 
-3. **Ajustar o menu de 3 pontinhos**
-   - Em `src/components/chat/ChatHeaderMenu.tsx`, remover a opção "Encerrar conversa" do menu.
-   - Manter a opção "Reabrir conversa" quando a conversa já estiver encerrada.
-   - Manter "Editar contato", "Arquivar conversa" e "Exportar conversa" no menu.
+## Detalhes técnicos
+Atualização de dados em `public.whatsapp_conversations`:
+- filtro: `instance_id = 6d5c6a9c-9bbe-4587-8aac-a277ffa8bca5`, `status = 'active'`, `last_message_at < '2026-08-05 00:00 America/Sao_Paulo'` ou `last_message_at IS NULL`
+- alteração: `status = 'closed'`, `updated_at = now()`
 
-4. **Responsividade e consistência**
-   - Manter o botão na faixa horizontal de ações existente, que já é scrollável em telas pequenas.
-   - Garantir que o botão não quebre a linha em viewports estreitas.
-
-5. **Validação**
-   - Verificar que a ação de encerrar funciona para usuários com permissão de leitura/escrita na conversa.
-   - Confirmar que, ao encerrar, a conversa some da lista de abertos e o diálogo fecha.
-   - Garantir que a opção de reabrir continue acessível no menu de 3 pontinhos quando a conversa já estiver encerrada.
-
-## Arquivos alterados
-- `src/components/chat/ChatHeader.tsx`
-- `src/components/chat/ChatHeaderMenu.tsx`
-
-## Não alterar
-- Lógica de encerramento (`useWhatsAppActions`).
-- Permissões/RLS.
-- Edge Functions.
-- Outros menus ou cards.
+Nenhuma alteração de código ou de schema é necessária.
