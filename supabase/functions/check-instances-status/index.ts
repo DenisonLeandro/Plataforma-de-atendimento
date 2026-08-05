@@ -133,10 +133,10 @@ serve(async (req) => {
         const recentDeliveryFailures = await countRecentOutboundFailures(supabaseAdmin, instance.id);
         const isDeliveryDegraded = recentDeliveryFailures >= DELIVERY_FAILURE_THRESHOLD;
 
-        // `connecting` do Baileys é transiente. Só mantemos localmente se
-        // insistir por várias checagens seguidas; caso contrário, se a
-        // Evolution respondeu 200 e não há falha de envio recente, tratamos
-        // como conectado.
+        // `connecting` do Baileys é transiente por poucos segundos. Se
+        // insistir por várias checagens seguidas, a sessão caiu de fato
+        // (a Evolution devolve QR Code) — marcamos como desconectada para
+        // que a UI peça a leitura do QR em vez de mascarar a queda.
         const CONNECTING_STREAK_LIMIT = 3;
         const prevConnectingStreak = Number(currentMeta.connecting_streak || 0);
         let connectingStreak = 0;
@@ -152,14 +152,10 @@ serve(async (req) => {
         } else if (mapped === 'connecting') {
           connectingStreak = prevConnectingStreak + 1;
           if (connectingStreak >= CONNECTING_STREAK_LIMIT) {
-            // Insistiu em "connecting" — provavelmente Evolution está OK mas
-            // socket renovando. Considerar conectado para não travar a UI.
-            newStatus = 'connected';
-            connectingStreak = 0;
-          } else if (currentStatus !== 'connected') {
-            newStatus = 'connecting';
+            // Socket preso em "connecting" — sessão perdida.
+            newStatus = 'disconnected';
           } else {
-            newStatus = 'connected';
+            newStatus = 'connecting';
           }
         } else {
           // mapped === 'disconnected' — Evolution reporta socket fechado.
