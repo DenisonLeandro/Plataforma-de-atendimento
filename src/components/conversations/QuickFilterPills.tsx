@@ -32,7 +32,7 @@ const QuickFilterPills = ({
   ];
 
   return (
-    <div className="flex gap-1 overflow-x-auto flex-nowrap pb-1 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
+    <div className="flex flex-wrap gap-1">
       {filters.map((filter) => {
         const isActive = activeFilter === filter.value;
         const Icon = filter.icon;
