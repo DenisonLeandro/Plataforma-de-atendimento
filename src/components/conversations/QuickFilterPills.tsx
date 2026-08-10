@@ -32,7 +32,7 @@ const QuickFilterPills = ({
   ];
 
   return (
-    <div className="flex gap-1.5 overflow-x-auto flex-nowrap pb-2 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
+    <div className="flex gap-1 overflow-x-auto flex-nowrap pb-1 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
       {filters.map((filter) => {
         const isActive = activeFilter === filter.value;
         const Icon = filter.icon;
@@ -44,7 +44,7 @@ const QuickFilterPills = ({
             size="sm"
             onClick={() => onFilterChange(filter.value)}
             className={`
-              h-7 px-1.5 text-[10px] font-medium rounded-full transition-colors whitespace-nowrap flex-shrink-0 gap-1
+              h-6 px-1.5 text-[10px] leading-none font-medium rounded-full transition-colors whitespace-nowrap flex-shrink-0 gap-1
               ${
                 isActive
                   ? "bg-primary text-primary-foreground hover:bg-primary/90"
@@ -57,7 +57,7 @@ const QuickFilterPills = ({
             {filter.count !== undefined && filter.count > 0 && (
               <Badge
                 variant={isActive ? "secondary" : "default"}
-                className="ml-0.5 h-4 px-1 text-[10px]"
+                className="ml-0.5 h-3.5 px-1 text-[10px] leading-none"
               >
                 {filter.count}
               </Badge>

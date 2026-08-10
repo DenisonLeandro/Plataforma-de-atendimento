@@ -254,8 +254,8 @@ const ConversationsSidebar = ({ selectedId, onSelect, instanceId, isCollapsed, o
         <UserMenu />
       </div>
 
-      {/* Search and new conversation */}
-      <div className="p-3 space-y-2 border-b border-sidebar-border">
+      {/* Search and new conversation + filters */}
+      <div className="p-2 space-y-2 border-b border-sidebar-border">
         <div className="flex gap-2">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
