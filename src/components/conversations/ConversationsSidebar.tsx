@@ -275,8 +275,8 @@ const ConversationsSidebar = ({ selectedId, onSelect, instanceId, isCollapsed, o
           </Button>
         </div>
 
-        {/* Pills de filtro rápido + Filtros avançados */}
-        <div className="flex items-center justify-between gap-2">
+        {/* Pills de filtro rápido */}
+        <div className="flex items-center gap-2">
           <QuickFilterPills 
             activeFilter={filter} 
             onFilterChange={setFilter}
@@ -285,6 +285,10 @@ const ConversationsSidebar = ({ selectedId, onSelect, instanceId, isCollapsed, o
             queueCount={queueCount}
             myConversationsCount={myConversationsCount}
           />
+        </div>
+
+        {/* Filtros avançados */}
+        <div className="flex items-center justify-end">
           <ConversationFiltersPopover
             statusFilter={statusFilter}
             onStatusChange={setStatusFilter}

@@ -25,10 +25,10 @@ const QuickFilterPills = ({
 }: QuickFilterPillsProps) => {
   const filters: { value: FilterType; label: string; count?: number; icon?: any }[] = [
     { value: "all", label: "Todas" },
+    { value: "mine", label: "Minhas", count: myConversationsCount, icon: User },
     { value: "unread", label: "Não lidas", count: unreadCount },
     { value: "waiting", label: "Aguardando", count: waitingCount, icon: Clock },
     ...(showQueue ? [{ value: "queue" as FilterType, label: "Na Fila", count: queueCount, icon: Inbox }] : []),
-    { value: "mine", label: "Minhas", count: myConversationsCount, icon: User },
   ];
 
   return (
