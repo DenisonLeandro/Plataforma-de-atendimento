@@ -231,11 +231,15 @@ async function findOrCreateConversationLite(
   instanceId: string,
   contactId: string,
 ): Promise<string | null> {
+  // .order().limit(1): sem isso o maybeSingle devolve nulo quando ha mais de
+  // uma conversa para o contato e a sincronizacao criaria outra.
   const { data: existing } = await supabase
     .from('whatsapp_conversations')
     .select('id')
     .eq('instance_id', instanceId)
     .eq('contact_id', contactId)
+    .order('created_at', { ascending: true })
+    .limit(1)
     .maybeSingle();
 
   if (existing) return existing.id;
@@ -251,6 +255,19 @@ async function findOrCreateConversationLite(
     .single();
 
   if (error) {
+    // 23505: a restricao unica barrou porque o webhook criou a conversa entre
+    // a busca e a insercao. Reaproveita em vez de falhar o lote inteiro.
+    if ((error as { code?: string }).code === '23505') {
+      const { data: raced } = await supabase
+        .from('whatsapp_conversations')
+        .select('id')
+        .eq('instance_id', instanceId)
+        .eq('contact_id', contactId)
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (raced?.id) return raced.id;
+    }
     console.error('[sync-whatsapp-history] Error creating conversation:', error);
     return null;
   }

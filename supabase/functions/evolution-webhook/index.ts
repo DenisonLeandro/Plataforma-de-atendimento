@@ -412,6 +412,11 @@ async function findOrCreateContact(
     // Buscar contato existente.
     // Para contatos de LID, primeiro tenta pelo metadata.lid — assim reencontramos o
     // contato mesmo depois que o usuário corrigiu o phone_number manualmente.
+    // As tres buscas usam .order().limit(1) pelo mesmo motivo da conversa: sem
+    // isso, `.maybeSingle()` devolve nulo quando mais de um contato casa (o
+    // caso mais comum e o telefone existir nas versoes com e sem o nono
+    // digito) e o codigo criaria um terceiro cadastro para a mesma pessoa.
+    // Na duvida, sempre o cadastro mais antigo.
     let existingContact: any = null;
     if (lid) {
       const { data: byLid } = await supabase
@@ -419,6 +424,8 @@ async function findOrCreateContact(
         .select('id, name, phone_number, metadata')
         .eq('instance_id', instanceId)
         .filter('metadata->>lid', 'eq', lid)
+        .order('created_at', { ascending: true })
+        .limit(1)
         .maybeSingle();
       existingContact = byLid ?? null;
     }
@@ -428,6 +435,8 @@ async function findOrCreateContact(
         .select('id, name, phone_number, metadata')
         .eq('instance_id', instanceId)
         .filter('metadata->>last_remote_jid', 'eq', rawRemoteJid)
+        .order('created_at', { ascending: true })
+        .limit(1)
         .maybeSingle();
       existingContact = byRemoteJid ?? null;
     }
@@ -437,6 +446,8 @@ async function findOrCreateContact(
         .select('id, name, phone_number, metadata')
         .eq('instance_id', instanceId)
         .in('phone_number', phoneVariants)
+        .order('created_at', { ascending: true })
+        .limit(1)
         .maybeSingle();
       existingContact = byPhone ?? null;
     }
@@ -610,12 +621,20 @@ async function findOrCreateConversation(
   isFromMe: boolean
 ): Promise<string | null> {
   try {
-    // Try to find existing conversation
+    // Sempre a conversa mais antiga do contato, nunca uma nova.
+    //
+    // Antes era `.maybeSingle()` puro: com duas ou mais conversas para o mesmo
+    // contato ele devolve nulo, o codigo caia no ramo de criacao e abria mais
+    // uma -- a cada mensagem. Uma unica duplicata virava bola de neve (chegou a
+    // 45 conversas para um contato so). O `.order().limit(1)` garante no maximo
+    // uma linha, entao o maybeSingle passa a ser sempre seguro.
     const { data: existingConversation, error: findError } = await supabase
       .from('whatsapp_conversations')
       .select('id, status')
       .eq('instance_id', instanceId)
       .eq('contact_id', contactId)
+      .order('created_at', { ascending: true })
+      .limit(1)
       .maybeSingle();
 
     if (findError) {
@@ -671,6 +690,28 @@ async function findOrCreateConversation(
       .single();
 
     if (createError) {
+      // 23505 = a restricao unica (instance_id, contact_id) barrou a insercao.
+      // Acontece quando duas mensagens do mesmo contato novo sao processadas em
+      // paralelo por invocacoes diferentes: ambas procuram, nenhuma acha, ambas
+      // tentam criar. O banco deixa so uma passar; a perdedora busca a
+      // vencedora em vez de duplicar. E esta a corrida que gerava o primeiro
+      // par de duplicatas, e agora ela termina numa unica conversa.
+      if (createError.code === '23505') {
+        const { data: raced } = await supabase
+          .from('whatsapp_conversations')
+          .select('id')
+          .eq('instance_id', instanceId)
+          .eq('contact_id', contactId)
+          .order('created_at', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+
+        if (raced?.id) {
+          console.log('[evolution-webhook] Conversa criada em paralelo, reaproveitando:', raced.id);
+          return raced.id;
+        }
+      }
+
       console.error('[evolution-webhook] Error creating conversation:', createError);
       return null;
     }
