@@ -166,6 +166,15 @@ async function findOrCreateContactLite(
   const variants = buildBrazilianVariants(phone);
 
   // Para contatos de LID, buscar primeiro por metadata.lid (reencontra após edição manual).
+  //
+  // As duas buscas usam .order().limit(1) pelo mesmo motivo do evolution-webhook:
+  // sem isso, `.maybeSingle()` devolve nulo quando mais de um contato casa -- o
+  // caso comum e o telefone existir nas versoes com e sem o nono digito, que a
+  // propria `variants` procura de proposito. O nulo caia no ramo de criacao e
+  // gerava um terceiro cadastro da mesma pessoa. Como contatos distintos
+  // resultam em conversas distintas, esta era uma porta pela qual a duplicacao
+  // voltava mesmo depois da restricao unica em (instance_id, contact_id).
+  // Na duvida, sempre o cadastro mais antigo.
   let existing: any = null;
   if (lid) {
     const { data: byLid } = await supabase
@@ -173,6 +182,8 @@ async function findOrCreateContactLite(
       .select('id, name, phone_number, profile_picture_url, metadata')
       .eq('instance_id', instanceId)
       .filter('metadata->>lid', 'eq', lid)
+      .order('created_at', { ascending: true })
+      .limit(1)
       .maybeSingle();
     existing = byLid ?? null;
   }
@@ -182,6 +193,8 @@ async function findOrCreateContactLite(
       .select('id, name, phone_number, profile_picture_url, metadata')
       .eq('instance_id', instanceId)
       .in('phone_number', variants)
+      .order('created_at', { ascending: true })
+      .limit(1)
       .maybeSingle();
     existing = byPhone ?? null;
   }
@@ -220,6 +233,21 @@ async function findOrCreateContactLite(
     .single();
 
   if (error) {
+    // 23505 = a restricao UNIQUE(instance_id, phone_number) barrou porque o
+    // webhook criou este contato entre a busca e a insercao -- comum, ja que a
+    // sincronizacao roda enquanto mensagens continuam chegando. Reaproveita o
+    // contato existente em vez de descartar o chat inteiro.
+    if ((error as { code?: string }).code === '23505') {
+      const { data: raced } = await supabase
+        .from('whatsapp_contacts')
+        .select('id')
+        .eq('instance_id', instanceId)
+        .in('phone_number', variants)
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (raced?.id) return raced.id;
+    }
     console.error('[sync-whatsapp-history] Error creating contact:', error);
     return null;
   }
