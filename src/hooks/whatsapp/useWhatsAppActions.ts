@@ -8,9 +8,11 @@ export const useWhatsAppActions = () => {
   // Archive conversation
   const archiveMutation = useMutation({
     mutationFn: async (conversationId: string) => {
+      // Mesma lógica do encerrar: arquivar é decisão explícita, então a
+      // pendência sai junto. Mensagem nova do cliente traz a conversa de volta.
       const { error } = await supabase
         .from('whatsapp_conversations')
-        .update({ status: 'archived' })
+        .update({ status: 'archived', unread_count: 0 })
         .eq('id', conversationId);
       if (error) throw error;
     },
@@ -56,9 +58,13 @@ export const useWhatsAppActions = () => {
         }
       }
 
+      // Zera as não lidas junto: encerrar é uma decisão explícita de quem
+      // atendeu, e conversa encerrada continuar com bolinha de pendência era
+      // parte do que inflava a contagem. Se o cliente escrever depois, a
+      // conversa reabre sozinha e a bolinha volta.
       const { error } = await supabase
         .from('whatsapp_conversations')
-        .update({ status: 'closed' })
+        .update({ status: 'closed', unread_count: 0 })
         .eq('id', conversationId);
       if (error) throw error;
     },

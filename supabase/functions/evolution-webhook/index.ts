@@ -1218,9 +1218,23 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
       },
     };
 
-    // Increment unread count only if message is not from me
+    // Contador de nao lidas.
+    //
+    // Mensagem do cliente soma 1. Mensagem nossa ZERA -- e esse zerar é a
+    // correcao: antes, quando o atendente respondia pelo WhatsApp do proprio
+    // celular (ou pelo WhatsApp Web) em vez de usar a plataforma, a resposta
+    // dele chegava aqui com fromMe=true, era gravada na conversa, mas o
+    // contador ficava intocado. A cada nova mensagem do cliente somava +1 sem
+    // nunca voltar a zero; escritorios chegaram a 150 conversas "nao lidas"
+    // que na verdade ja tinham sido respondidas.
+    //
+    // A regra e segura por construcao: se saiu mensagem daquele numero, alguem
+    // leu a conversa -- nao importa de qual aparelho. E ela nao encerra nem
+    // muda o status de nada, so corrige a contagem.
     if (!key.fromMe) {
       updateData.unread_count = ((currentConversationForUpdate as any)?.unread_count || 0) + 1;
+    } else {
+      updateData.unread_count = 0;
     }
 
     const { error: updateError } = await supabase
