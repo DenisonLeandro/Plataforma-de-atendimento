@@ -92,11 +92,17 @@ export const useWhatsAppInstances = () => {
   // celular pareava, e o card continuava "Desconectado" até um F5. Como o
   // webhook agora grava cada rotação de QR e cada mudança de estado, basta
   // ouvir a tabela para a tela acompanhar sozinha.
+  //
+  // O sufixo aleatório no nome do canal é obrigatório: este hook é usado por
+  // ~16 componentes, vários montados ao mesmo tempo. Com nome fixo, o
+  // supabase-js devolve o canal já existente e o segundo `.on()` cai depois do
+  // `subscribe()`, quebrando o carregamento da plataforma inteira. Mesmo
+  // padrão de useWhatsAppConversations e useWhatsAppSentiment.
   useEffect(() => {
     if (!companyId) return;
 
     const channel = supabase
-      .channel(`whatsapp-instances-${companyId}`)
+      .channel(`whatsapp-instances-${companyId}-${Math.random().toString(36).slice(2)}`)
       .on(
         'postgres_changes',
         {
