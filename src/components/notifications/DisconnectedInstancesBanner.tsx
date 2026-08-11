@@ -4,6 +4,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
 import { Tables } from '@/integrations/supabase/types';
+import { useAuth } from '@/contexts/AuthContext';
 
 type WhatsAppInstance = Tables<'whatsapp_instances'>;
 
@@ -13,6 +14,10 @@ interface DisconnectedInstancesBannerProps {
 
 export const DisconnectedInstancesBanner = ({ instances }: DisconnectedInstancesBannerProps) => {
   const [dismissed, setDismissed] = useState(false);
+  const { isAdmin, isSupervisor } = useAuth();
+  // Agente vê o aviso (precisa saber que as mensagens pararam), mas não recebe
+  // um botão que o levaria a uma aba inexistente para ele.
+  const canReconnect = isAdmin || isSupervisor;
 
   if (dismissed || instances.length === 0) return null;
 
@@ -31,11 +36,15 @@ export const DisconnectedInstancesBanner = ({ instances }: DisconnectedInstances
             ? `A instância "${instanceNames}" está desconectada.` 
             : `As instâncias ${instanceNames} estão desconectadas.`}
         </span>
-        <Button variant="outline" size="sm" asChild>
-          <Link to="/whatsapp/settings">
-            Verificar Configurações →
-          </Link>
-        </Button>
+        {/* Leva direto para a aba de conexão: o cliente cai exatamente na tela
+            onde resolve, em vez de procurar entre as abas de configuração. */}
+        {canReconnect && (
+          <Button variant="outline" size="sm" asChild className="shrink-0">
+            <Link to="/whatsapp/settings?tab=connection">
+              Reconectar agora →
+            </Link>
+          </Button>
+        )}
       </AlertDescription>
       <Button
         variant="ghost"

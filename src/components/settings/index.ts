@@ -1,5 +1,7 @@
 export { InstancesList } from "./InstancesList";
 export { InstanceCard } from "./InstanceCard";
+export { ConnectionTab } from "./ConnectionTab";
+export { InstanceConnectionCard } from "./InstanceConnectionCard";
 export { AddInstanceDialog } from "./AddInstanceDialog";
 export { EditInstanceDialog } from "./EditInstanceDialog";
 export { TeamMembersList } from "./TeamMembersList";

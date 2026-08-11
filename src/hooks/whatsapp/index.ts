@@ -1,4 +1,6 @@
 export { useWhatsAppInstances } from './useWhatsAppInstances';
+export { useInstanceConnection } from './useInstanceConnection';
+export type { ConnectionState, InstanceConnection } from './useInstanceConnection';
 export { useWhatsAppConversations } from './useWhatsAppConversations';
 export type { ConversationsResult } from './useWhatsAppConversations';
 export { useWhatsAppMessages } from './useWhatsAppMessages';
