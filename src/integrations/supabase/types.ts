@@ -248,6 +248,183 @@ export type Database = {
           },
         ]
       }
+      backup_20260811_conversas: {
+        Row: {
+          assigned_to: string | null
+          company_id: string | null
+          contact_id: string | null
+          created_at: string | null
+          id: string | null
+          instance_id: string | null
+          last_message_at: string | null
+          last_message_is_from_me: boolean | null
+          last_message_preview: string | null
+          metadata: Json | null
+          status: string | null
+          unread_count: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          assigned_to?: string | null
+          company_id?: string | null
+          contact_id?: string | null
+          created_at?: string | null
+          id?: string | null
+          instance_id?: string | null
+          last_message_at?: string | null
+          last_message_is_from_me?: boolean | null
+          last_message_preview?: string | null
+          metadata?: Json | null
+          status?: string | null
+          unread_count?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          assigned_to?: string | null
+          company_id?: string | null
+          contact_id?: string | null
+          created_at?: string | null
+          id?: string | null
+          instance_id?: string | null
+          last_message_at?: string | null
+          last_message_is_from_me?: boolean | null
+          last_message_preview?: string | null
+          metadata?: Json | null
+          status?: string | null
+          unread_count?: number | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      backup_20260811_mensagens: {
+        Row: {
+          audio_transcription: string | null
+          company_id: string | null
+          content: string | null
+          conversation_id: string | null
+          created_at: string | null
+          edited_at: string | null
+          id: string | null
+          is_from_me: boolean | null
+          media_error: string | null
+          media_mimetype: string | null
+          media_retry_count: number | null
+          media_status: string | null
+          media_url: string | null
+          message_id: string | null
+          message_type: string | null
+          metadata: Json | null
+          original_content: string | null
+          quoted_message_id: string | null
+          remote_jid: string | null
+          status: string | null
+          timestamp: string | null
+          transcription_status: string | null
+        }
+        Insert: {
+          audio_transcription?: string | null
+          company_id?: string | null
+          content?: string | null
+          conversation_id?: string | null
+          created_at?: string | null
+          edited_at?: string | null
+          id?: string | null
+          is_from_me?: boolean | null
+          media_error?: string | null
+          media_mimetype?: string | null
+          media_retry_count?: number | null
+          media_status?: string | null
+          media_url?: string | null
+          message_id?: string | null
+          message_type?: string | null
+          metadata?: Json | null
+          original_content?: string | null
+          quoted_message_id?: string | null
+          remote_jid?: string | null
+          status?: string | null
+          timestamp?: string | null
+          transcription_status?: string | null
+        }
+        Update: {
+          audio_transcription?: string | null
+          company_id?: string | null
+          content?: string | null
+          conversation_id?: string | null
+          created_at?: string | null
+          edited_at?: string | null
+          id?: string | null
+          is_from_me?: boolean | null
+          media_error?: string | null
+          media_mimetype?: string | null
+          media_retry_count?: number | null
+          media_status?: string | null
+          media_url?: string | null
+          message_id?: string | null
+          message_type?: string | null
+          metadata?: Json | null
+          original_content?: string | null
+          quoted_message_id?: string | null
+          remote_jid?: string | null
+          status?: string | null
+          timestamp?: string | null
+          transcription_status?: string | null
+        }
+        Relationships: []
+      }
+      backup_20260811_naolidas: {
+        Row: {
+          id: string | null
+          unread_count: number | null
+        }
+        Insert: {
+          id?: string | null
+          unread_count?: number | null
+        }
+        Update: {
+          id?: string | null
+          unread_count?: number | null
+        }
+        Relationships: []
+      }
+      backup_20260811_sentimento: {
+        Row: {
+          confidence_score: number | null
+          contact_id: string | null
+          conversation_id: string | null
+          created_at: string | null
+          id: string | null
+          messages_analyzed: number | null
+          metadata: Json | null
+          reasoning: string | null
+          sentiment: Database["public"]["Enums"]["sentiment_type"] | null
+          summary: string | null
+        }
+        Insert: {
+          confidence_score?: number | null
+          contact_id?: string | null
+          conversation_id?: string | null
+          created_at?: string | null
+          id?: string | null
+          messages_analyzed?: number | null
+          metadata?: Json | null
+          reasoning?: string | null
+          sentiment?: Database["public"]["Enums"]["sentiment_type"] | null
+          summary?: string | null
+        }
+        Update: {
+          confidence_score?: number | null
+          contact_id?: string | null
+          conversation_id?: string | null
+          created_at?: string | null
+          id?: string | null
+          messages_analyzed?: number | null
+          metadata?: Json | null
+          reasoning?: string | null
+          sentiment?: Database["public"]["Enums"]["sentiment_type"] | null
+          summary?: string | null
+        }
+        Relationships: []
+      }
       companies: {
         Row: {
           code: string
