@@ -23,6 +23,15 @@
 
 BEGIN;
 
+-- O gatilho archive_topics_before_update dispara em QUALQUER update de conversa
+-- e grava uma linha em whatsapp_topics_history sempre que a conversa tem
+-- topicos -- mesmo quando os topicos nao mudaram. Esta migration atualiza cada
+-- guardia duas vezes, o que inflaria os relatorios de topicos com centenas de
+-- linhas falsas. Desligamos apenas este gatilho, e apenas aqui dentro: em
+-- Postgres o DISABLE TRIGGER e transacional, entao qualquer falha no meio do
+-- caminho reativa o gatilho junto com o rollback.
+ALTER TABLE public.whatsapp_conversations DISABLE TRIGGER archive_topics_before_update;
+
 -- ---------------------------------------------------------------------------
 -- 1. Mapa duplicata -> guardia (a mais antiga de cada contato por instancia)
 -- ---------------------------------------------------------------------------
@@ -180,5 +189,7 @@ WHERE c.id = m.conversation_id;
 -- transacao inteira volta atras -- nenhum dado fica pela metade.
 CREATE UNIQUE INDEX IF NOT EXISTS whatsapp_conversations_instance_contact_key
   ON public.whatsapp_conversations (instance_id, contact_id);
+
+ALTER TABLE public.whatsapp_conversations ENABLE TRIGGER archive_topics_before_update;
 
 COMMIT;

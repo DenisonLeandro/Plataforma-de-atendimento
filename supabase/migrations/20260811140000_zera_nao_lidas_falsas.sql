@@ -21,6 +21,15 @@
 
 BEGIN;
 
+-- O gatilho archive_topics_before_update dispara em QUALQUER update de conversa
+-- e grava uma linha em whatsapp_topics_history sempre que a conversa tem
+-- topicos -- mesmo quando os topicos nao mudaram. Como esta migration atualiza
+-- centenas de conversas, ele inflaria os relatorios de topicos com centenas de
+-- linhas falsas. Desligamos apenas este gatilho, e apenas aqui dentro: em
+-- Postgres o DISABLE TRIGGER e transacional, entao qualquer falha no meio do
+-- caminho reativa o gatilho junto com o rollback.
+ALTER TABLE public.whatsapp_conversations DISABLE TRIGGER archive_topics_before_update;
+
 -- Conferencia: separa o que sera corrigido do que sera preservado, usando
 -- exatamente o mesmo criterio do UPDATE abaixo.
 DO $$
@@ -70,5 +79,7 @@ FROM (
 WHERE c.id = ultima.conversation_id
   AND ultima.is_from_me IS TRUE   -- a linha que protege a fila real
   AND c.unread_count > 0;
+
+ALTER TABLE public.whatsapp_conversations ENABLE TRIGGER archive_topics_before_update;
 
 COMMIT;
