@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Tables, TablesInsert, TablesUpdate } from '@/integrations/supabase/types';
@@ -22,6 +23,51 @@ type InstanceUpdateWithSecrets = InstanceUpdate & {
   instance_id_external?: string;
 };
 
+/** Desfechos possíveis de `reconnect-instance`. */
+export interface ReconnectResponse {
+  success?: boolean;
+  /** Já estava conectada: nada foi alterado na Evolution. */
+  alreadyConnected?: boolean;
+  /** Baileys já estava reconectando sozinho; não forçamos por cima. */
+  stillConnecting?: boolean;
+  /** Houve logout antes do connect (sessão suja). */
+  cleanReconnect?: boolean;
+  /** String crua do QR, quando a Evolution já devolve na resposta. */
+  qr?: string | null;
+  /** Imagem pronta do QR (data-URI). */
+  qrBase64?: string | null;
+  status?: string;
+}
+
+/**
+ * Invoca uma edge function e propaga a mensagem real do erro.
+ *
+ * Em respostas não-2xx o supabase-js entrega só "Edge Function returned a
+ * non-2xx status code" e esconde o corpo em `error.context`. Sem desembrulhar,
+ * o cliente veria esse texto genérico em vez de "já existe uma operação em
+ * andamento" — justamente a explicação de que ele precisa.
+ */
+async function invokeInstanceFunction<T>(name: string, body: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase.functions.invoke(name, { body });
+
+  if (error) {
+    let message = error.message;
+    try {
+      const payload = await (error as { context?: Response }).context?.json();
+      if (payload?.error) message = payload.error;
+    } catch {
+      // Corpo não-JSON ou já consumido: mantém a mensagem original.
+    }
+    throw new Error(message);
+  }
+
+  if ((data as { error?: string })?.error) {
+    throw new Error((data as { error: string }).error);
+  }
+
+  return data as T;
+}
+
 export const useWhatsAppInstances = () => {
   const queryClient = useQueryClient();
   const { companyId } = useCompanyContext();
@@ -41,6 +87,34 @@ export const useWhatsAppInstances = () => {
     },
     enabled: !!companyId,
   });
+
+  // Sem realtime, a tela de conexão ficava mentindo: o cliente lia o QR, o
+  // celular pareava, e o card continuava "Desconectado" até um F5. Como o
+  // webhook agora grava cada rotação de QR e cada mudança de estado, basta
+  // ouvir a tabela para a tela acompanhar sozinha.
+  useEffect(() => {
+    if (!companyId) return;
+
+    const channel = supabase
+      .channel(`whatsapp-instances-${companyId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'whatsapp_instances',
+          filter: `company_id=eq.${companyId}`,
+        },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ['whatsapp', 'instances', companyId] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [companyId, queryClient]);
 
   const createInstance = useMutation({
     mutationFn: async (instance: InstanceInsertWithSecrets) => {
@@ -178,11 +252,10 @@ export const useWhatsAppInstances = () => {
     mutationFn: async (input: string | { id: string; clean?: boolean }) => {
       const id = typeof input === 'string' ? input : input.id;
       const clean = typeof input === 'string' ? false : !!input.clean;
-      const { data, error } = await supabase.functions.invoke(
+      const data = await invokeInstanceFunction<ReconnectResponse>(
         'reconnect-instance',
-        { body: { instanceId: id, clean } }
+        { instanceId: id, clean }
       );
-      if (error) throw error;
       return { ...data, instanceId: id };
     },
     onSuccess: (data) => {
@@ -195,6 +268,19 @@ export const useWhatsAppInstances = () => {
           .invoke('sync-instance-webhook', { body: { instanceId: id } })
           .catch(() => undefined);
       }
+    },
+  });
+
+  // Logout da sessão do WhatsApp. Exige leitura de QR novo depois — a UI
+  // cobre com dupla confirmação antes de chegar aqui.
+  const disconnectInstance = useMutation({
+    mutationFn: async (id: string) =>
+      invokeInstanceFunction<{ success: boolean; status: string }>(
+        'disconnect-instance',
+        { instanceId: id }
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['whatsapp', 'instances'] });
     },
   });
 
@@ -248,6 +334,7 @@ export const useWhatsAppInstances = () => {
     deleteInstance,
     testConnection,
     reconnectInstance,
+    disconnectInstance,
     diagnoseInstance,
     resolveLidConversations,
     syncInstanceWebhook,

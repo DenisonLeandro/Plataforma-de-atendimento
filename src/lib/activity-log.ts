@@ -27,6 +27,9 @@ export const ACTIVITY_LABELS: Record<string, { label: string; icon: string }> = 
   'ai.summary': { label: 'Gerou resumo', icon: '🧾' },
   'ai.smart_replies': { label: 'Usou sugestão de IA', icon: '⚡' },
   'ai.composer': { label: 'Usou compositor IA', icon: '✍️' },
+  // Conexão do WhatsApp (via edge functions, ator explícito)
+  'instance.reconnect': { label: 'Reconectou o WhatsApp', icon: '🔌' },
+  'instance.disconnect': { label: 'Desconectou o WhatsApp', icon: '⛔' },
   // Deletes reais (via triggers)
   'instance.delete': { label: 'Excluiu instância', icon: '🗑️' },
   'note.delete': { label: 'Excluiu nota', icon: '🗑️' },
@@ -42,6 +45,7 @@ export const ACTIVITY_GROUPS: { label: string; actions: string[] }[] = [
   { label: 'Mensagens', actions: ['message.send', 'message.edit', 'message.react'] },
   { label: 'Contatos', actions: ['contact.update', 'contact.delete'] },
   { label: 'IA', actions: ['ai.transcription', 'ai.sentiment', 'ai.categorization', 'ai.summary', 'ai.smart_replies', 'ai.composer'] },
+  { label: 'Conexão', actions: ['instance.reconnect', 'instance.disconnect'] },
   { label: 'Exclusões', actions: ['instance.delete', 'note.delete', 'summary.delete', 'rule.delete', 'macro.delete', 'company.delete'] },
 ];
 

@@ -1,6 +1,13 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { fetchWithTimeout } from "../_shared/fetch-with-timeout.ts";
+import {
+  acquireConnectionLock,
+  authorizeInstanceAction,
+  extractQrCode,
+  logInstanceActivity,
+  releaseConnectionLock,
+} from "../_shared/instance-auth.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -9,6 +16,13 @@ const corsHeaders = {
 
 const DELIVERY_FAILURE_THRESHOLD = 3;
 const DELIVERY_FAILURE_LOOKBACK_MS = 24 * 60 * 60 * 1000;
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+}
 
 async function countRecentOutboundFailures(supabaseAdmin: any, instanceId: string): Promise<number> {
   const since = new Date(Date.now() - DELIVERY_FAILURE_LOOKBACK_MS).toISOString();
@@ -29,209 +43,142 @@ serve(async (req) => {
   }
 
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
-
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    const { data: isAdmin } = await supabaseAdmin.rpc('has_role', { _user_id: user.id, _role: 'admin' });
-    const { data: isSupervisor } = await supabaseAdmin.rpc('has_role', { _user_id: user.id, _role: 'supervisor' });
-    if (!isAdmin && !isSupervisor) {
-      return new Response(JSON.stringify({ error: 'Forbidden' }), {
-        status: 403,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    const supabaseAdmin = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    );
 
     const { instanceId, clean = false } = await req.json();
-    if (!instanceId) {
-      return new Response(JSON.stringify({ error: 'instanceId required' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
 
-    const { data: instance, error: instanceError } = await supabaseAdmin
-      .from('whatsapp_instances')
-      .select('instance_name, provider_type, instance_id_external, metadata')
-      .eq('id', instanceId)
-      .single();
-    if (instanceError || !instance) {
-      return new Response(JSON.stringify({ error: 'Instance not found' }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    // authZ completa: JWT + papel + empresa dona da instância.
+    const auth = await authorizeInstanceAction(supabaseAdmin, req, instanceId);
+    if (!auth.ok) return json({ error: auth.error }, auth.status);
+    const { ctx } = auth;
 
-    const { data: secrets, error: secretsError } = await supabaseAdmin
-      .from('whatsapp_instance_secrets')
-      .select('api_key, api_url')
-      .eq('instance_id', instanceId)
-      .single();
-    if (secretsError || !secrets) {
-      return new Response(JSON.stringify({ error: 'Instance secrets not found' }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    const providerType = (instance as any).provider_type || 'self_hosted';
-    const instanceIdExternal = (instance as any).instance_id_external;
-    const identifier = providerType === 'cloud' && instanceIdExternal
-      ? instanceIdExternal
-      : instance.instance_name;
-
-    const baseUrl = (secrets.api_url.endsWith('/') ? secrets.api_url.slice(0, -1) : secrets.api_url).replace(/\/manager$/, '');
-    const metadata = ((instance as any).metadata || {}) as Record<string, any>;
-    const recentDeliveryFailures = await countRecentOutboundFailures(supabaseAdmin, instanceId);
+    const metadata = ctx.instance.metadata;
+    const recentDeliveryFailures = await countRecentOutboundFailures(supabaseAdmin, ctx.instance.id);
     const needsCleanReconnect =
       clean === true ||
       metadata.delivery_degraded === true ||
       recentDeliveryFailures >= DELIVERY_FAILURE_THRESHOLD;
 
-    // 1) Checa estado atual antes de forçar nada. Bater em /instance/connect
-    //    numa instância já `open` causava status "connecting" falso no banco.
-    const stateUrl = `${baseUrl}/instance/connectionState/${identifier}`;
-    const stateResp = await fetchWithTimeout(stateUrl, { timeout: 20000, headers: { apikey: secrets.api_key } });
+    // 1) Confere o estado real antes de forçar qualquer coisa. Bater em
+    //    /instance/connect numa instância já `open` gerava status "connecting"
+    //    falso no banco.
+    const stateResp = await fetchWithTimeout(
+      `${ctx.baseUrl}/instance/connectionState/${ctx.identifier}`,
+      { timeout: 20000, headers: { apikey: ctx.apiKey } },
+    );
     let stateData: any = {};
     if (stateResp.ok) {
       const t = await stateResp.text();
-      if (t) { try { stateData = JSON.parse(t); } catch {} }
+      if (t) { try { stateData = JSON.parse(t); } catch { /* corpo não-JSON */ } }
     }
     const currentState = stateData?.state ?? stateData?.instance?.state;
 
+    // Já conectada e saudável: nada a fazer além de sincronizar o banco.
     if ((currentState === 'open' || currentState === 'connected') && !needsCleanReconnect) {
-      // Já está conectada — só sincronizamos o banco e saímos.
       await supabaseAdmin
         .from('whatsapp_instances')
-        .update({ status: 'connected', updated_at: new Date().toISOString() })
-        .eq('id', instanceId);
-      return new Response(
-        JSON.stringify({ success: true, alreadyConnected: true }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+        .update({ status: 'connected', qr_code: null, updated_at: new Date().toISOString() })
+        .eq('id', ctx.instance.id);
+      return json({ success: true, alreadyConnected: true, status: 'connected' });
     }
 
-    if (needsCleanReconnect) {
-      const logoutUrl = `${baseUrl}/instance/logout/${identifier}`;
-      const logoutResp = await fetchWithTimeout(logoutUrl, {
-        timeout: 20000,
-        method: 'DELETE',
-        headers: { apikey: secrets.api_key },
-      });
-      const logoutText = await logoutResp.text().catch(() => '');
-
-      if (!logoutResp.ok && logoutResp.status !== 404) {
-        console.error('[reconnect-instance] Falha no logout limpo:', logoutResp.status, logoutText);
-        return new Response(JSON.stringify({ error: 'Falha ao derrubar sessão atual', details: logoutText }), {
-          status: logoutResp.status,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-
-      await supabaseAdmin
-        .from('whatsapp_instances')
-        .update({
-          status: 'connecting',
-          qr_code: null,
-          metadata: {
-            ...metadata,
-            delivery_degraded: false,
-            delivery_failure_count: recentDeliveryFailures,
-            clean_reconnect_started_at: new Date().toISOString(),
-            clean_reconnect_reason: metadata.delivery_degraded_reason || 'Reconexão limpa solicitada',
-          },
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', instanceId);
-
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-    }
-
+    // Baileys já está reconectando sozinho: não atropelamos.
     if (currentState === 'connecting' && !needsCleanReconnect) {
-      // Baileys já está tentando reconectar sozinho. Não força de novo.
       await supabaseAdmin
         .from('whatsapp_instances')
         .update({ status: 'connecting', updated_at: new Date().toISOString() })
-        .eq('id', instanceId);
-      return new Response(
-        JSON.stringify({ success: true, stillConnecting: true }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        .eq('id', ctx.instance.id);
+      return json({ success: true, stillConnecting: true, status: 'connecting' });
+    }
+
+    // A partir daqui vamos escrever na Evolution — serializa.
+    const gotLock = await acquireConnectionLock(supabaseAdmin, ctx, 'reconnect');
+    if (!gotLock) {
+      return json(
+        { error: 'Já existe uma operação de conexão em andamento nesta instância. Aguarde alguns segundos.' },
+        409,
       );
     }
 
-    // 2) Só agora força o reconnect (estado close/closed/desconhecido).
-    const url = `${baseUrl}/instance/connect/${identifier}`;
+    try {
+      if (needsCleanReconnect) {
+        // Sessão suja: derruba antes de reconectar, senão a Evolution aceita o
+        // socket mas continua rejeitando envios.
+        const logoutResp = await fetchWithTimeout(
+          `${ctx.baseUrl}/instance/logout/${ctx.identifier}`,
+          { timeout: 20000, method: 'DELETE', headers: { apikey: ctx.apiKey } },
+        );
 
-    const response = await fetchWithTimeout(url, {
-      timeout: 20000,
-      method: 'GET',
-      headers: { apikey: secrets.api_key },
-    });
+        if (!logoutResp.ok && logoutResp.status !== 404) {
+          const details = await logoutResp.text().catch(() => '');
+          console.error('[reconnect-instance] Falha no logout limpo:', logoutResp.status, details);
+          await releaseConnectionLock(supabaseAdmin, ctx);
+          return json({ error: 'Falha ao derrubar a sessão atual' }, 502);
+        }
 
-    const text = await response.text();
-    let data: any = {};
-    if (text) {
-      try { data = JSON.parse(text); } catch {}
-    }
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
 
-    if (!response.ok) {
-      console.error('[reconnect-instance] Evolution erro:', response.status, text);
-      return new Response(JSON.stringify({ error: 'Falha ao reconectar', details: text }), {
-        status: response.status,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+      // 2) Força o reconnect (estado close/closed/desconhecido ou pós-logout).
+      const response = await fetchWithTimeout(
+        `${ctx.baseUrl}/instance/connect/${ctx.identifier}`,
+        { timeout: 20000, method: 'GET', headers: { apikey: ctx.apiKey } },
+      );
 
-    // Só considera "QR" se realmente vier uma string base64 não-vazia.
-    const qr = (typeof data?.code === 'string' && data.code.length > 20)
-      ? data.code
-      : (typeof data?.base64 === 'string' && data.base64.length > 20)
-        ? data.base64
-        : null;
+      const text = await response.text();
+      let data: any = {};
+      if (text) { try { data = JSON.parse(text); } catch { /* corpo não-JSON */ } }
 
-    await supabaseAdmin
-      .from('whatsapp_instances')
-      .update({
-        status: 'connecting',
-        qr_code: qr,
-        metadata: {
-          ...metadata,
+      if (!response.ok) {
+        console.error('[reconnect-instance] Evolution erro:', response.status, text);
+        await releaseConnectionLock(supabaseAdmin, ctx);
+        return json({ error: 'A Evolution recusou a reconexão. Tente novamente em alguns segundos.' }, 502);
+      }
+
+      // QR da resposta do connect: serve de ponte até o primeiro
+      // `qrcode.updated` chegar pelo webhook. Na prática é o mesmo código, e
+      // qualquer divergência se corrige sozinha na rotação seguinte (~40s).
+      const { code, base64 } = extractQrCode(data);
+      const nowIso = new Date().toISOString();
+
+      await releaseConnectionLock(
+        supabaseAdmin,
+        ctx,
+        { status: 'connecting', qr_code: code },
+        {
+          qr_base64: base64,
+          qr_updated_at: code || base64 ? nowIso : null,
           delivery_degraded: false,
           delivery_failure_count: recentDeliveryFailures,
           clean_reconnect_required: false,
-          reconnect_started_at: new Date().toISOString(),
+          reconnect_started_at: nowIso,
         },
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', instanceId);
+      );
 
-    console.log('[reconnect-instance] Reconexão disparada (qr=' + !!qr + ')');
-    return new Response(
-      JSON.stringify({ success: true, qr, cleanReconnect: needsCleanReconnect }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+      await logInstanceActivity(supabaseAdmin, ctx, 'instance.reconnect', {
+        clean: needsCleanReconnect,
+        had_qr: !!(code || base64),
+        previous_state: currentState ?? null,
+      });
+
+      console.log('[reconnect-instance] Reconexão disparada (qr=' + !!(code || base64) + ')');
+      return json({
+        success: true,
+        qr: code,
+        qrBase64: base64,
+        cleanReconnect: needsCleanReconnect,
+        status: 'connecting',
+      });
+    } catch (inner) {
+      // Nunca deixa o lock preso por exceção no meio do caminho.
+      await releaseConnectionLock(supabaseAdmin, ctx);
+      throw inner;
+    }
   } catch (error) {
     console.error('[reconnect-instance] Erro:', error);
-    const msg = error instanceof Error ? error.message : 'Unknown error';
-    return new Response(JSON.stringify({ error: msg }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return json({ error: 'Não foi possível reconectar agora. Tente novamente.' }, 500);
   }
 });

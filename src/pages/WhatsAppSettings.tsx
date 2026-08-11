@@ -3,14 +3,17 @@ import { Link, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { InstancesList, AddInstanceDialog, TeamMembersList, AssignmentRulesManager, InstanceSetupCollapsible, SetupGuideCollapsible, SecuritySettings, InstanceAccessManager, ActivityLogTab } from "@/components/settings";
+import { InstancesList, AddInstanceDialog, TeamMembersList, AssignmentRulesManager, InstanceSetupCollapsible, SetupGuideCollapsible, SecuritySettings, InstanceAccessManager, ActivityLogTab, ConnectionTab } from "@/components/settings";
 import { MacrosManager } from "@/components/macros";
 import { useAuth } from "@/contexts/AuthContext";
 
 const WhatsAppSettings = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [showAddDialog, setShowAddDialog] = useState(false);
-  const { isAdmin } = useAuth();
+  const { isAdmin, isSupervisor } = useAuth();
+  // Conexão é a única aba operacional aqui: supervisor também precisa dela
+  // para religar o WhatsApp sem depender do admin.
+  const canManageConnection = isAdmin || isSupervisor;
   
   const currentTab = searchParams.get('tab') || 'setup';
 
@@ -44,6 +47,7 @@ const WhatsAppSettings = () => {
         <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full">
           <TabsList>
             <TabsTrigger value="setup">Setup</TabsTrigger>
+            {canManageConnection && <TabsTrigger value="connection">Conexão</TabsTrigger>}
             <TabsTrigger value="instances">Instâncias</TabsTrigger>
             <TabsTrigger value="macros">Macros</TabsTrigger>
             <TabsTrigger value="assignment">Atribuição</TabsTrigger>
@@ -56,6 +60,12 @@ const WhatsAppSettings = () => {
           <TabsContent value="setup" className="mt-6">
             <SetupGuideCollapsible />
           </TabsContent>
+
+          {canManageConnection && (
+            <TabsContent value="connection" className="mt-6">
+              <ConnectionTab />
+            </TabsContent>
+          )}
 
           <TabsContent value="instances" className="space-y-4 mt-6">
             <InstanceSetupCollapsible 

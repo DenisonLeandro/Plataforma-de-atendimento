@@ -12,6 +12,7 @@ import {
   unwrapMessage,
 } from '../_shared/evolution-helpers.ts';
 import { fetchWithTimeout } from '../_shared/fetch-with-timeout.ts';
+import { extractQrCode } from '../_shared/instance-auth.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -191,6 +192,10 @@ async function routeWebhookPayload(payload: EvolutionWebhookPayload, supabase: a
       break;
     case 'connection.update':
       await processConnectionUpdate(payload, supabase);
+      break;
+    case 'qrcode.updated':
+    case 'qrcode.update':
+      await processQrCodeUpdated(payload, supabase);
       break;
     default:
       console.warn('[evolution-webhook] Unhandled event type:', payload.event);
@@ -1412,6 +1417,68 @@ async function processMessageUpdate(payload: EvolutionWebhookPayload, supabase: 
 }
 
 // Process connection update event
+// qrcode.updated — a Evolution reemite o QR a cada rotação do WhatsApp
+// (~40s). Sem persistir isso, o cliente abria a tela de conexão e encontrava
+// um código já expirado: era a causa raiz de a reconexão precisar de suporte
+// remoto. Agora cada rotação atualiza a linha e o realtime empurra o QR novo
+// para a tela sozinho.
+async function processQrCodeUpdated(payload: EvolutionWebhookPayload, supabase: any) {
+  try {
+    const { instance, data } = payload;
+
+    const instanceRow = await findInstanceForWebhook(supabase, instance);
+    if (!instanceRow?.id) {
+      console.warn('[evolution-webhook] qrcode.updated sem instância cadastrada:', instance);
+      return;
+    }
+
+    // A fila não garante ordem entre eventos distintos. Se um qrcode.updated
+    // for drenado depois do connection.update que fechou o pareamento, aplicá-lo
+    // derrubaria uma conexão saudável para "conectando" e exibiria um QR morto.
+    // Uma vez pareada, qualquer QR pendente é lixo por definição.
+    if (instanceRow.status === 'connected') {
+      console.log('[evolution-webhook] qrcode.updated ignorado: instância já conectada:', instance);
+      return;
+    }
+
+    const { code, base64 } = extractQrCode(data);
+    if (!code && !base64) {
+      console.warn('[evolution-webhook] qrcode.updated sem QR utilizável para', instance);
+      return;
+    }
+
+    const metadata = (instanceRow.metadata || {}) as Record<string, any>;
+    const nowIso = new Date().toISOString();
+
+    const { error } = await supabase
+      .from('whatsapp_instances')
+      .update({
+        // QR na tela significa aguardando pareamento — o status reflete isso
+        // mesmo que o connection.update ainda não tenha chegado.
+        status: 'connecting',
+        qr_code: code,
+        metadata: {
+          ...metadata,
+          qr_base64: base64,
+          qr_updated_at: nowIso,
+          // `count` da Evolution: quantas vezes o QR já rotacionou nesta
+          // tentativa. Útil para a UI avisar que o pareamento está demorando.
+          qr_rotation: data?.qrcode?.count ?? data?.count ?? null,
+        },
+        updated_at: nowIso,
+      })
+      .eq('id', instanceRow.id);
+
+    if (error) {
+      console.error('[evolution-webhook] Erro ao gravar QR Code:', error);
+    } else {
+      console.log('[evolution-webhook] QR Code atualizado para', instanceRow.instance_name);
+    }
+  } catch (error) {
+    console.error('[evolution-webhook] Error in processQrCodeUpdated:', error);
+  }
+}
+
 async function processConnectionUpdate(payload: EvolutionWebhookPayload, supabase: any) {
   try {
     const { instance, data } = payload;
@@ -1452,6 +1519,18 @@ async function processConnectionUpdate(payload: EvolutionWebhookPayload, supabas
           delivery_recovered_at: new Date().toISOString(),
         };
       }
+    }
+
+    // Pareou: o QR guardado vira lixo e não pode continuar na tela.
+    if (nextStatus === 'connected') {
+      nextMetadata = {
+        ...nextMetadata,
+        qr_base64: null,
+        qr_updated_at: null,
+        qr_rotation: null,
+        connected_at: new Date().toISOString(),
+        disconnect_reason: null,
+      };
     }
 
     // Update instance status

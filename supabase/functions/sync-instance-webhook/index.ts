@@ -13,6 +13,10 @@ const EVENTS = [
   'MESSAGES_DELETE',
   'SEND_MESSAGE',
   'CONNECTION_UPDATE',
+  // Sem QRCODE_UPDATED a Evolution só entrega o QR uma vez, na resposta do
+  // /instance/connect. Como o WhatsApp rotaciona o código a cada ~40s, quem
+  // abria a tela depois disso via um QR morto e não conseguia parear sozinho.
+  'QRCODE_UPDATED',
   'CONTACTS_UPSERT',
   'CONTACTS_UPDATE',
   'CHATS_UPSERT',
