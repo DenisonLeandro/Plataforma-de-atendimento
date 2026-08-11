@@ -1,1 +1,29 @@
 project_id = "zmmuwinmtsczewmgysnl"
+
+# Postura de autenticação de cada edge function.
+#
+# Sem estas declarações o CLI assume `verify_jwt = true` para tudo que for
+# publicado. Publicar o evolution-webhook nesse padrão faria a Evolution
+# receber 401 em todo evento e derrubaria a entrada de mensagens da
+# plataforma inteira. Declarado aqui, o comportamento fica explícito no
+# repositório e não depende de quem lembra de marcar a opção no painel.
+
+# Recebe eventos da Evolution API, que não tem sessão de usuário: precisa ser
+# público. A autorização real é a validação da instância dentro da função.
+[functions.evolution-webhook]
+verify_jwt = false
+
+# Consultada pela tela de cadastro antes de existir sessão.
+[functions.check-signup-eligibility]
+verify_jwt = false
+
+# Ações de conexão disparadas pela plataforma: sempre com usuário logado.
+# A função ainda valida papel (admin/supervisor) e empresa dona da instância.
+[functions.reconnect-instance]
+verify_jwt = true
+
+[functions.disconnect-instance]
+verify_jwt = true
+
+[functions.sync-instance-webhook]
+verify_jwt = true
