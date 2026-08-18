@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTheme } from 'next-themes';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCompanyContext } from '@/hooks/useCompanyContext';
@@ -7,12 +8,14 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { LogOut, User as UserIcon, Circle, Building2 } from 'lucide-react';
+import { LogOut, User as UserIcon, Circle, Building2, Sun, Moon, Monitor } from 'lucide-react';
 import { ProfileModal } from './ProfileModal';
 import { useSignedUrl } from '@/utils/signedUrl';
 
@@ -36,6 +39,9 @@ export function UserMenu() {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const navigate = useNavigate();
   const signedAvatar = useSignedUrl(profile?.avatar_url ?? null);
+  // next-themes guarda a escolha no navegador, igual a preferencia de som das
+  // notificacoes. 'system' acompanha o tema do sistema operacional.
+  const { theme, setTheme } = useTheme();
 
   const handleSignOut = async () => {
     await signOut();
@@ -102,6 +108,26 @@ export function UserMenu() {
           </>
         )}
         
+        <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+          Tema
+        </DropdownMenuLabel>
+        <DropdownMenuRadioGroup value={theme} onValueChange={setTheme}>
+          <DropdownMenuRadioItem value="light">
+            <Sun className="mr-2 h-4 w-4" />
+            <span>Claro</span>
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="dark">
+            <Moon className="mr-2 h-4 w-4" />
+            <span>Escuro</span>
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="system">
+            <Monitor className="mr-2 h-4 w-4" />
+            <span>Automático</span>
+          </DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
+
+        <DropdownMenuSeparator />
+
         <DropdownMenuItem onClick={handleSignOut} className="text-destructive focus:text-destructive">
           <LogOut className="mr-2 h-4 w-4" />
           <span>Sair</span>
