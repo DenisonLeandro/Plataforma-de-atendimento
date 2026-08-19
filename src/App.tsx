@@ -11,6 +11,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import PendingApproval from "./pages/PendingApproval";
+import ResetPassword from "./pages/ResetPassword";
 import WhatsApp from "./pages/WhatsApp";
 import WhatsAppSettings from "./pages/WhatsAppSettings";
 import WhatsAppRelatorio from "./pages/WhatsAppRelatorio";
@@ -46,6 +47,8 @@ const App = () => {
                 <Sonner />
                 <Routes>
                   <Route path="/auth" element={<Auth />} />
+                  {/* Publica: quem chega pelo link do e-mail ainda nao tem senha valida. */}
+                  <Route path="/redefinir-senha" element={<ResetPassword />} />
                   <Route path="/pending-approval" element={<ProtectedRoute><PendingApproval /></ProtectedRoute>} />
                   <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
                   <Route path="/whatsapp" element={<ProtectedRoute><WhatsApp /></ProtectedRoute>} />

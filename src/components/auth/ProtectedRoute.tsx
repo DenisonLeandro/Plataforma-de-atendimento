@@ -8,7 +8,7 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const { user, isLoading, shouldRedirectToSetup, isApproved, markSetupRedirectDone } = useAuth();
+  const { user, isLoading, shouldRedirectToSetup, isApproved, markSetupRedirectDone, isPasswordRecovery } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -37,6 +37,14 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
         </div>
       </div>
     );
+  }
+
+  // Quem chegou pelo link de recuperacao tem sessao valida, mas nao pode
+  // circular pelo app antes de definir a nova senha -- sairia com o link
+  // queimado e a senha antiga ainda valendo. Fica DEPOIS dos hooks de
+  // proposito: um return condicional antes deles quebra as regras do React.
+  if (isPasswordRecovery && location.pathname !== '/redefinir-senha') {
+    return <Navigate to="/redefinir-senha" replace />;
   }
 
   // Redirect to auth if not logged in

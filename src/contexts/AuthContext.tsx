@@ -39,6 +39,9 @@ interface AuthContextType {
   isViewingAsCompany: boolean;
   canWriteViewedCompany: boolean;
   isReadOnlyView: boolean;
+  isPasswordRecovery: boolean;
+  resetPassword: (email: string) => Promise<{ error: any }>;
+  clearPasswordRecovery: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -49,6 +52,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [role, setRole] = useState<AppRole | null>(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  // Verdadeiro entre clicar no link do e-mail e concluir a troca da senha.
+  // Sem isto o usuario cairia direto na caixa de entrada -- o link do Supabase
+  // cria uma sessao valida -- e sairia sem nunca trocar a senha, com o link ja
+  // queimado.
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [hasRedirectedToSetup, setHasRedirectedToSetup] = useState(false);
   const [viewingAsCompanyId, setViewingAsCompanyIdState] = useState<string | null>(
@@ -242,6 +250,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Set up auth state listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, currentSession) => {
+        // Chegou pelo link de "Esqueci minha senha": prende o usuario na tela
+        // de troca ate concluir (ver ProtectedRoute).
+        if (event === 'PASSWORD_RECOVERY') {
+          setIsPasswordRecovery(true);
+        }
         setSession(currentSession);
         setUser(currentSession?.user ?? null);
 
@@ -387,6 +400,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error };
   };
 
+  // Envia o e-mail com o link de recuperacao. O redirectTo precisa estar na
+  // lista de URLs permitidas do Supabase Auth, senao o link volta para a raiz.
+  const resetPassword = async (email: string) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/redefinir-senha`,
+    });
+    return { error };
+  };
+
+  const clearPasswordRecovery = () => setIsPasswordRecovery(false);
+
   const signOut = async () => {
     // Update status to offline before logout
     if (user) {
@@ -402,6 +426,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(null);
     setRole(null);
     setIsSuperAdmin(false);
+    setIsPasswordRecovery(false);
     setHasRedirectedToSetup(false);
     setViewingAsCompanyIdState(null);
     sessionStorage.removeItem('viewingAsCompanyId');
@@ -447,6 +472,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isViewingAsCompany,
     canWriteViewedCompany,
     isReadOnlyView,
+    isPasswordRecovery,
+    resetPassword,
+    clearPasswordRecovery,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

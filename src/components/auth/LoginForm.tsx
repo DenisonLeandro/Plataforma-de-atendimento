@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 import { translateAuthError } from '@/utils/authErrorMessages';
+import { ForgotPasswordDialog } from './ForgotPasswordDialog';
 
 const loginSchema = z.object({
   email: z.string().email('Email inválido'),
@@ -24,7 +25,9 @@ export function LoginForm() {
   const { toast } = useToast();
   const navigate = useNavigate();
   
-  const { register, handleSubmit, formState: { errors } } = useForm<LoginFormData>({
+  const [isForgotOpen, setIsForgotOpen] = useState(false);
+
+  const { register, handleSubmit, watch, formState: { errors } } = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
   });
 
@@ -57,6 +60,7 @@ export function LoginForm() {
   };
 
   return (
+    <>
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       <div className="space-y-2">
         <Label htmlFor="email">Email</Label>
@@ -86,6 +90,16 @@ export function LoginForm() {
         )}
       </div>
 
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => setIsForgotOpen(true)}
+          className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+        >
+          Esqueci minha senha
+        </button>
+      </div>
+
       <Button type="submit" className="w-full" disabled={isLoading}>
         {isLoading ? (
           <>
@@ -97,5 +111,12 @@ export function LoginForm() {
         )}
       </Button>
     </form>
+
+    <ForgotPasswordDialog
+      open={isForgotOpen}
+      onOpenChange={setIsForgotOpen}
+      defaultEmail={watch('email')}
+    />
+    </>
   );
 }
