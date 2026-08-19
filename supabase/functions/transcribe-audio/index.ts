@@ -5,6 +5,9 @@ import { logAiUsage } from "../_shared/ai-usage.ts";
 // Esta função usa o endpoint dedicado de speech-to-text, que não devolve
 // `usage` — o log fica com 0 tokens / custo 0 (ver AI_MODEL abaixo).
 const AI_MODEL = "openai/gpt-4o-mini-transcribe";
+// Idioma dos audios da plataforma. Todos os escritorios atendem em portugues;
+// se algum dia houver atendimento em outra lingua, isto vira configuracao por empresa.
+const TRANSCRIPTION_LANGUAGE = "pt";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -186,6 +189,11 @@ Deno.serve(async (req) => {
     const form = new FormData();
     form.append("model", AI_MODEL);
     form.append("file", audioBlob, `audio.${ext}`);
+    // Sem o idioma explicito o modelo tenta adivinhar pelo som, e em audio
+    // curto (poucos segundos), com ruido ou fala rapida, ele erra: um audio de
+    // 3s de uma cliente brasileira voltou transcrito em polones. Fixar "pt"
+    // elimina a adivinhacao e ainda melhora a precisao do resultado.
+    form.append("language", TRANSCRIPTION_LANGUAGE);
 
     const aiRes = await fetchWithTimeout("https://ai.gateway.lovable.dev/v1/audio/transcriptions", {
       timeout: 45000,
