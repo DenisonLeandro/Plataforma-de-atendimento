@@ -1,44 +1,40 @@
-# Cadastrar nova advogada na Denison Leandro Advocacia
+# Corrigir cadastro da Nicolle na Denison Leandro Advocacia
 
-Fluxo completo de cadastro de um novo membro na empresa **Denison Leandro Advocacia** (código `DLA001`, 6 WhatsApps conectados, 11 usuários hoje).
+A conta da Nicolle Oliveira foi criada hoje (03/09, 08:32) com três problemas confirmados no banco:
 
-## Defaults que vou assumir (me corrija se quiser diferente)
+- E-mail com erro de digitação: `nicolleoiveiraadvogada@gmail.com` (falta o "l")
+- Sem vínculo com nenhuma empresa (`company_id` vazio) — por isso ela não enxerga nada na plataforma
+- Papel `agent` sem empresa e sem nenhuma instância de WhatsApp liberada
 
-- Perfil de acesso: **supervisor** — é o padrão do escritório hoje (8 dos 11 usuários são supervisor; só 2 são agent).
-- Vínculo com a empresa: **Denison Leandro Advocacia**, conta já aprovada.
-- Acesso às instâncias: **todas as 6** (Escritório Virtual, Centro, Cinco Conjuntos, Maringá, Ibiporã, São Lourenço), que é o comportamento atual de quem não tem restrição por instância.
-- Senha: temporária definida por mim, para ela trocar no primeiro acesso pelo menu do perfil.
+## O que vou fazer
 
-Preciso apenas de **nome completo + e-mail** dela para executar.
+1. Corrigir o e-mail de login para **nicolleoliveiraadvogada@gmail.com**, mantendo o e-mail já confirmado (ela não precisará confirmar de novo).
+2. Corrigir também o e-mail exibido no perfil dela na plataforma.
+3. Vincular a conta à empresa **Denison Leandro Advocacia** (perfil e papel), deixando aprovada e ativa.
+4. Definir o papel como **supervisor** — é o padrão do escritório hoje (8 dos 11 usuários). Me avise se preferir `agent`.
+5. Liberar o acesso às instâncias de WhatsApp. Padrão que vou aplicar: **todas as 6** (Escritório Virtual, Centro, Cinco Conjuntos, Maringá, Ibiporã, São Lourenço). Se ela deve ver só uma, é só dizer qual.
+6. Testar o login com o e-mail corrigido e te confirmar aqui. Se a senha dela também estiver perdida, defino uma temporária e te passo no chat.
 
-## Fluxo A — Admin cria a conta (recomendado, mais rápido)
+## Fluxo completo para os próximos cadastros
 
-1. Você me informa nome e e-mail.
-2. Crio a conta de autenticação já com e-mail confirmado e senha temporária.
-3. Vinculo o perfil à empresa Denison Leandro Advocacia e marco como aprovado e ativo.
-4. Atribuo o papel escolhido (supervisor por padrão).
-5. Libero o acesso às instâncias de WhatsApp desejadas.
-6. Testo o login para garantir que funciona e te devolvo as credenciais no chat.
-7. Ela entra e troca a senha em Perfil > Alterar senha.
+**Opção A — Admin cria a conta (mais rápido)**
+1. Você me passa nome, e-mail e papel.
+2. Crio a conta com e-mail confirmado e senha temporária.
+3. Vinculo à empresa, aprovo e ativo.
+4. Libero as instâncias de WhatsApp.
+5. Testo o login e te entrego as credenciais no chat.
 
-## Fluxo B — Ela mesma se cadastra (auto-atendimento)
+**Opção B — Ela mesma se cadastra**
+1. Ela clica em "Criar conta" e informa nome, e-mail, senha e o **código da empresa: DLA001**.
+2. Aparece a tela "Aguardando aprovação".
+3. Um admin aprova em **Configurações > Equipe** e ajusta o papel.
+4. O admin libera as instâncias em **Configurações > Acesso às instâncias**.
 
-1. Ela acessa a plataforma e clica em "Criar conta".
-2. Preenche nome, e-mail, senha e o **código da empresa: DLA001**.
-3. Confirma o e-mail (se a confirmação estiver ativa) e vê a tela "Aguardando aprovação".
-4. Um admin (você, Denison ou Renata) abre **Configurações > Equipe**, aprova o cadastro e ajusta o papel.
-5. O admin libera as instâncias em **Configurações > Acesso às instâncias**.
-
-## Depois do cadastro (comum aos dois fluxos)
-
-- Conferir em Configurações > Equipe se ela aparece com papel e status corretos.
-- Conferir se as conversas das instâncias liberadas aparecem para ela.
-- Se ela deve responder com um nome diferente do cadastro (como foi feito com "Inês"), me avise para configurar o nome de exibição.
+Ponto de atenção: quando o código da empresa não é informado no cadastro, a conta nasce sem empresa — foi exatamente o que aconteceu com a Nicolle.
 
 ## Detalhes técnicos
 
-- Empresa: `companies.id = 00000000-0000-0000-0000-000000000001`, `code = DLA001`.
-- Criação: usuário em Auth via Admin API (`email_confirm: true`), `profiles` com `company_id`, `is_approved = true`, `is_active = true`; `user_roles` com `company_id` e o papel escolhido.
-- Instâncias: linhas em `agent_instance_access` (`user_id`, `instance_id`, `company_id`) para cada WhatsApp liberado.
-- Nenhuma alteração de código da aplicação é necessária; é operação de dados via ferramentas administrativas.
-- Credenciais não vão para o repositório — apenas para o chat.
+- Usuário: `b926adc0-bc61-4f7d-a56f-1325af1a7d55`; empresa `00000000-0000-0000-0000-000000000001` (código DLA001).
+- Troca de e-mail via Admin API do Auth (`email` + `email_confirm: true`) e `UPDATE profiles.email`.
+- Vínculo: `profiles.company_id`, `user_roles.company_id` + papel; acessos em `agent_instance_access` (`user_id`, `instance_id`, `company_id`).
+- Sem alteração de código da aplicação; credenciais apenas no chat, nunca no repositório.
