@@ -6,7 +6,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
-import { Mail, Archive, UserPlus, ArrowLeftRight } from 'lucide-react';
+import { Mail, Archive, ArchiveRestore, UserPlus, ArrowLeftRight } from 'lucide-react';
 import { useWhatsAppActions } from '@/hooks/whatsapp/useWhatsAppActions';
 import { useConversationAssignment } from '@/hooks/whatsapp/useConversationAssignment';
 import { useAuth } from '@/contexts/AuthContext';
@@ -15,6 +15,7 @@ import { AssignAgentDialog } from './AssignAgentDialog';
 /** Só os campos que este menu realmente usa — a conversa completa é aceita. */
 interface MenuConversation {
   id: string;
+  status?: string | null;
   unread_count?: number | null;
   assigned_to?: string | null;
   instance_id?: string | null;
@@ -29,7 +30,7 @@ export function ConversationItemMenu({
   conversation,
   children,
 }: ConversationItemMenuProps) {
-  const { markAsUnread, archiveConversation, isMarkingUnread, isArchiving } =
+  const { markAsUnread, archiveConversation, unarchiveConversation, isMarkingUnread, isArchiving, isUnarchiving } =
     useWhatsAppActions();
   const { assignConversation, isAssigning } = useConversationAssignment();
   const { user, isAdmin, isSupervisor, isReadOnlyView } = useAuth();
@@ -49,6 +50,8 @@ export function ConversationItemMenu({
   const showTransferir = canAssign && (isInQueue || isAssignedToMe || canManageOthers);
   const showAssignmentGroup = showAssumir || showTransferir;
 
+  const isArchived = conversation.status === 'archived';
+
   const handleMarkUnread = (e: React.MouseEvent) => {
     e.stopPropagation();
     markAsUnread(conversation.id);
@@ -57,6 +60,11 @@ export function ConversationItemMenu({
   const handleArchive = (e: React.MouseEvent) => {
     e.stopPropagation();
     archiveConversation(conversation.id);
+  };
+
+  const handleUnarchive = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    unarchiveConversation(conversation.id);
   };
 
   const handleAssumir = (e: React.MouseEvent) => {
@@ -109,13 +117,24 @@ export function ConversationItemMenu({
               Marcar como não lida
             </ContextMenuItem>
           )}
-          <ContextMenuItem
-            onClick={handleArchive}
-            disabled={isArchiving}
-          >
-            <Archive className="mr-2 h-4 w-4" />
-            Arquivar
-          </ContextMenuItem>
+
+          {isArchived ? (
+            <ContextMenuItem
+              onClick={handleUnarchive}
+              disabled={isUnarchiving}
+            >
+              <ArchiveRestore className="mr-2 h-4 w-4" />
+              Desarquivar
+            </ContextMenuItem>
+          ) : (
+            <ContextMenuItem
+              onClick={handleArchive}
+              disabled={isArchiving}
+            >
+              <Archive className="mr-2 h-4 w-4" />
+              Arquivar
+            </ContextMenuItem>
+          )}
         </ContextMenuContent>
       </ContextMenu>
 
