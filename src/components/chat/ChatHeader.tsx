@@ -1,6 +1,6 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, Settings, UserPlus, Repeat, Pencil, CheckCircle } from "lucide-react";
+import { RefreshCw, Settings, UserPlus, Repeat, Pencil, CheckCircle, ArchiveRestore } from "lucide-react";
 import { SentimentCard } from "./SentimentCard";
 import { Tables } from "@/integrations/supabase/types";
 import { Link } from "react-router-dom";
