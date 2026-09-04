@@ -64,7 +64,8 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
   const canManageOthers = isAdmin || isSupervisor;
   const showAssumir = (isInQueue || canManageOthers) && !isAssignedToMe;
   const showTransferir = isInQueue || isAssignedToMe || canManageOthers;
-  const showEncerrar = conversation && conversation.status !== 'closed';
+  const showEncerrar = conversation && conversation.status !== 'closed' && conversation.status !== 'archived';
+  const showDesarquivar = conversation && conversation.status === 'archived';
 
   const handleAssumeFromQueue = () => {
     if (conversationId && user?.id) {
