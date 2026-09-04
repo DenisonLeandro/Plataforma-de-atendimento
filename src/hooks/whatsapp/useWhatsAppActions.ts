@@ -255,6 +255,9 @@ export const useWhatsAppActions = () => {
     archiveConversation: archiveMutation.mutate,
     isArchiving: archiveMutation.isPending,
 
+    unarchiveConversation: unarchiveMutation.mutate,
+    isUnarchiving: unarchiveMutation.isPending,
+
     closeConversation: closeMutation.mutate,
     isClosing: closeMutation.isPending,
 
