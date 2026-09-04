@@ -195,6 +195,22 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
             </Button>
           )}
 
+          {showDesarquivar && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => unarchiveConversation(conversation.id, {
+                onSuccess: () => onRefresh?.(),
+              })}
+              disabled={isReadOnlyView || isUnarchiving}
+              title="Desarquivar conversa"
+              className="h-7 flex-shrink-0 px-2.5 text-xs"
+            >
+              <ArchiveRestore className="h-3.5 w-3.5 mr-1.5" />
+              <span>{isUnarchiving ? 'Desarquivando...' : 'Desarquivar'}</span>
+            </Button>
+          )}
+
           <SentimentCard sentiment={sentiment} />
           
           <Button
