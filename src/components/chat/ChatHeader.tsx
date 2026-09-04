@@ -1,6 +1,6 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, Settings, UserPlus, Repeat, Pencil, CheckCircle } from "lucide-react";
+import { RefreshCw, Settings, UserPlus, Repeat, Pencil, CheckCircle, ArchiveRestore } from "lucide-react";
 import { SentimentCard } from "./SentimentCard";
 import { Tables } from "@/integrations/supabase/types";
 import { Link } from "react-router-dom";
@@ -48,7 +48,7 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
   const [isEditContactModalOpen, setIsEditContactModalOpen] = useState(false);
   const { user, isAdmin, isSupervisor, isReadOnlyView } = useAuth();
   const { assignConversation } = useConversationAssignment();
-  const { closeConversation, isClosing } = useWhatsAppActions();
+  const { closeConversation, isClosing, unarchiveConversation, isUnarchiving } = useWhatsAppActions();
   const avatarUrl = useContactAvatar(contact?.profile_picture_url ?? null);
   const [showCloseDialog, setShowCloseDialog] = useState(false);
   const [generateSummary, setGenerateSummary] = useState(true);
@@ -64,7 +64,8 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
   const canManageOthers = isAdmin || isSupervisor;
   const showAssumir = (isInQueue || canManageOthers) && !isAssignedToMe;
   const showTransferir = isInQueue || isAssignedToMe || canManageOthers;
-  const showEncerrar = conversation && conversation.status !== 'closed';
+  const showEncerrar = conversation && conversation.status !== 'closed' && conversation.status !== 'archived';
+  const showDesarquivar = conversation && conversation.status === 'archived';
 
   const handleAssumeFromQueue = () => {
     if (conversationId && user?.id) {
@@ -191,6 +192,22 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
             >
               <CheckCircle className="h-3.5 w-3.5 mr-1.5" />
               <span>{isClosing ? 'Encerrando...' : 'Encerrar'}</span>
+            </Button>
+          )}
+
+          {showDesarquivar && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => unarchiveConversation(conversation.id, {
+                onSuccess: () => onRefresh?.(),
+              })}
+              disabled={isReadOnlyView || isUnarchiving}
+              title="Desarquivar conversa"
+              className="h-7 flex-shrink-0 px-2.5 text-xs"
+            >
+              <ArchiveRestore className="h-3.5 w-3.5 mr-1.5" />
+              <span>{isUnarchiving ? 'Desarquivando...' : 'Desarquivar'}</span>
             </Button>
           )}
 

@@ -42,6 +42,41 @@ export const useWhatsAppActions = () => {
     },
   });
 
+  // Unarchive conversation
+  const unarchiveMutation = useMutation({
+    mutationFn: async (conversationId: string) => {
+      const { error } = await supabase
+        .from('whatsapp_conversations')
+        .update({ status: 'active' })
+        .eq('id', conversationId);
+      if (error) throw error;
+    },
+    onMutate: async (conversationId) => {
+      await queryClient.cancelQueries({ queryKey: ['whatsapp', 'conversations'] });
+      const previousConversations = queryClient.getQueryData(['whatsapp', 'conversations']);
+
+      queryClient.setQueryData(['whatsapp', 'conversations'], (old: any) => {
+        if (!old) return old;
+        return old.map((conv: any) =>
+          conv.id === conversationId ? { ...conv, status: 'active' } : conv
+        );
+      });
+
+      return { previousConversations };
+    },
+    onSuccess: () => {
+      toast.success('Conversa desarquivada com sucesso');
+      queryClient.invalidateQueries({ queryKey: ['whatsapp', 'conversations'] });
+    },
+    onError: (error, _, context: any) => {
+      if (context?.previousConversations) {
+        queryClient.setQueryData(['whatsapp', 'conversations'], context.previousConversations);
+      }
+      console.error('Erro ao desarquivar conversa:', error);
+      toast.error('Erro ao desarquivar conversa');
+    },
+  });
+
   // Close conversation
   const closeMutation = useMutation({
     mutationFn: async ({ conversationId, generateSummary }: { 
@@ -219,6 +254,9 @@ export const useWhatsAppActions = () => {
   return {
     archiveConversation: archiveMutation.mutate,
     isArchiving: archiveMutation.isPending,
+
+    unarchiveConversation: unarchiveMutation.mutate,
+    isUnarchiving: unarchiveMutation.isPending,
 
     closeConversation: closeMutation.mutate,
     isClosing: closeMutation.isPending,
