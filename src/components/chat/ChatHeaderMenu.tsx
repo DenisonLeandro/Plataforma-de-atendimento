@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { MoreVertical, Edit, Archive, Download, RotateCcw } from 'lucide-react';
+import { MoreVertical, Edit, Archive, Download, RotateCcw, ArchiveRestore } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,13 +24,21 @@ export function ChatHeaderMenu({ conversation, onRefresh, disabled }: ChatHeader
 
   const { 
     archiveConversation, 
+    unarchiveConversation,
     reopenConversation, 
     isArchiving, 
+    isUnarchiving,
     isReopening 
   } = useWhatsAppActions();
 
   const handleArchive = () => {
     archiveConversation(conversation.id, {
+      onSuccess: () => onRefresh?.(),
+    });
+  };
+
+  const handleUnarchive = () => {
+    unarchiveConversation(conversation.id, {
       onSuccess: () => onRefresh?.(),
     });
   };
@@ -71,10 +79,19 @@ export function ChatHeaderMenu({ conversation, onRefresh, disabled }: ChatHeader
             </DropdownMenuItem>
           )}
 
-          <DropdownMenuItem onClick={handleArchive} disabled={isArchiving}>
-            <Archive className="mr-2 h-4 w-4" />
-            Arquivar conversa
-          </DropdownMenuItem>
+          {conversation.status === 'archived' && (
+            <DropdownMenuItem onClick={handleUnarchive} disabled={isUnarchiving}>
+              <ArchiveRestore className="mr-2 h-4 w-4" />
+              Desarquivar conversa
+            </DropdownMenuItem>
+          )}
+
+          {conversation.status !== 'archived' && (
+            <DropdownMenuItem onClick={handleArchive} disabled={isArchiving}>
+              <Archive className="mr-2 h-4 w-4" />
+              Arquivar conversa
+            </DropdownMenuItem>
+          )}
 
           <DropdownMenuSeparator />
 
