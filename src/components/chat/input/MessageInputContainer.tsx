@@ -1,7 +1,7 @@
 import { useState, useRef, KeyboardEvent, useEffect } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { Send, Mic } from "lucide-react";
+import { Send, Mic, Bold } from "lucide-react";
 import { EmojiPickerButton } from "./EmojiPickerButton";
 import { MediaUploadButton } from "./MediaUploadButton";
 import { AIComposerButton } from "./AIComposerButton";
@@ -102,6 +102,29 @@ export const MessageInputContainer = ({
     }, 0);
   };
 
+  const handleBold = () => {
+    const textarea = textareaRef.current;
+    if (!textarea || disabled) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const selectedText = message.slice(start, end);
+    const replacement = `*${selectedText}*`;
+    const newMessage = message.slice(0, start) + replacement + message.slice(end);
+
+    setMessage(newMessage);
+
+    setTimeout(() => {
+      const currentTextarea = textareaRef.current;
+      if (!currentTextarea) return;
+
+      const selectionStart = selectedText ? start : start + 1;
+      const selectionEnd = selectedText ? end + 2 : start + 1;
+      currentTextarea.setSelectionRange(selectionStart, selectionEnd);
+      currentTextarea.focus();
+    }, 0);
+  };
+
   const handleMacroSelect = (macro: any) => {
     setMessage(macro.content);
     incrementUsage(macro.id);
@@ -169,6 +192,18 @@ export const MessageInputContainer = ({
           disabled={disabled}
           conversationId={conversationId}
         />
+
+        <Button
+          type="button"
+          onClick={handleBold}
+          size="icon"
+          variant="outline"
+          disabled={disabled}
+          title="Negrito"
+          aria-label="Aplicar negrito"
+        >
+          <Bold className="w-4 h-4" />
+        </Button>
         
         <Textarea
           ref={textareaRef}
