@@ -20,6 +20,7 @@ import { AudioMessagePlayer } from "./AudioMessagePlayer";
 import { isRawWhatsAppMediaUrl } from "@/utils/mediaUtils";
 import { useSignedUrl } from "@/utils/signedUrl";
 import { MediaBlockedByClientHint } from "./MediaBlockedByClientHint";
+import { WhatsAppFormattedText } from "./WhatsAppFormattedText";
 
 type Message = Tables<'whatsapp_messages'>;
 type Reaction = Tables<'whatsapp_reactions'>;
@@ -237,7 +238,10 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
             </div>
           )}
           {message.content && message.content !== '🎵 Áudio' && (
-            <p className={cn("text-xs opacity-80", messageTextClass)}>{message.content}</p>
+            <WhatsAppFormattedText
+              text={message.content}
+              className={cn("text-xs opacity-80", messageTextClass)}
+            />
           )}
         </div>
       );
@@ -256,7 +260,9 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
                 onError={() => setBlockedByClient(true)}
               />
             )}
-            {message.content && <p className={cn("text-sm", messageTextClass)}>{message.content}</p>}
+            {message.content && (
+              <WhatsAppFormattedText text={message.content} className={cn("text-sm", messageTextClass)} />
+            )}
           </div>
         );
       
@@ -299,7 +305,9 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
                 <source src={signedMediaUrl} type={message.media_mimetype || 'video/mp4'} />
               </video>
             )}
-            {message.content && <p className={cn("text-sm", messageTextClass)}>{message.content}</p>}
+            {message.content && (
+              <WhatsAppFormattedText text={message.content} className={cn("text-sm", messageTextClass)} />
+            )}
           </div>
         );
       
@@ -337,9 +345,7 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
       
       default:
         return (
-          <p className={cn("text-sm", messageTextClass)}>
-            {message.content}
-          </p>
+          <WhatsAppFormattedText text={message.content} className={cn("text-sm", messageTextClass)} />
         );
     }
   };
