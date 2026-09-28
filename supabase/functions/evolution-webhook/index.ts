@@ -1398,16 +1398,22 @@ async function processMessageUpdate(payload: EvolutionWebhookPayload, supabase: 
 
     if (updateRemoteJid) {
       const normalizedUpdateRemoteJid = normalizeRoutableJid(updateRemoteJid);
-      const shouldPromotePreferredJid = isReliableDeliveryStatus(mapped) && isRoutableWhatsAppJid(normalizedUpdateRemoteJid);
       const { data: msgForJid } = await supabase
         .from('whatsapp_messages')
-        .select('conversation_id, whatsapp_conversations!inner(contact_id, metadata)')
+        .select('conversation_id, remote_jid, whatsapp_conversations!inner(contact_id, metadata)')
         .eq('message_id', messageId)
         .maybeSingle();
 
       const conversationId = (msgForJid as any)?.conversation_id;
       const contactId = (msgForJid as any)?.whatsapp_conversations?.contact_id;
       const conversationMetadata = (msgForJid as any)?.whatsapp_conversations?.metadata || {};
+      // Só promove a rota preferida se o ACK veio do MESMO endereço usado no envio.
+      // Um @lid que aparece só na confirmação não garante entrega quando usado como destino.
+      const sentToJid = normalizeRoutableJid((msgForJid as any)?.remote_jid || '');
+      const shouldPromotePreferredJid =
+        isReliableDeliveryStatus(mapped) &&
+        isRoutableWhatsAppJid(normalizedUpdateRemoteJid) &&
+        sentToJid === normalizedUpdateRemoteJid;
 
       if (conversationId) {
         await supabase
