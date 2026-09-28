@@ -614,6 +614,7 @@ async function resolveDestinationCandidates(
 
   addCandidate(contactMetadata.remote_jid);
   addCandidate(contactPhoneNumber);
+  addCandidate(contactMetadata.lid);
 
   const orderedCandidates = [...highPriorityCandidates, ...candidates];
 
