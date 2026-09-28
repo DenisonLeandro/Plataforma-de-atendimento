@@ -538,8 +538,7 @@ async function resolveDestinationCandidates(
   // the actual WhatsApp route can diverge.
   addCandidate(conversationMetadata.preferred_send_jid, true);
   addCandidate(contactMetadata.preferred_send_jid, true);
-  // Explicit LID hint on the contact metadata (populated from delivery ACKs).
-  addCandidate(contactMetadata.lid, true);
+  // LID hint from ACKs is only a fallback (added at the end).
 
   try {
     const { data: recentMessages, error } = await supabase
@@ -556,24 +555,18 @@ async function resolveDestinationCandidates(
 
     const messages = recentMessages || [];
 
-    // Most reliable signal: a previous outbound message that WhatsApp actually
-    // delivered/read, especially if its ACK came back as @lid. This fixes the
-    // "Evolution accepts send then ACK ERROR" loop for LID conversations.
-    const successfulAckLid = messages.find(
+    // Most reliable signal: the destination we actually SENT to (remote_jid)
+    // on an outbound message that was delivered/read. Prefer the real phone
+    // JID (@s.whatsapp.net) — sending to an @lid that only showed up in an ACK
+    // can be accepted by the server but never reach the phone (stuck at 1 check).
+    const successfulRemotePhone = messages.find(
       (m: any) =>
         m.is_from_me &&
         isReliableDeliveryStatus(m.status) &&
-        isLidJid(m.metadata?.ack_remote_jid)
+        typeof m.remote_jid === 'string' &&
+        m.remote_jid.endsWith('@s.whatsapp.net')
     );
-    addCandidate(successfulAckLid?.metadata?.ack_remote_jid, true);
-
-    const successfulAckRoutable = messages.find(
-      (m: any) =>
-        m.is_from_me &&
-        isReliableDeliveryStatus(m.status) &&
-        isRoutableWhatsAppJid(m.metadata?.ack_remote_jid)
-    );
-    addCandidate(successfulAckRoutable?.metadata?.ack_remote_jid, true);
+    addCandidate(successfulRemotePhone?.remote_jid, true);
 
     const successfulRemoteLid = messages.find(
       (m: any) =>
@@ -582,6 +575,24 @@ async function resolveDestinationCandidates(
         isLidJid(m.remote_jid)
     );
     addCandidate(successfulRemoteLid?.remote_jid, true);
+
+    // ACK-only JIDs are fallbacks, not first choice.
+    const successfulAckRoutable = messages.find(
+      (m: any) =>
+        m.is_from_me &&
+        isReliableDeliveryStatus(m.status) &&
+        isRoutableWhatsAppJid(m.metadata?.ack_remote_jid) &&
+        !isLidJid(m.metadata?.ack_remote_jid)
+    );
+    addCandidate(successfulAckRoutable?.metadata?.ack_remote_jid);
+
+    const successfulAckLid = messages.find(
+      (m: any) =>
+        m.is_from_me &&
+        isReliableDeliveryStatus(m.status) &&
+        isLidJid(m.metadata?.ack_remote_jid)
+    );
+    addCandidate(successfulAckLid?.metadata?.ack_remote_jid);
 
     addCandidate(conversationMetadata.resolved_phone_jid);
     addCandidate(conversationMetadata.last_remote_jid);
