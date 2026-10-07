@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { sortAssignmentAgents } from './assignmentOrder';
+import { sortAssignmentAgents } from '../src/utils/assignmentOrder.ts';
 
 test('ordena os demais atendentes alfabeticamente, sem priorizar papel ou presença', () => {
   const agents = [
