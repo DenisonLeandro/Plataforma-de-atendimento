@@ -17,6 +17,7 @@ import { useAssignableAgents } from '@/hooks/useAssignableAgents';
 import { useConversationAssignment } from '@/hooks/whatsapp/useConversationAssignment';
 import { MessageSquare, Circle } from 'lucide-react';
 import { useSignedUrl } from '@/utils/signedUrl';
+import { sortAssignmentAgents } from '@/utils/assignmentOrder';
 
 function AgentAvatar({
   url,
@@ -108,7 +109,9 @@ export function AssignAgentDialog({
     }
   };
 
-  const availableAgents = agents.filter(agent => agent.id !== currentAssignee);
+  const availableAgents = sortAssignmentAgents(
+    agents.filter(agent => agent.id !== currentAssignee)
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
