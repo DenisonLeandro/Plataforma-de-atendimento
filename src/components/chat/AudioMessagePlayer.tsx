@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Play, Pause, Loader2, FileText, ChevronDown, ChevronUp, AlertCircle, RotateCcw } from "lucide-react";
+import { Play, Pause, Loader2, FileText, ChevronDown, ChevronUp, AlertCircle, RotateCcw, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
@@ -322,6 +322,27 @@ export const AudioMessagePlayer = ({
 
   const progress = duration ? (currentTime / duration) * 100 : 0;
 
+  const handleDownload = async () => {
+    try {
+      const res = await fetch(mediaUrl);
+      if (!res.ok) throw new Error(String(res.status));
+      const blob = await res.blob();
+      const type = (mimetype || blob.type || "audio/ogg").split(";")[0];
+      const ext = type.includes("mpeg") ? "mp3" : type.split("/")[1] || "ogg";
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `audio-${stamp}.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch {
+      toast.error("Não foi possível baixar o áudio");
+    }
+  };
+
   if (error) {
     return (
       <div className={cn("flex items-center gap-2 text-xs", isFromMe ? "text-primary-foreground/80" : "text-muted-foreground")}>
@@ -396,6 +417,16 @@ export const AudioMessagePlayer = ({
             </button>
           </div>
         </div>
+        <Button
+          size="icon"
+          variant="ghost"
+          onClick={handleDownload}
+          className="h-8 w-8 shrink-0"
+          title="Baixar áudio"
+          aria-label="Baixar áudio"
+        >
+          <Download className="w-4 h-4" />
+        </Button>
       </div>
 
       {(hasTranscript || transcribing || transcribeFailed) && (
