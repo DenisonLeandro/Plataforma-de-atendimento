@@ -38,6 +38,7 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
   const [isFetchingMedia, setIsFetchingMedia] = useState(false);
   const [fetchFailed, setFetchFailed] = useState(false);
   const [blockedByClient, setBlockedByClient] = useState(false);
+  const [mediaBroken, setMediaBroken] = useState(false);
   const autoFetchedRef = useRef(false);
   const isFromMe = message.is_from_me;
   const time = format(new Date(message.timestamp), 'HH:mm');
@@ -257,8 +258,13 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
                 alt="Imagem"
                 className="max-w-full sm:max-w-xs rounded-md cursor-pointer hover:opacity-90 transition-opacity"
                 onClick={() => setViewerImage(signedMediaUrl ?? null)}
-                onError={() => setBlockedByClient(true)}
+                onError={() => setMediaBroken(true)}
               />
+            )}
+            {mediaBroken && (
+              <button type="button" onClick={() => setBlockedByClient(true)} className="flex items-center gap-1.5 rounded-md border border-dashed px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted">
+                <AlertCircle className="w-3.5 h-3.5" /> Arquivo bloqueado pelo navegador — ver como abrir
+              </button>
             )}
             {message.content && (
               <WhatsAppFormattedText text={message.content} className={cn("text-sm", messageTextClass)} />
@@ -275,7 +281,7 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
                 alt="Sticker"
                 className="max-w-[150px] cursor-pointer hover:scale-105 transition-transform"
                 onClick={() => setViewerImage(signedMediaUrl ?? null)}
-                onError={() => setBlockedByClient(true)}
+                onError={() => setMediaBroken(true)}
               />
             )}
           </div>
@@ -301,9 +307,14 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
         return (
           <div className="space-y-2">
             {message.media_url && (
-              <video controls className="w-full max-w-xs rounded-md" onError={() => setBlockedByClient(true)}>
+              <video controls className="w-full max-w-xs rounded-md" onError={() => setMediaBroken(true)}>
                 <source src={signedMediaUrl} type={message.media_mimetype || 'video/mp4'} />
               </video>
+            )}
+            {mediaBroken && (
+              <button type="button" onClick={() => setBlockedByClient(true)} className="flex items-center gap-1.5 rounded-md border border-dashed px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted">
+                <AlertCircle className="w-3.5 h-3.5" /> Arquivo bloqueado pelo navegador — ver como abrir
+              </button>
             )}
             {message.content && (
               <WhatsAppFormattedText text={message.content} className={cn("text-sm", messageTextClass)} />
@@ -463,9 +474,12 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
       <MediaBlockedByClientHint
         open={blockedByClient}
         onOpenChange={setBlockedByClient}
+        url={signedMediaUrl}
         onRetry={() => {
           setBlockedByClient(false);
-          if (signedMediaUrl) openMediaWithBlockCheck(signedMediaUrl);
+          setMediaBroken(false);
+          queryClient.invalidateQueries({ queryKey: ["signed-url"] });
+          if (false && signedMediaUrl) openMediaWithBlockCheck(signedMediaUrl);
         }}
       />
     </div>
