@@ -13,7 +13,8 @@ import { EditContactModal } from "@/components/chat/EditContactModal";
 import { isContactNameMissing } from "@/utils/contactUtils";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { User } from "lucide-react";
+import { User, Users } from "lucide-react";
+import { isGroupContact } from "@/utils/groupUtils";
 import { useContactAvatar } from "@/hooks/useContactAvatar";
 
 type Conversation = Tables<"whatsapp_conversations"> & {
@@ -87,6 +88,7 @@ const ConversationItem = ({
   
   const nameIsMissing = contact ? isContactNameMissing(contact.name, contact.phone_number) : false;
   const contactName = nameIsMissing ? "Sem nome" : (contact?.name || "Desconhecido");
+  const isGroup = isGroupContact(contact);
   const profilePicture = conversation.contact?.profile_picture_url;
   const avatarUrl = useContactAvatar(profilePicture);
   const lastMessage = conversation.last_message_preview || "";
@@ -124,7 +126,7 @@ const ConversationItem = ({
           <Avatar className="h-10 w-10 shrink-0">
             <AvatarImage src={avatarUrl} alt={contactName} />
             <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
-              {getInitials(contactName)}
+              {isGroup ? <Users className="h-5 w-5" /> : getInitials(contactName)}
             </AvatarFallback>
           </Avatar>
 
@@ -138,7 +140,12 @@ const ConversationItem = ({
               )}>
                 {contactName}
               </span>
-              {nameIsMissing && (
+              {isGroup && (
+                <span className="inline-flex shrink-0 items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-primary">
+                  <Users className="h-3 w-3" /> Grupo
+                </span>
+              )}
+                            {nameIsMissing && (
                 <Button
                   variant="ghost"
                   size="sm"
