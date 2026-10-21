@@ -479,7 +479,6 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
           setBlockedByClient(false);
           setMediaBroken(false);
           queryClient.invalidateQueries({ queryKey: ["signed-url"] });
-          if (false && signedMediaUrl) openMediaWithBlockCheck(signedMediaUrl);
         }}
       />
     </div>

@@ -1,6 +1,7 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, Settings, UserPlus, Repeat, Pencil, CheckCircle, ArchiveRestore } from "lucide-react";
+import { RefreshCw, Settings, UserPlus, Repeat, Pencil, CheckCircle, ArchiveRestore, Users } from "lucide-react";
+import { isGroupContact } from "@/utils/groupUtils";
 import { SentimentCard } from "./SentimentCard";
 import { Tables } from "@/integrations/supabase/types";
 import { Link } from "react-router-dom";
@@ -56,6 +57,7 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
   if (!contact) return null;
   
   const nameIsMissing = isContactNameMissing(contact.name, contact.phone_number);
+  const isGroup = isGroupContact(contact);
   const displayName = nameIsMissing ? 'Sem nome' : contact.name;
   const phoneIsLid = isLidValue(contact.phone_number);
 
@@ -103,7 +105,7 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
           <Avatar className="h-10 w-10 flex-shrink-0">
             <AvatarImage src={avatarUrl} />
             <AvatarFallback className="bg-primary/10 text-primary">
-              {getInitials(displayName)}
+              {isGroup ? <Users className="h-5 w-5" /> : getInitials(displayName)}
             </AvatarFallback>
           </Avatar>
           
@@ -120,7 +122,7 @@ export const ChatHeader = ({ contact, sentiment, isAnalyzing, onAnalyze, convers
                   "mt-0.5 block truncate text-xs leading-tight text-muted-foreground",
                   phoneIsLid && "italic"
                 )}>
-                  {phoneIsLid ? 'Telefone não identificado' : contact.phone_number}
+                  {isGroup ? (<span className="inline-flex items-center gap-1 font-medium text-primary"><Users className="h-3 w-3" /> Grupo de WhatsApp</span>) : phoneIsLid ? 'Telefone não identificado' : contact.phone_number}
                 </p>
               </div>
               <Button 
