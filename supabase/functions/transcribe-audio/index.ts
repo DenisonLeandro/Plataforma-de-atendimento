@@ -4,7 +4,7 @@ import { logAiUsage } from "../_shared/ai-usage.ts";
 
 // Esta função usa o endpoint dedicado de speech-to-text, que não devolve
 // `usage` — o log fica com 0 tokens / custo 0 (ver AI_MODEL abaixo).
-const AI_MODEL = "openai/gpt-4o-mini-transcribe";
+const AI_MODEL = "openai/gpt-transcribe";
 // Idioma dos audios da plataforma. Todos os escritorios atendem em portugues;
 // se algum dia houver atendimento em outra lingua, isto vira configuracao por empresa.
 const TRANSCRIPTION_LANGUAGE = "pt";
@@ -183,7 +183,7 @@ Deno.serve(async (req) => {
     }
 
     // Use the dedicated speech-to-text endpoint (cheaper and purpose-built).
-    // Model: openai/gpt-4o-mini-transcribe via multipart/form-data.
+    // Model: openai/gpt-transcribe via multipart/form-data.
     const { ext, mime } = mimetypeToExt(message.media_mimetype);
     const audioBlob = new Blob([bytes], { type: mime });
     const form = new FormData();
