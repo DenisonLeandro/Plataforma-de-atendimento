@@ -8,7 +8,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const AI_MODEL = 'google/gemini-2.5-flash';
+const AI_MODEL = 'google/gemini-3-flash-preview';
 
 interface AnalyzeRequest {
   conversationId: string;
@@ -245,7 +245,7 @@ Analise o contexto geral e determine o sentimento predominante.`;
         reasoning: result.reasoning,
         messages_analyzed: messages.length,
         metadata: { 
-          model: 'google/gemini-2.5-flash',
+          model: 'google/gemini-3-flash-preview',
           analyzed_at: new Date().toISOString()
         }
       }, {

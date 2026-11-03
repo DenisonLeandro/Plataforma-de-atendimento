@@ -8,7 +8,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const AI_MODEL = 'google/gemini-2.5-flash';
+const AI_MODEL = 'google/gemini-3-flash-preview';
 
 const systemPrompt = `Você é um especialista em categorizar conversas de atendimento ao cliente via WhatsApp.
 
@@ -428,7 +428,7 @@ serve(async (req) => {
       primary_topic: result.primary_topic,
       ai_confidence: result.confidence || 0.8,
       categorized_at: new Date().toISOString(),
-      categorization_model: 'google/gemini-2.5-flash',
+      categorization_model: 'google/gemini-3-flash-preview',
       ai_reasoning: result.reasoning,
       custom_topics: result.custom_topic ? [result.custom_topic] : []
     };
