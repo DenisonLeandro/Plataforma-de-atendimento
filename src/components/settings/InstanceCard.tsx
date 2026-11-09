@@ -17,7 +17,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useWhatsAppInstances, useSyncWhatsAppHistory, useSyncJob, useSyncJobCompletion, type SyncJob } from "@/hooks/whatsapp";
-import { RefreshCw, Pencil, Trash2, Copy, Link, Download, Loader2, Plug, Users, Webhook, AlertTriangle, ExternalLink, UserCog } from "lucide-react";
+import { RefreshCw, Pencil, Trash2, Copy, Link, Download, Loader2, Plug, Users, Webhook, AlertTriangle, ExternalLink, UserCog, LifeBuoy } from "lucide-react";
 import { toast } from "sonner";
 import { EditInstanceDialog } from "./EditInstanceDialog";
 import { supabase } from "@/integrations/supabase/client";
@@ -205,6 +205,28 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
     }
   };
 
+  const [isRecovering, setIsRecovering] = useState(false);
+  const watchdogMeta = (instance.metadata as Record<string, any>) || {};
+  const handleRecoverMessages = async () => {
+    setIsRecovering(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('watchdog-instances', {
+        body: { instanceId: instance.id },
+      });
+      if (error) throw error;
+      const r = data?.results?.[0] || {};
+      if (r.recovered > 0) {
+        toast.success(`${r.recovered} mensagem(ns) recuperada(s)${r.restarted ? ' e conexão reiniciada' : ''}.`);
+      } else {
+        toast.info('Nenhuma mensagem faltando. Se o cliente mandou e não chegou nem no WhatsApp do servidor, desconecte e leia o QR Code de novo.', { duration: 10000 });
+      }
+    } catch (error: any) {
+      toast.error(error?.message || 'Falha ao recuperar mensagens');
+    } finally {
+      setIsRecovering(false);
+    }
+  };
+
   const handleDelete = async () => {
     try {
       await deleteInstance.mutateAsync(instance.id);
@@ -284,6 +306,12 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
                   Clique em Reconectar para derrubar a sessão atual e ler o QR Code novamente.
                 </p>
               </div>
+            </div>
+          )}
+          {watchdogMeta.watchdog_requires_qr && (
+            <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <p>Esta conexão "adormeceu" várias vezes hoje. Desconecte e leia o QR Code novamente no celular.</p>
             </div>
           )}
           {isSilent && (
@@ -386,6 +414,16 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
             ) : (
               <UserCog className="h-4 w-4" />
             )}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRecoverMessages}
+            disabled={isRecovering || instance.status !== "connected"}
+            title="Recuperar mensagens agora"
+            className="h-9 w-9 p-0 shrink-0"
+          >
+            {isRecovering ? <Loader2 className="h-4 w-4 animate-spin" /> : <LifeBuoy className="h-4 w-4" />}
           </Button>
           <Button
             variant="outline"
