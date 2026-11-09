@@ -1211,6 +1211,7 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
     const updateData: any = {
       last_message_at: timestamp,
       last_message_preview: content.substring(0, 100),
+      last_message_is_from_me: !!key.fromMe,
       metadata: {
         ...((currentConversationForUpdate as any)?.metadata || {}),
         last_remote_jid: key.remoteJid,
