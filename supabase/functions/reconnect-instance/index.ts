@@ -78,6 +78,15 @@ serve(async (req) => {
 
     // Já conectada e saudável: nada a fazer além de sincronizar o banco.
     if ((currentState === 'open' || currentState === 'connected') && !needsCleanReconnect) {
+      // "open" pode ser um socket travado: força o reinício real (sem QR).
+      for (const method of ['POST', 'PUT']) {
+        try {
+          const r = await fetchWithTimeout(`${ctx.baseUrl}/instance/restart/${ctx.identifier}`,
+            { timeout: 20000, method, headers: { apikey: ctx.apiKey } });
+          await r.text().catch(() => '');
+          if (r.ok) break;
+        } catch { /* tenta próximo */ }
+      }
       await supabaseAdmin
         .from('whatsapp_instances')
         .update({ status: 'connected', qr_code: null, updated_at: new Date().toISOString() })
