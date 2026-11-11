@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.85.0';
 import { fetchWithTimeout } from '../_shared/fetch-with-timeout.ts';
+import { findMessageSecret } from '../_shared/message-secret.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -379,6 +380,8 @@ Deno.serve(async (req) => {
           fileName: body.fileName,
           send_candidate_used: usedCandidate,
           send_candidates_tried: destinationCandidates,
+          // Key to read encrypted edits of this message made later on the phone.
+          message_secret: findMessageSecret(evolutionData?.message) || undefined,
         },
       }, {
         onConflict: 'conversation_id,message_id',
