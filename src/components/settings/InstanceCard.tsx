@@ -134,6 +134,22 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
     }
   };
 
+  const lagMinutes = Number(watchdogMeta.delivery_lag_minutes ?? 0);
+  const isLagging = lagMinutes > 15;
+  const lagLabel = lagMinutes >= 120 ? `${Math.round(lagMinutes / 60)} horas` : `${lagMinutes} minutos`;
+
+  const handleNewQr = async () => {
+    if (!window.confirm("Isto desconecta este WhatsApp e mostra um QR Code novo. Tenha o celular do escritório em mãos para ler o QR. Continuar?")) return;
+    try {
+      const result = await reconnectInstance.mutateAsync({ id: instance.id, clean: true });
+      toast.info(result?.qr
+        ? "Leia o QR Code novo no celular do escritório (WhatsApp → Aparelhos conectados)."
+        : "Sessão limpa iniciada. Aguarde alguns segundos até o QR Code aparecer.", { duration: 10000 });
+    } catch (error) {
+      toast.error("Não foi possível gerar o QR Code novo. Tente novamente.");
+    }
+  };
+
   const handleReconnect = async () => {
     try {
       const result = await reconnectInstance.mutateAsync({ id: instance.id, clean: isDeliveryDegraded });
@@ -142,7 +158,7 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
       } else if (result?.cleanReconnect) {
         toast.info("Sessão limpa iniciada. Aguarde alguns segundos e gere/teste o QR Code novamente.", { duration: 10000 });
       } else if (result?.alreadyConnected) {
-        toast.success("Instância já está conectada — nada a fazer.");
+        toast.success("Conexão reiniciada com sucesso, sem perder a sessão.");
       } else if (result?.stillConnecting) {
         toast.info("Baileys já está reconectando. Aguarde alguns segundos e teste novamente.");
       } else if (result?.qr) {
@@ -311,7 +327,19 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
           {watchdogMeta.watchdog_requires_qr && (
             <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              <p>Esta conexão "adormeceu" várias vezes hoje. Desconecte e leia o QR Code novamente no celular.</p>
+              <div className="space-y-2">
+                <p className="font-medium">
+                  {isLagging
+                    ? `Mensagens chegando com atraso de ${lagLabel}.`
+                    : 'Esta conexão "adormeceu" várias vezes hoje.'}
+                </p>
+                <p className="text-xs text-destructive/90">
+                  Reiniciar não resolve. Gere um QR Code novo e leia no celular do escritório para as mensagens voltarem a chegar na hora.
+                </p>
+                <Button size="sm" variant="destructive" onClick={handleNewQr} disabled={reconnectInstance.isPending}>
+                  Gerar QR Code novo
+                </Button>
+              </div>
             </div>
           )}
           {isSilent && (
