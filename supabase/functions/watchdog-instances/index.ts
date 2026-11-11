@@ -92,6 +92,21 @@ async function checkInstance(admin: any, inst: any, opts: { force: boolean }) {
   const lastEventAt = lastEv?.created_at ? new Date(lastEv.created_at).getTime() : 0;
   const silentMin = lastEventAt ? Math.round((Date.now() - lastEventAt) / 60000) : null;
 
+  // Atraso de entrega: quanto tempo depois de enviadas as mensagens dos clientes chegam aqui.
+  // Fila atrasada no aparelho conectado só se resolve com QR Code novo.
+  const { data: lagRows } = await admin.from("whatsapp_webhook_events")
+    .select("created_at, ts:payload->data->>messageTimestamp, src:payload->>source")
+    .eq("instance_id", inst.id).eq("event", "messages.upsert")
+    .eq("payload->data->key->>fromMe", "false")
+    .gte("created_at", new Date(Date.now() - 2 * 3600_000).toISOString())
+    .order("created_at", { ascending: false }).limit(20);
+  const lags = (lagRows || [])
+    .filter((r: any) => r.src !== "watchdog" && /^\d+$/.test(String(r.ts ?? "")))
+    .map((r: any) => (new Date(r.created_at).getTime() - Number(r.ts) * 1000) / 60000)
+    .sort((a: number, b: number) => a - b);
+  const lagMin = lags.length >= 3 ? Math.max(0, Math.round(lags[Math.floor(lags.length / 2)])) : null;
+  const lagging = lagMin !== null && lagMin > LAG_ALERT_MIN;
+
   const meta = inst.metadata || {};
   const today = new Date().toISOString().slice(0, 10);
   let restartsToday = meta.watchdog_restart_day === today ? Number(meta.watchdog_restarts_today || 0) : 0;
@@ -121,11 +136,14 @@ async function checkInstance(admin: any, inst: any, opts: { force: boolean }) {
       ...(restarted ? { watchdog_last_restart_at: nowIso } : {}),
       watchdog_restart_day: today,
       watchdog_restarts_today: restartsToday,
-      watchdog_requires_qr: restartsToday > MAX_RESTARTS_PER_DAY,
+      // Sem amostras novas, mantém a última medição de atraso.
+      ...(lagMin !== null ? { delivery_lag_minutes: lagMin, delivery_lag_checked_at: nowIso } : {}),
+      watchdog_requires_qr: restartsToday > MAX_RESTARTS_PER_DAY
+        || (lagMin !== null ? lagging : Number(meta.delivery_lag_minutes || 0) > LAG_ALERT_MIN),
     },
   }).eq("id", inst.id);
 
-  return { instance: inst.name, recent: recent.length, missing: missing.length, recovered, restarted, silentMin, restartsToday };
+  return { instance: inst.name, recent: recent.length, missing: missing.length, recovered, restarted, silentMin, restartsToday, lagMin };
 }
 
 Deno.serve(async (req) => {
