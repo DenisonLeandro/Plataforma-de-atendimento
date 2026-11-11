@@ -61,7 +61,7 @@ export async function applyMessageEdit(supabase: any, instanceId: string, edit: 
     content: edit.content,
     edited_at: new Date().toISOString(),
     original_content: current.original_content ?? current.content,
-  }).eq('message_id', edit.messageId).in('conversation_id', [current.conversation_id]);
+  }).eq('id', current.id);
   if (updateError) throw new Error(updateError.message);
 
   const { data: latest, error: latestError } = await supabase.from('whatsapp_messages')
