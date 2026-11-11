@@ -1,3 +1,4 @@
+import { bytesFrom, findMessageSecret, decryptSecretEdit, textFromDecryptedEdit } from './message-secret.ts';
 // Evolution/Baileys uses different envelopes for edits across versions.
 export function extractMessageEdit(data: any): { messageId: string; content: string } | null {
   const update = data?.update || data;
@@ -74,4 +75,94 @@ export async function applyMessageEdit(supabase: any, instanceId: string, edit: 
       .eq('id', current.conversation_id).eq('instance_id', instanceId);
     if (error) throw new Error(error.message);
   }
+}
+// ---------------------------------------------------------------------------
+// Encrypted edits (secretEncryptedMessage, secretEncType 2 = MESSAGE_EDIT).
+// ---------------------------------------------------------------------------
+
+export function getSecretEdit(data: any) {
+  const se = data?.message?.secretEncryptedMessage;
+  if (!se?.targetMessageKey?.id || !se.encPayload || !se.encIv) return null;
+  // 2 = MESSAGE_EDIT. Other types (event edits, etc.) are ignored.
+  if (se.secretEncType !== undefined && Number(se.secretEncType) !== 2 && se.secretEncType !== 'MESSAGE_EDIT') return null;
+  return se;
+}
+
+const jidsFromMeta = (m: any) => [m?.ack_remote_jid, m?.last_remote_jid, m?.preferred_send_jid, m?.resolved_phone_jid];
+
+/**
+ * Decrypts an encrypted edit and applies it to the original bubble. When the
+ * edit can't be read, the original bubble is only flagged — never a fake new message.
+ * Returns 'applied' | 'unreadable'.
+ */
+export async function applySecretEncryptedEdit(
+  supabase: any, instanceId: string, data: any, sender?: string | null,
+): Promise<'applied' | 'unreadable'> {
+  const se = getSecretEdit(data);
+  if (!se) return 'unreadable';
+  const target = se.targetMessageKey;
+  const key = data.key || {};
+
+  const { data: instance } = await supabase.from('whatsapp_instances')
+    .select('metadata').eq('id', instanceId).maybeSingle();
+  const instanceMeta = instance?.metadata || {};
+  // On an edit from the contact, the target key is seen from their side: its remoteJid is our own LID.
+  if (!key.fromMe && typeof target.remoteJid === 'string' && target.remoteJid.endsWith('@lid')
+      && instanceMeta.own_lid !== target.remoteJid) {
+    await supabase.from('whatsapp_instances')
+      .update({ metadata: { ...instanceMeta, own_lid: target.remoteJid } }).eq('id', instanceId);
+    instanceMeta.own_lid = target.remoteJid;
+  }
+
+  const { data: original, error } = await supabase.from('whatsapp_messages')
+    .select('id, remote_jid, metadata, edited_at, conversation_id, whatsapp_conversations!inner(instance_id, metadata, whatsapp_contacts(phone_number, metadata))')
+    .eq('message_id', target.id)
+    .eq('whatsapp_conversations.instance_id', instanceId)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!original) throw new Error('Mensagem original da edição ainda não encontrada');
+
+  let secret: string | null = original.metadata?.message_secret || null;
+  const inboxJids: string[] = [];
+  if (!secret) {
+    const { data: events } = await supabase.from('whatsapp_webhook_events')
+      .select('payload').eq('message_id', target.id).eq('instance_id', instanceId).limit(5);
+    for (const ev of events || []) {
+      const d = ev.payload?.data;
+      inboxJids.push(d?.key?.remoteJid, d?.key?.remoteJidAlt);
+      secret = secret || findMessageSecret(d?.message);
+    }
+  }
+
+  let text: string | null = null;
+  if (secret) {
+    const conv = original.whatsapp_conversations || {};
+    const contact = conv.whatsapp_contacts || {};
+    const jids = [
+      key.remoteJid, key.remoteJidAlt, key.participant, key.senderLid, key.senderPn, target.remoteJid,
+      sender, instanceMeta.own_lid, original.remote_jid, ...inboxJids,
+      ...jidsFromMeta(original.metadata), ...jidsFromMeta(conv.metadata), ...jidsFromMeta(contact.metadata),
+      contact.phone_number && String(contact.phone_number).length >= 14 ? `${contact.phone_number}@lid` : null,
+    ].filter(Boolean) as string[];
+    const plain = await decryptSecretEdit({
+      secret: bytesFrom(secret)!, encPayload: bytesFrom(se.encPayload)!, encIv: bytesFrom(se.encIv)!,
+      originalId: target.id, jids,
+    });
+    if (plain) text = textFromDecryptedEdit(plain);
+  }
+
+  if (text !== null) {
+    await applyMessageEdit(supabase, instanceId, { messageId: target.id, content: text });
+    return 'applied';
+  }
+
+  if (!original.edited_at && !original.metadata?.edited_unreadable) {
+    const { error: flagError } = await supabase.from('whatsapp_messages')
+      .update({ metadata: { ...(original.metadata || {}), edited_unreadable: true, edited_unreadable_at: new Date().toISOString() } })
+      .eq('id', original.id);
+    if (flagError) throw new Error(flagError.message);
+  }
+  return 'unreadable';
 }
