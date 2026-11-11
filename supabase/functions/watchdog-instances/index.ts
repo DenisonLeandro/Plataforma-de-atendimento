@@ -16,6 +16,7 @@ const json = (b: unknown, s = 200) =>
 const LOOKBACK_MIN = 20;
 const SILENCE_MIN = 10;
 const MAX_RESTARTS_PER_DAY = 3;
+const LAG_ALERT_MIN = 15; // minutos
 
 function extractList(p: any): any[] {
   if (Array.isArray(p)) return p;
