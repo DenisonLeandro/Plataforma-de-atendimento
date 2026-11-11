@@ -134,7 +134,7 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
     }
   };
 
-  const lagMinutes = Number(watchdogMeta.delivery_lag_minutes ?? 0);
+  const lagMinutes = Number((instance.metadata as Record<string, any> | null)?.delivery_lag_minutes ?? 0);
   const isLagging = lagMinutes > 15;
   const lagLabel = lagMinutes >= 120 ? `${Math.round(lagMinutes / 60)} horas` : `${lagMinutes} minutos`;
 
