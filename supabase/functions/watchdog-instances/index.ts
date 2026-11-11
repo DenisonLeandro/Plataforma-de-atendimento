@@ -99,6 +99,7 @@ async function checkInstance(admin: any, inst: any, opts: { force: boolean }) {
     .select("created_at, ts:payload->data->>messageTimestamp, src:payload->>source")
     .eq("instance_id", inst.id).eq("event", "messages.upsert")
     .eq("payload->data->key->>fromMe", "false")
+    .is("payload->>source", null) // ignora reprocessamentos (vigia, reaplicação de edições)
     .gte("created_at", new Date(Date.now() - 2 * 3600_000).toISOString())
     .order("created_at", { ascending: false }).limit(20);
   const lags = (lagRows || [])
