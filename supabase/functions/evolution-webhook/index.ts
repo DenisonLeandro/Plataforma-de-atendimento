@@ -12,7 +12,8 @@ import {
 } from '../_shared/evolution-helpers.ts';
 import { fetchWithTimeout } from '../_shared/fetch-with-timeout.ts';
 import { extractQrCode } from '../_shared/instance-auth.ts';
-import { extractMessageEdit, applyMessageEdit } from '../_shared/message-edits.ts';
+import { extractMessageEdit, applyMessageEdit, getSecretEdit, applySecretEncryptedEdit } from '../_shared/message-edits.ts';
+import { findMessageSecret } from '../_shared/message-secret.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -176,7 +177,13 @@ async function routeWebhookPayload(payload: EvolutionWebhookPayload, supabase: a
   }
   switch (payload.event) {
     case 'messages.upsert':
-      if (extractMessageEdit(payload.data)) {
+      if (getSecretEdit(payload.data)) {
+        // Encrypted edit: update the original bubble, never save it as a new message.
+        const instanceId = await findInstanceIdForWebhook(supabase, payload.instance);
+        if (!instanceId) throw new Error('Instância da edição não encontrada');
+        const result = await applySecretEncryptedEdit(supabase, instanceId, payload.data, (payload as any).sender);
+        console.log('[evolution-webhook] Encrypted edit', result, payload.data?.message?.secretEncryptedMessage?.targetMessageKey?.id);
+      } else if (extractMessageEdit(payload.data)) {
         await processMessageEdit(payload, supabase);
       } else {
         await processMessageUpsert(payload, supabase);
@@ -1175,6 +1182,7 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
       console.log('[evolution-webhook] Mensagem já existe nesta instância, ignorando duplicata', key.id);
       return;
     }
+    const messageSecret = findMessageSecret(message);
     let insertedMessage: any = null;
     const { data: inserted, error: messageError } = await supabase
       .from('whatsapp_messages')
@@ -1192,6 +1200,8 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
         status: 'sent',
         quoted_message_id: quotedMessageId,
         timestamp,
+        // Key needed later to read encrypted edits of this message.
+        ...(messageSecret ? { metadata: { message_secret: messageSecret } } : {}),
       })
       .select('id, media_url, media_status')
       .single();

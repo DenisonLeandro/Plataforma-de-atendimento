@@ -429,6 +429,14 @@ export const MessageBubble = ({ message, reactions = [], onReply }: MessageBubbl
             >
               {time}
             </span>
+            {!message.edited_at && (message.metadata as any)?.edited_unreadable && (
+              <span
+                className={cn('text-xs italic', isFromMe ? 'text-primary-foreground/70' : 'text-muted-foreground')}
+                title="Esta mensagem foi editada no celular, mas o novo texto não pôde ser lido aqui."
+              >
+                Editada no celular
+              </span>
+            )}
             {message.edited_at && (
               <Popover>
                 <PopoverTrigger asChild>
