@@ -6,13 +6,13 @@ import {
   isLid,
   getMessageType,
   getMessageContent,
-  isEditedMessage,
   downloadAndUploadMedia,
   getMediaSubMessage,
   unwrapMessage,
 } from '../_shared/evolution-helpers.ts';
 import { fetchWithTimeout } from '../_shared/fetch-with-timeout.ts';
 import { extractQrCode } from '../_shared/instance-auth.ts';
+import { extractMessageEdit, applyMessageEdit } from '../_shared/message-edits.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -170,15 +170,20 @@ async function enqueueWebhookEvent(supabase: any, payload: EvolutionWebhookPaylo
 }
 
 async function routeWebhookPayload(payload: EvolutionWebhookPayload, supabase: any) {
+  if (Array.isArray(payload.data)) {
+    for (const data of payload.data) await routeWebhookPayload({ ...payload, data }, supabase);
+    return;
+  }
   switch (payload.event) {
     case 'messages.upsert':
-      if (isEditedMessage(payload.data?.message)) {
+      if (extractMessageEdit(payload.data)) {
         await processMessageEdit(payload, supabase);
       } else {
         await processMessageUpsert(payload, supabase);
       }
       break;
     case 'messages.update':
+      if (extractMessageEdit(payload.data)) await processMessageEdit(payload, supabase);
       await processMessageUpdate(payload, supabase);
       break;
     case 'messages.read':
@@ -1618,64 +1623,11 @@ async function processConnectionUpdate(payload: EvolutionWebhookPayload, supabas
 
 // Process message edit
 async function processMessageEdit(payload: EvolutionWebhookPayload, supabase: any) {
-  try {
-    const { data } = payload;
-    const editedMessage = data.message?.editedMessage || data.message?.protocolMessage?.editedMessage;
-    
-    if (!editedMessage) {
-      console.log('[evolution-webhook] No editedMessage found in payload');
-      return;
-    }
-    
-    const messageId = editedMessage.key?.id || data.key?.id;
-    const newContent = editedMessage.conversation || editedMessage.extendedTextMessage?.text || '';
-    
-    console.log('[evolution-webhook] Processing message edit:', messageId);
-    
-    // 1. Fetch current message
-    const { data: currentMessage, error: fetchError } = await supabase
-      .from('whatsapp_messages')
-      .select('id, content, original_content, conversation_id')
-      .eq('message_id', messageId)
-      .maybeSingle();
-    
-    if (fetchError || !currentMessage) {
-      console.error('[evolution-webhook] Error fetching message or message not found:', fetchError);
-      return;
-    }
-    
-    // 2. Save to edit history
-    const { error: historyError } = await supabase
-      .from('whatsapp_message_edit_history')
-      .insert({
-        message_id: messageId,
-        conversation_id: currentMessage.conversation_id,
-        previous_content: currentMessage.content,
-      });
-    
-    if (historyError) {
-      console.error('[evolution-webhook] Error saving edit history:', historyError);
-    }
-    
-    // 3. Update message
-    const { error: updateError } = await supabase
-      .from('whatsapp_messages')
-      .update({
-        content: newContent,
-        edited_at: new Date().toISOString(),
-        // Store original content only on first edit
-        original_content: currentMessage.original_content || currentMessage.content,
-      })
-      .eq('message_id', messageId);
-    
-    if (updateError) {
-      console.error('[evolution-webhook] Error updating message:', updateError);
-    } else {
-      console.log('[evolution-webhook] Message edited successfully:', messageId);
-    }
-  } catch (error) {
-    console.error('[evolution-webhook] Error in processMessageEdit:', error);
-  }
+  const edit = extractMessageEdit(payload.data);
+  if (!edit) return;
+  const instanceId = await findInstanceIdForWebhook(supabase, payload.instance);
+  if (!instanceId) throw new Error('Instância da edição não encontrada');
+  await applyMessageEdit(supabase, instanceId, edit);
 }
 
 // Resolve conversation IDs from a list of remoteJids for a given instance.
