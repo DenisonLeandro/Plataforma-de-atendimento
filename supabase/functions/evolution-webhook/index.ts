@@ -423,7 +423,20 @@ async function findOrCreateContact(
     // digito) e o codigo criaria um terceiro cadastro para a mesma pessoa.
     // Na duvida, sempre o cadastro mais antigo.
     let existingContact: any = null;
-    if (lid) {
+    // Número real tem prioridade absoluta sobre o LID.
+    const hasRealPhone = !!resolvedPhoneJid && /@s\.whatsapp\.net$/i.test(resolvedPhoneJid);
+    if (hasRealPhone) {
+      const { data: byRealPhone } = await supabase
+        .from('whatsapp_contacts')
+        .select('id, name, phone_number, metadata')
+        .eq('instance_id', instanceId)
+        .in('phone_number', phoneVariants)
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      existingContact = byRealPhone ?? null;
+    }
+    if (!existingContact && lid) {
       const { data: byLid } = await supabase
         .from('whatsapp_contacts')
         .select('id, name, phone_number, metadata')
@@ -1151,6 +1164,17 @@ async function processMessageUpsert(payload: EvolutionWebhookPayload, supabase: 
     // Save message first. Media is intentionally marked as pending and fetched
     // after the row exists, avoiding data loss when Evolution/media/storage is slow.
     const mediaStatus = shouldFetchMedia ? 'pending' : 'none';
+    // Mesma mensagem já gravada nesta instância (ex.: em conversa gêmea LID)? Não duplica.
+    const { data: dupMsg } = await supabase
+      .from('whatsapp_messages')
+      .select('id, whatsapp_conversations!inner(instance_id)')
+      .eq('message_id', key.id)
+      .eq('whatsapp_conversations.instance_id', instanceData.id)
+      .limit(1);
+    if (dupMsg && dupMsg.length > 0) {
+      console.log('[evolution-webhook] Mensagem já existe nesta instância, ignorando duplicata', key.id);
+      return;
+    }
     let insertedMessage: any = null;
     const { data: inserted, error: messageError } = await supabase
       .from('whatsapp_messages')

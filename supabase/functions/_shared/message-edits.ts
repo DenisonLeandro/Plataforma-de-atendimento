@@ -42,6 +42,8 @@ export async function applyMessageEdit(supabase: any, instanceId: string, edit: 
     .select('id, content, original_content, conversation_id, whatsapp_conversations!inner(instance_id)')
     .eq('message_id', edit.messageId)
     .eq('whatsapp_conversations.instance_id', instanceId)
+    .order('created_at', { ascending: true })
+    .limit(1)
     .maybeSingle();
   if (fetchError) throw new Error(fetchError.message);
   // Throw so the existing webhook queue retries out-of-order edits.

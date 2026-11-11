@@ -101,7 +101,8 @@ async function checkInstance(admin: any, inst: any, opts: { force: boolean }) {
   // Socket zumbi: Evolution diz "open" mas nada chega há muito tempo.
   const lastRestart = meta.watchdog_last_restart_at ? new Date(meta.watchdog_last_restart_at).getTime() : 0;
   const hourBR = (new Date().getUTCHours() + 21) % 24;
-  const zombie = (silentMin === null || silentMin >= 90) && hourBR >= 8 && hourBR < 19
+  // Reinício por silêncio desativado: escritórios calmos ficam horas sem mensagens.
+  const zombie = false && (silentMin === null || silentMin >= 90) && hourBR >= 8 && hourBR < 19
     && Date.now() - lastRestart > 60 * 60_000;
   if (asleep || zombie || opts.force) {
     restarted = await restartInstance(apiUrl, identifier, sec.api_key);
