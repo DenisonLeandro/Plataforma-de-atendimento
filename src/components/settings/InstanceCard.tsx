@@ -223,6 +223,11 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
 
   const [isRecovering, setIsRecovering] = useState(false);
   const watchdogMeta = (instance.metadata as Record<string, any>) || {};
+  const lagResetAt = watchdogMeta.lag_reset_at ? new Date(watchdogMeta.lag_reset_at).getTime() : 0;
+  const isVerifyingNewConnection = !!lagResetAt
+    && !watchdogMeta.delivery_lag_checked_at
+    && Date.now() - lagResetAt < 3 * 3600_000
+    && instance.status === "connected";
   const handleRecoverMessages = async () => {
     setIsRecovering(true);
     try {
@@ -322,6 +327,12 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
                   Clique em Reconectar para derrubar a sessão atual e ler o QR Code novamente.
                 </p>
               </div>
+            </div>
+          )}
+          {!watchdogMeta.watchdog_requires_qr && isVerifyingNewConnection && (
+            <div className="flex items-start gap-2 rounded-md border border-border bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+              <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin" />
+              <p>Verificando a conexão nova… O aviso de atraso foi zerado e será medido de novo quando chegarem mensagens de clientes.</p>
             </div>
           )}
           {watchdogMeta.watchdog_requires_qr && (

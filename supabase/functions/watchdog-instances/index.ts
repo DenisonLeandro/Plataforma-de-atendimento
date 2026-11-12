@@ -111,7 +111,9 @@ async function checkInstance(admin: any, inst: any, opts: { force: boolean }) {
   const lagMin = lags.length >= 3 ? Math.max(0, Math.round(lags[Math.floor(lags.length / 2)])) : null;
   const lagging = lagMin !== null && lagMin > LAG_ALERT_MIN;
 
-  const meta = inst.metadata || {};
+  // Relê o metadata: um QR Code novo pode ter zerado o aviso durante esta checagem.
+  const { data: fresh } = await admin.from("whatsapp_instances").select("metadata").eq("id", inst.id).maybeSingle();
+  const meta = fresh?.metadata || inst.metadata || {};
   const today = new Date().toISOString().slice(0, 10);
   let restartsToday = meta.watchdog_restart_day === today ? Number(meta.watchdog_restarts_today || 0) : 0;
   let restarted = false;
