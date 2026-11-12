@@ -161,8 +161,15 @@ Deno.serve(async (req) => {
     const instanceId: string | undefined = typeof body?.instanceId === "string" ? body.instanceId : undefined;
 
     if (instanceId) {
-      const auth = await authorizeInstanceAction(admin, req, instanceId);
-      if (!auth.ok) return json({ error: auth.error }, auth.status);
+      // Recuperar só reprocessa o que faltou (não derruba nada): super admin pode usar em qualquer empresa.
+      const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
+      const { data: { user } } = token ? await admin.auth.getUser(token) : { data: { user: null } };
+      if (!user) return json({ error: "Sessão expirada. Entre novamente." }, 401);
+      const { data: isSuper } = await admin.rpc("is_super_admin", { _user_id: user.id });
+      if (!isSuper) {
+        const auth = await authorizeInstanceAction(admin, req, instanceId);
+        if (!auth.ok) return json({ error: auth.status === 404 ? "Você não tem permissão para esta empresa ou instância." : auth.error }, auth.status);
+      }
       const { data: inst } = await admin.from("whatsapp_instances")
         .select("id, name, instance_name, provider_type, instance_id_external, status, metadata").eq("id", instanceId).single();
       return json({ success: true, results: [await checkInstance(admin, inst, { force: true })] });
