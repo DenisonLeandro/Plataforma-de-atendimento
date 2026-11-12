@@ -204,7 +204,11 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
       const { data, error } = await supabase.functions.invoke('fix-contact-names', {
         body: { instanceId: instance.id },
       });
-      if (error) throw error;
+      if (error) {
+        let msg = 'Falha ao recuperar mensagens';
+        try { const b = await (error as any).context?.json?.(); if (b?.error) msg = b.error; } catch { /* mantém padrão */ }
+        throw new Error(msg);
+      }
       const total = data?.total ?? 0;
       if (total === 0) {
         toast.info("Nenhum contato precisando de correção nesta instância.");
@@ -234,7 +238,11 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
       const { data, error } = await supabase.functions.invoke('watchdog-instances', {
         body: { instanceId: instance.id },
       });
-      if (error) throw error;
+      if (error) {
+        let msg = 'Falha ao recuperar mensagens';
+        try { const b = await (error as any).context?.json?.(); if (b?.error) msg = b.error; } catch { /* mantém padrão */ }
+        throw new Error(msg);
+      }
       const r = data?.results?.[0] || {};
       if (r.recovered > 0) {
         toast.success(`${r.recovered} mensagem(ns) recuperada(s)${r.restarted ? ' e conexão reiniciada' : ''}.`);
