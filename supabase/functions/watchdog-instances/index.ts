@@ -95,12 +95,14 @@ async function checkInstance(admin: any, inst: any, opts: { force: boolean }) {
 
   // Atraso de entrega: quanto tempo depois de enviadas as mensagens dos clientes chegam aqui.
   // Fila atrasada no aparelho conectado só se resolve com QR Code novo.
+  const lagResetAt = inst.metadata?.lag_reset_at ? new Date(inst.metadata.lag_reset_at).getTime() : 0;
+  const lagSince = Math.max(Date.now() - 2 * 3600_000, lagResetAt || 0);
   const { data: lagRows } = await admin.from("whatsapp_webhook_events")
     .select("created_at, ts:payload->data->>messageTimestamp, src:payload->>source")
     .eq("instance_id", inst.id).eq("event", "messages.upsert")
     .eq("payload->data->key->>fromMe", "false")
     .is("payload->>source", null) // ignora reprocessamentos (vigia, reaplicação de edições)
-    .gte("created_at", new Date(Date.now() - 2 * 3600_000).toISOString())
+    .gte("created_at", new Date(lagSince).toISOString())
     .order("created_at", { ascending: false }).limit(20);
   const lags = (lagRows || [])
     .filter((r: any) => r.src !== "watchdog" && /^\d+$/.test(String(r.ts ?? "")))
@@ -109,7 +111,9 @@ async function checkInstance(admin: any, inst: any, opts: { force: boolean }) {
   const lagMin = lags.length >= 3 ? Math.max(0, Math.round(lags[Math.floor(lags.length / 2)])) : null;
   const lagging = lagMin !== null && lagMin > LAG_ALERT_MIN;
 
-  const meta = inst.metadata || {};
+  // Relê o metadata: um QR Code novo pode ter zerado o aviso durante esta checagem.
+  const { data: fresh } = await admin.from("whatsapp_instances").select("metadata").eq("id", inst.id).maybeSingle();
+  const meta = fresh?.metadata || inst.metadata || {};
   const today = new Date().toISOString().slice(0, 10);
   let restartsToday = meta.watchdog_restart_day === today ? Number(meta.watchdog_restarts_today || 0) : 0;
   let restarted = false;

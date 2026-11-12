@@ -164,6 +164,14 @@ serve(async (req) => {
           delivery_failure_count: recentDeliveryFailures,
           clean_reconnect_required: false,
           reconnect_started_at: nowIso,
+          ...(needsCleanReconnect ? {
+            // Conexão nova: esquece o atraso medido na conexão antiga.
+            reconnect_clean_pending: true,
+            lag_reset_at: nowIso,
+            delivery_lag_minutes: null,
+            delivery_lag_checked_at: null,
+            watchdog_requires_qr: false,
+          } : {}),
         },
       );
 
