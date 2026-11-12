@@ -1632,6 +1632,17 @@ async function processConnectionUpdate(payload: EvolutionWebhookPayload, supabas
         connected_at: new Date().toISOString(),
         disconnect_reason: null,
       };
+      // Pareou por QR Code novo: a medição de atraso da conexão antiga não vale mais.
+      if (metadata.qr_updated_at || metadata.qr_base64 || metadata.reconnect_clean_pending) {
+        nextMetadata = {
+          ...nextMetadata,
+          lag_reset_at: new Date().toISOString(),
+          delivery_lag_minutes: null,
+          delivery_lag_checked_at: null,
+          watchdog_requires_qr: false,
+          reconnect_clean_pending: false,
+        };
+      }
     }
 
     // Update instance status

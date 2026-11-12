@@ -95,12 +95,14 @@ async function checkInstance(admin: any, inst: any, opts: { force: boolean }) {
 
   // Atraso de entrega: quanto tempo depois de enviadas as mensagens dos clientes chegam aqui.
   // Fila atrasada no aparelho conectado só se resolve com QR Code novo.
+  const lagResetAt = inst.metadata?.lag_reset_at ? new Date(inst.metadata.lag_reset_at).getTime() : 0;
+  const lagSince = Math.max(Date.now() - 2 * 3600_000, lagResetAt || 0);
   const { data: lagRows } = await admin.from("whatsapp_webhook_events")
     .select("created_at, ts:payload->data->>messageTimestamp, src:payload->>source")
     .eq("instance_id", inst.id).eq("event", "messages.upsert")
     .eq("payload->data->key->>fromMe", "false")
     .is("payload->>source", null) // ignora reprocessamentos (vigia, reaplicação de edições)
-    .gte("created_at", new Date(Date.now() - 2 * 3600_000).toISOString())
+    .gte("created_at", new Date(lagSince).toISOString())
     .order("created_at", { ascending: false }).limit(20);
   const lags = (lagRows || [])
     .filter((r: any) => r.src !== "watchdog" && /^\d+$/.test(String(r.ts ?? "")))
