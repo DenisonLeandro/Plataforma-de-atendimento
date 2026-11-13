@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { fetchWithTimeout } from "../_shared/fetch-with-timeout.ts";
+import { authorizeInstanceAction } from "../_shared/instance-auth.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -25,31 +26,28 @@ serve(async (req) => {
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-    const { data: isAdmin } = await supabase.rpc('has_role', { _user_id: user.id, _role: 'admin' });
-    if (!isAdmin) {
-      return new Response(JSON.stringify({ error: 'Forbidden' }), {
-        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
     const { instanceId, dryRun } = await req.json().catch(() => ({}));
     if (!instanceId) {
-      return new Response(JSON.stringify({ error: 'instanceId required' }), {
+      return new Response(JSON.stringify({ error: 'Informe a instância.' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
+    }
+    const token = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim();
+    const { data: { user } } = token ? await supabase.auth.getUser(token) : { data: { user: null } };
+    if (!user) {
+      return new Response(JSON.stringify({ error: 'Sessão expirada. Entre novamente.' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    // Super admin, ou admin/supervisor da empresa dona da instância.
+    const { data: isSuper } = await supabase.rpc('is_super_admin', { _user_id: user.id });
+    if (!isSuper) {
+      const auth = await authorizeInstanceAction(supabase, req, instanceId);
+      if (!auth.ok) {
+        return new Response(JSON.stringify({ error: auth.status === 404 ? 'Você não tem permissão para esta empresa ou instância.' : auth.error }), {
+          status: auth.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     }
 
     const { data: instance } = await supabase
@@ -109,15 +107,79 @@ serve(async (req) => {
       else realConvs.push({ ...c, _msgs: msgs });
     }
 
+    const startedAt = Date.now();
     let merged = 0;
     let renamed = 0;
     let unresolved = 0;
     const report: any[] = [];
 
+    // Funde `from` em `into`: mensagens repetidas (mesmo id do WhatsApp) são
+    // apagadas da duplicata; as demais migram para a conversa original.
+    async function mergeInto(from: any, into: any) {
+      const { data: intoIds } = await supabase
+        .from('whatsapp_messages').select('message_id').eq('conversation_id', into.id).limit(5000);
+      const have = new Set(((intoIds ?? []) as any[]).map((r) => r.message_id));
+      const { data: fromRows } = await supabase
+        .from('whatsapp_messages').select('id, message_id').eq('conversation_id', from.id).limit(5000);
+      const dupIds = ((fromRows ?? []) as any[]).filter((r) => have.has(r.message_id)).map((r) => r.id);
+      for (let i = 0; i < dupIds.length; i += 200) {
+        await supabase.from('whatsapp_messages').delete().in('id', dupIds.slice(i, i + 200));
+      }
+      await supabase.from('whatsapp_messages').update({ conversation_id: into.id }).eq('conversation_id', from.id);
+      for (const t of ['whatsapp_reactions', 'conversation_assignments', 'whatsapp_conversation_notes',
+        'whatsapp_conversation_summaries', 'whatsapp_sentiment_analysis', 'whatsapp_sentiment_history',
+        'whatsapp_message_edit_history', 'whatsapp_topics_history']) {
+        await supabase.from(t).update({ conversation_id: into.id }).eq('conversation_id', from.id);
+      }
+      if (from.last_message_at && (!into.last_message_at || new Date(from.last_message_at) > new Date(into.last_message_at))) {
+        await supabase.from('whatsapp_conversations').update({
+          last_message_at: from.last_message_at,
+          last_message_preview: from.last_message_preview,
+          last_message_is_from_me: from.last_message_is_from_me,
+        }).eq('id', into.id);
+      }
+      const lid = from.whatsapp_contacts?.phone_number;
+      if (lid && looksLikeLid(lid)) {
+        const { data: ct } = await supabase.from('whatsapp_contacts').select('metadata').eq('id', into.contact_id).maybeSingle();
+        await supabase.from('whatsapp_contacts').update({ metadata: { ...(ct?.metadata || {}), lid } }).eq('id', into.contact_id);
+      }
+      await supabase.from('whatsapp_conversations').delete().eq('id', from.id);
+      await supabase.from('whatsapp_contacts').delete().eq('id', from.contact_id);
+    }
+
+    // 2b) Conversas @lid COM mensagens que repetem mensagens de outra conversa
+    // da mesma instância: são a mesma pessoa vista pelo número interno (ex.:
+    // criadas pela sincronização de histórico). Funde na conversa mais antiga.
+    let mergedByMessages = 0;
+    const byId = new Map(((convs ?? []) as any[]).map((c) => [c.id, c]));
+    const removed = new Set<string>();
+    for (const c of realConvs) {
+      if (Date.now() - startedAt > 70_000) break;
+      if (removed.has(c.id)) continue;
+      if (!looksLikeLid(c.whatsapp_contacts.phone_number) || !c._msgs) continue;
+      const { data: mine } = await supabase
+        .from('whatsapp_messages').select('message_id').eq('conversation_id', c.id).limit(50);
+      const ids = ((mine ?? []) as any[]).map((r) => r.message_id);
+      if (!ids.length) continue;
+      const { data: others } = await supabase
+        .from('whatsapp_messages').select('conversation_id').in('message_id', ids).neq('conversation_id', c.id).limit(50);
+      const candidates = [...new Set(((others ?? []) as any[]).map((r) => r.conversation_id))]
+        .map((id) => byId.get(id))
+        .filter((x: any) => x && !removed.has(x.id))
+        // Prefere número real; depois a conversa mais antiga.
+        .sort((a: any, b: any) => Number(looksLikeLid(a.whatsapp_contacts.phone_number)) - Number(looksLikeLid(b.whatsapp_contacts.phone_number)));
+      const twin = candidates[0];
+      if (!twin) continue;
+      report.push({ orphanConvId: c.id, orphanPhone: c.whatsapp_contacts.phone_number, action: 'merge_duplicate', twinConvId: twin.id, twinPhone: twin.whatsapp_contacts.phone_number });
+      if (!dryRun) await mergeInto(c, twin);
+      removed.add(c.id);
+      mergedByMessages++;
+    }
+
     for (const orphan of lidConvs) {
       const orphanPhone = orphan.whatsapp_contacts.phone_number;
       // a) procura gêmea local: mesma instância, last_message_at idêntico e preview idêntico
-      let twin = realConvs.find((r) =>
+      let twin = realConvs.find((r) => !removed.has(r.id) &&
         r.last_message_at && orphan.last_message_at &&
         new Date(r.last_message_at).getTime() === new Date(orphan.last_message_at).getTime() &&
         (r.last_message_preview ?? '') === (orphan.last_message_preview ?? '') &&
@@ -126,7 +188,7 @@ serve(async (req) => {
 
       // b) fallback: tenta resolver pela Evolution (best-effort, pode falhar)
       let resolvedJid: string | null = null;
-      if (!twin && baseUrl && apiKey) {
+      if (!twin && baseUrl && apiKey && Date.now() - startedAt < 110_000) {
         try {
           const r = await fetchWithTimeout(
             `${baseUrl}/chat/findContacts/${identifier}`,
@@ -147,40 +209,13 @@ serve(async (req) => {
           }
         } catch (_) { /* ignore */ }
         if (resolvedJid) {
-          twin = realConvs.find((r) => r.whatsapp_contacts.phone_number === resolvedJid);
+          twin = realConvs.find((r) => !removed.has(r.id) && r.whatsapp_contacts.phone_number === resolvedJid);
         }
       }
 
       if (twin) {
         report.push({ orphanConvId: orphan.id, orphanPhone, action: 'merge', twinConvId: twin.id, twinPhone: twin.whatsapp_contacts.phone_number, twinName: twin.whatsapp_contacts.name });
-        if (!dryRun) {
-          // Move mensagens e dados relacionados para a gêmea
-          await supabase.from('whatsapp_messages').update({ conversation_id: twin.id }).eq('conversation_id', orphan.id);
-          await supabase.from('whatsapp_reactions').update({ conversation_id: twin.id }).eq('conversation_id', orphan.id);
-          await supabase.from('conversation_assignments').update({ conversation_id: twin.id }).eq('conversation_id', orphan.id);
-          await supabase.from('whatsapp_conversation_notes').update({ conversation_id: twin.id }).eq('conversation_id', orphan.id);
-          await supabase.from('whatsapp_conversation_summaries').update({ conversation_id: twin.id }).eq('conversation_id', orphan.id);
-          await supabase.from('whatsapp_sentiment_analysis').update({ conversation_id: twin.id }).eq('conversation_id', orphan.id);
-          await supabase.from('whatsapp_sentiment_history').update({ conversation_id: twin.id }).eq('conversation_id', orphan.id);
-          await supabase.from('whatsapp_message_edit_history').update({ conversation_id: twin.id }).eq('conversation_id', orphan.id);
-          await supabase.from('whatsapp_topics_history').update({ conversation_id: twin.id }).eq('conversation_id', orphan.id);
-
-          // Se a órfã estiver mais "fresca" copia metadados para a gêmea
-          if (orphan.last_message_at && (!twin.last_message_at || new Date(orphan.last_message_at) > new Date(twin.last_message_at))) {
-            await supabase.from('whatsapp_conversations').update({
-              last_message_at: orphan.last_message_at,
-              last_message_preview: orphan.last_message_preview,
-              last_message_is_from_me: orphan.last_message_is_from_me,
-              unread_count: (twin.unread_count ?? 0) + (orphan.unread_count ?? 0),
-              status: orphan.status ?? twin.status,
-              assigned_to: twin.assigned_to ?? orphan.assigned_to,
-            }).eq('id', twin.id);
-          }
-
-          // Apaga órfã e seu contato lid
-          await supabase.from('whatsapp_conversations').delete().eq('id', orphan.id);
-          await supabase.from('whatsapp_contacts').delete().eq('id', orphan.contact_id);
-        }
+        if (!dryRun) await mergeInto(orphan, twin);
         merged++;
       } else if (resolvedJid) {
         report.push({ orphanConvId: orphan.id, orphanPhone, action: 'rename', newPhone: resolvedJid });
@@ -197,7 +232,7 @@ serve(async (req) => {
     return new Response(JSON.stringify({
       success: true,
       dryRun: !!dryRun,
-      stats: { totalOrphans: lidConvs.length, merged, renamed, unresolved },
+      stats: { totalOrphans: lidConvs.length, merged: merged + mergedByMessages, mergedByMessages, renamed, unresolved },
       report,
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (error) {

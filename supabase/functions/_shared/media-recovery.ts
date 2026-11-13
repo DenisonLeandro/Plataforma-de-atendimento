@@ -69,7 +69,7 @@ export async function recoverMessageMedia(
     const { data: message, error: msgError } = await supabase
       .from("whatsapp_messages")
       .select(
-        "id, message_id, remote_jid, is_from_me, message_type, media_mimetype, media_retry_count, conversation_id, media_status, updated_at",
+        "id, message_id, remote_jid, is_from_me, message_type, media_mimetype, media_retry_count, conversation_id, media_status, created_at, timestamp",
       )
       .eq("id", messageId)
       .single();
@@ -176,7 +176,7 @@ export async function recoverMessageMedia(
       // (o cron retry-pending-media volta a tentar mais tarde), evitando
       // "sumir" o áudio por um único blip da Evolution.
       const retryCount = (message.media_retry_count || 0) + 1;
-      const lastUpdatedMs = message.updated_at ? new Date(message.updated_at).getTime() : 0;
+      const lastUpdatedMs = new Date(message.timestamp || message.created_at || 0).getTime();
       const ageMs = Date.now() - lastUpdatedMs;
       const shouldGiveUp = retryCount >= 3 && ageMs > 6 * 60 * 60 * 1000;
       await supabase

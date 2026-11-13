@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { fetchWithTimeout } from "../_shared/fetch-with-timeout.ts";
+import { authorizeInstanceAction } from "../_shared/instance-auth.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -33,269 +34,179 @@ function pickName(profile: any, phone: string): string | null {
   return null;
 }
 
+const json = (b: unknown, status = 200) =>
+  new Response(JSON.stringify(b), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+// Quantos contatos consultamos na Evolution ao mesmo tempo. Antes era um por
+// vez com pausa de 300 ms: instâncias com centenas de contatos passavam do
+// tempo máximo da função e o botão terminava em erro sem corrigir nada.
+const CONCURRENCY = 6;
+// Orçamento de tempo do trabalho em segundo plano.
+const BUDGET_MS = 340_000;
+
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
+  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
 
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
-
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
-    const { data: isAdmin } = await supabaseAdmin.rpc('has_role', {
-      _user_id: user.id,
-      _role: 'admin'
-    });
-
-    if (!isAdmin) {
-      return new Response(JSON.stringify({ error: 'Forbidden - Admin required' }), {
-        status: 403,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
     const body = await req.json().catch(() => ({}));
     const instanceId: string | undefined = body?.instanceId;
-    if (!instanceId) {
-      return new Response(JSON.stringify({ error: 'instanceId is required' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    if (!instanceId) return json({ error: 'Informe a instância.' }, 400);
+
+    const token = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim();
+    const { data: { user } } = token ? await supabaseAdmin.auth.getUser(token) : { data: { user: null } };
+    if (!user) return json({ error: 'Sessão expirada. Entre novamente.' }, 401);
+
+    // Mesma regra do botão "Recuperar mensagens": super admin, ou admin/supervisor
+    // da empresa dona da instância. Corrigir nomes não desliga nada.
+    const { data: isSuper } = await supabaseAdmin.rpc('is_super_admin', { _user_id: user.id });
+    if (!isSuper) {
+      const auth = await authorizeInstanceAction(supabaseAdmin, req, instanceId);
+      if (!auth.ok) {
+        return json({ error: auth.status === 404 ? 'Você não tem permissão para esta empresa ou instância.' : auth.error }, auth.status);
+      }
     }
 
-    // Resolve instância + secrets uma única vez
-    const { data: instance, error: instanceError } = await supabaseAdmin
+    const { data: instance } = await supabaseAdmin
       .from('whatsapp_instances')
       .select('id, instance_name, provider_type, instance_id_external')
       .eq('id', instanceId)
-      .single();
-    if (instanceError || !instance) {
-      return new Response(JSON.stringify({ error: 'Instance not found' }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+      .maybeSingle();
+    if (!instance) return json({ error: 'Instância não encontrada.' }, 404);
+
     const { data: secrets } = await supabaseAdmin
       .from('whatsapp_instance_secrets')
       .select('api_url, api_key')
       .eq('instance_id', instanceId)
       .maybeSingle();
-    if (!secrets?.api_url || !secrets?.api_key) {
-      return new Response(JSON.stringify({ error: 'Instance secrets not found' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-    const baseUrl = secrets.api_url.replace(/\/$/, '');
+    if (!secrets?.api_url || !secrets?.api_key) return json({ error: 'Credenciais da instância não configuradas.' }, 400);
+
+    const baseUrl = secrets.api_url.replace(/\/+$/, '').replace(/\/manager$/, '');
     const apiKey = secrets.api_key;
     const identifier = (instance as any).provider_type === 'cloud' && (instance as any).instance_id_external
       ? (instance as any).instance_id_external
       : instance.instance_name;
 
-    // Contatos alvo: name nulo/vazio OU name == phone_number, na instância pedida
-    const { data: allInstanceContacts, error: fetchError } = await supabaseAdmin
-      .from('whatsapp_contacts')
-      .select('id, phone_number, name, is_group')
-      .eq('instance_id', instanceId);
-    if (fetchError) {
-      console.error('[fix-contact-names] Error fetching contacts:', fetchError);
-      return new Response(
-        JSON.stringify({ error: 'Failed to fetch contacts', details: fetchError }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    // Paginado: o cliente devolve no máximo 1000 linhas por consulta.
+    const allInstanceContacts: any[] = [];
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await supabaseAdmin
+        .from('whatsapp_contacts')
+        .select('id, phone_number, name, is_group, updated_at')
+        .eq('instance_id', instanceId)
+        .range(from, from + 999);
+      if (error) {
+        console.error('[fix-contact-names] Error fetching contacts:', error);
+        return json({ error: 'Falha ao ler os contatos.' }, 500);
+      }
+      allInstanceContacts.push(...(data ?? []));
+      if (!data || data.length < 1000) break;
     }
 
-    const contactsToFix = (allInstanceContacts ?? []).filter((c: any) =>
-      !c.is_group && (!c.name || c.name.trim() === '' || c.name === c.phone_number)
-    );
-
-    // Índice dos telefones existentes na instância para detectar duplicatas quando
-    // resolvermos um @lid para o número real.
-    const existingPhones = new Set(
-      (allInstanceContacts ?? []).map((c: any) => c.phone_number as string),
-    );
+    const contactsToFix = allInstanceContacts
+      .filter((c: any) => !c.is_group && (!c.name || c.name.trim() === '' || c.name === c.phone_number))
+      // Os mais recentes primeiro: são as conversas que a equipe está atendendo.
+      .sort((a: any, b: any) => String(b.updated_at).localeCompare(String(a.updated_at)));
 
     if (contactsToFix.length === 0) {
-      return new Response(
-        JSON.stringify({
-          message: 'Nenhum contato precisando de correção nesta instância',
-          total: 0, updated: 0, renamed: 0, skipped_duplicate: 0, unresolved: 0, failed: 0,
-          details: []
-        }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      return json({ message: 'Nenhum contato precisando de correção nesta instância', total: 0, background: false });
     }
 
-    console.log(`[fix-contact-names] Instance ${instance.instance_name}: ${contactsToFix.length} contacts to fix`);
+    const existingPhones = new Set(allInstanceContacts.map((c: any) => c.phone_number as string));
+    const stats = { updated: 0, renamed: 0, skipped_duplicate: 0, unresolved: 0, failed: 0 };
 
-    const results: FixResult[] = [];
-    let updated = 0;
-    let renamed = 0;
-    let skippedDuplicate = 0;
-    let unresolved = 0;
-    let failed = 0;
-
-    async function fetchProfileAndUpdate(contactId: string, phone: string, oldName: string | null): Promise<void> {
-      try {
-        const r = await fetchWithTimeout(`${baseUrl}/chat/fetchProfile/${identifier}`, {
-          timeout: 15000,
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', apikey: apiKey },
-          body: JSON.stringify({ number: phone }),
-        });
-        if (!r.ok) {
-          results.push({ contactId, phoneNumber: phone, oldName, action: 'unresolved', error: `fetchProfile ${r.status}` });
-          unresolved++;
-          return;
-        }
-        const profile = await r.json().catch(() => ({}));
-        const newName = pickName(profile, phone);
-        const profilePictureUrl = profile?.profilePictureUrl || profile?.picture || null;
-        if (!newName && !profilePictureUrl) {
-          results.push({ contactId, phoneNumber: phone, oldName, action: 'unresolved' });
-          unresolved++;
-          return;
-        }
-        const updateData: any = { updated_at: new Date().toISOString() };
-        if (newName) updateData.name = newName;
-        if (profilePictureUrl) updateData.profile_picture_url = profilePictureUrl;
-        const { error: uErr } = await supabaseAdmin
-          .from('whatsapp_contacts').update(updateData).eq('id', contactId);
-        if (uErr) {
-          results.push({ contactId, phoneNumber: phone, oldName, action: 'failed', error: uErr.message });
-          failed++;
-          return;
-        }
-        results.push({
-          contactId, phoneNumber: phone, oldName,
-          newName: newName ?? undefined,
-          profilePictureUrl: profilePictureUrl ?? undefined,
-          action: 'updated',
-        });
-        updated++;
-      } catch (e: any) {
-        results.push({ contactId, phoneNumber: phone, oldName, action: 'failed', error: e?.message ?? 'unknown' });
-        failed++;
-      }
+    async function evo(path: string, payload: unknown) {
+      return await fetchWithTimeout(`${baseUrl}${path}/${identifier}`, {
+        timeout: 15000,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: apiKey },
+        body: JSON.stringify(payload),
+      });
     }
 
-    for (const contact of contactsToFix) {
+    async function fetchProfileAndUpdate(contactId: string, phone: string) {
+      const r = await evo('/chat/fetchProfile', { number: phone });
+      if (!r.ok) { stats.unresolved++; return; }
+      const profile = await r.json().catch(() => ({}));
+      const newName = pickName(profile, phone);
+      const pic = profile?.profilePictureUrl || profile?.picture || null;
+      if (!newName && !pic) { stats.unresolved++; return; }
+      const updateData: any = { updated_at: new Date().toISOString() };
+      if (newName) updateData.name = newName;
+      if (pic) updateData.profile_picture_url = pic;
+      const { error } = await supabaseAdmin.from('whatsapp_contacts').update(updateData).eq('id', contactId);
+      if (error) stats.failed++; else stats.updated++;
+    }
+
+    async function fixOne(contact: any) {
       const phone = contact.phone_number as string;
-      const oldName = (contact.name as string | null) ?? null;
       try {
-        if (looksLikeLid(phone)) {
-          // 1) tenta resolver o @lid para o número real via findContacts
-          let resolvedPhone: string | null = null;
-          try {
-            const r = await fetchWithTimeout(`${baseUrl}/chat/findContacts/${identifier}`, {
-              timeout: 15000,
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', apikey: apiKey },
-              body: JSON.stringify({ where: { id: `${phone}@lid` } }),
-            });
-            if (r.ok) {
-              const arr = await r.json().catch(() => null);
-              const c0 = Array.isArray(arr) ? arr[0] : null;
-              const candidate = c0?.jid || c0?.remoteJid || c0?.id;
-              if (typeof candidate === 'string' && candidate.includes('@s.whatsapp.net')) {
-                resolvedPhone = candidate.split('@')[0];
-              }
+        if (!looksLikeLid(phone)) return await fetchProfileAndUpdate(contact.id, phone);
+
+        let resolvedPhone: string | null = null;
+        try {
+          const r = await evo('/chat/findContacts', { where: { id: `${phone}@lid` } });
+          if (r.ok) {
+            const arr = await r.json().catch(() => null);
+            const c0 = Array.isArray(arr) ? arr[0] : null;
+            const candidates = [c0?.jid, c0?.remoteJid, c0?.id, c0?.remoteJidAlt, c0?.phoneNumber];
+            const hit = candidates.find((x) => typeof x === 'string' && x.includes('@s.whatsapp.net'));
+            if (hit) resolvedPhone = hit.split('@')[0];
+            const pushName = pickName(c0, phone);
+            if (!resolvedPhone && pushName) {
+              // Sem número real, mas a Evolution conhece o nome: já ajuda a equipe.
+              await supabaseAdmin.from('whatsapp_contacts')
+                .update({ name: pushName, updated_at: new Date().toISOString() }).eq('id', contact.id);
+              stats.updated++;
+              return;
             }
-          } catch (_) { /* ignore */ }
-
-          if (!resolvedPhone) {
-            results.push({ contactId: contact.id, phoneNumber: phone, oldName, action: 'unresolved' });
-            unresolved++;
-            await new Promise(r => setTimeout(r, 300));
-            continue;
           }
+        } catch (_) { /* ignora */ }
 
-          if (existingPhones.has(resolvedPhone) && resolvedPhone !== phone) {
-            // Já existe outro contato "real" com esse número; a fusão é do
-            // botão "Resolver conversas @lid". Aqui não mexemos para não quebrar nada.
-            results.push({
-              contactId: contact.id, phoneNumber: phone, oldName,
-              newPhone: resolvedPhone, action: 'skipped_duplicate',
-            });
-            skippedDuplicate++;
-            await new Promise(r => setTimeout(r, 300));
-            continue;
-          }
+        if (!resolvedPhone) { stats.unresolved++; return; }
+        if (existingPhones.has(resolvedPhone) && resolvedPhone !== phone) { stats.skipped_duplicate++; return; }
 
-          // Renomeia o telefone deste contato para o número real e busca perfil.
-          const { error: renameErr } = await supabaseAdmin
-            .from('whatsapp_contacts')
-            .update({ phone_number: resolvedPhone, updated_at: new Date().toISOString() })
-            .eq('id', contact.id);
-          if (renameErr) {
-            results.push({ contactId: contact.id, phoneNumber: phone, oldName, action: 'failed', error: renameErr.message });
-            failed++;
-            await new Promise(r => setTimeout(r, 300));
-            continue;
-          }
-          existingPhones.delete(phone);
-          existingPhones.add(resolvedPhone);
-          renamed++;
-          results.push({ contactId: contact.id, phoneNumber: phone, oldName, newPhone: resolvedPhone, action: 'renamed' });
-
-          // Best-effort: puxar nome/foto do perfil resolvido.
-          await fetchProfileAndUpdate(contact.id, resolvedPhone, oldName);
-        } else {
-          await fetchProfileAndUpdate(contact.id, phone, oldName);
-        }
-      } catch (e: any) {
-        results.push({ contactId: contact.id, phoneNumber: phone, oldName, action: 'failed', error: e?.message ?? 'unknown' });
-        failed++;
+        const { error } = await supabaseAdmin.from('whatsapp_contacts')
+          .update({ phone_number: resolvedPhone, updated_at: new Date().toISOString() })
+          .eq('id', contact.id);
+        if (error) { stats.failed++; return; }
+        existingPhones.delete(phone);
+        existingPhones.add(resolvedPhone);
+        stats.renamed++;
+        await fetchProfileAndUpdate(contact.id, resolvedPhone);
+      } catch (_) {
+        stats.failed++;
       }
-      await new Promise(r => setTimeout(r, 300));
     }
 
-    const report = {
-      message: 'Contact name correction completed',
-      instanceId,
-      total: contactsToFix.length,
-      updated,
-      renamed,
-      skipped_duplicate: skippedDuplicate,
-      unresolved,
-      failed,
-      details: results,
-    };
+    const work = (async () => {
+      const started = Date.now();
+      let cursor = 0;
+      let processed = 0;
+      const worker = async () => {
+        while (cursor < contactsToFix.length && Date.now() - started < BUDGET_MS) {
+          const c = contactsToFix[cursor++];
+          await fixOne(c);
+          processed++;
+        }
+      };
+      await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+      console.log('[fix-contact-names] done', instance.instance_name, { total: contactsToFix.length, processed, ...stats });
+    })();
 
-    console.log('[fix-contact-names] Process completed:', report);
-
-    return new Response(
-      JSON.stringify(report),
-      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
-
+    // @ts-ignore EdgeRuntime existe no ambiente das funções
+    if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime?.waitUntil) {
+      // @ts-ignore
+      EdgeRuntime.waitUntil(work);
+      return json({ background: true, total: contactsToFix.length });
+    }
+    await work;
+    return json({ background: false, total: contactsToFix.length, ...stats });
   } catch (error) {
     console.error('[fix-contact-names] Unexpected error:', error);
-    return new Response(
-      JSON.stringify({ 
-        error: 'Internal server error',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+    return json({ error: 'Erro inesperado ao corrigir os contatos.' }, 500);
   }
 });
