@@ -1,3 +1,4 @@
+import { extractHistoryMessages } from "../_shared/evolution-store.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
 import {
   normalizePhoneNumber,
@@ -202,6 +203,16 @@ async function routeWebhookPayload(payload: EvolutionWebhookPayload, supabase: a
     case 'chat.update':
       await processChatsUpdate(payload, supabase);
       break;
+    case 'messages.set':
+    case 'messaging-history.set': {
+      // Pacote de mensagens atrasadas (ex.: depois de ler QR Code). Trata como mensagens normais.
+      const msgs = extractHistoryMessages(payload.data?.key ? [payload.data] : payload.data);
+      for (const m of msgs.sort((a: any, b: any) => Number(a.messageTimestamp) - Number(b.messageTimestamp))) {
+        await processMessageUpsert({ ...payload, event: 'messages.upsert', data: m }, supabase);
+      }
+      console.log('[evolution-webhook] history batch processed:', msgs.length);
+      break;
+    }
     case 'connection.update':
       await processConnectionUpdate(payload, supabase);
       break;

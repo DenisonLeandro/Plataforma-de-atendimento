@@ -5,6 +5,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { fetchWithTimeout } from "../_shared/fetch-with-timeout.ts";
 import { authorizeInstanceAction } from "../_shared/instance-auth.ts";
+import { storedAtMs, storeLagMinutes } from "../_shared/evolution-store.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -40,27 +41,30 @@ async function restartInstance(apiUrl: string, id: string, apiKey: string) {
   } catch { return false; }
 }
 
-async function checkInstance(admin: any, inst: any, opts: { force: boolean }) {
+async function checkInstance(admin: any, inst: any, opts: { force: boolean; lookbackMin?: number }) {
   const { data: sec } = await admin.from("whatsapp_instance_secrets").select("api_key, api_url").eq("instance_id", inst.id).maybeSingle();
   if (!sec) return { instance: inst.name, skipped: "sem credenciais" };
   const apiUrl = String(sec.api_url).replace(/\/$/, "");
   const identifier = inst.provider_type === "cloud" && inst.instance_id_external ? inst.instance_id_external : inst.instance_name;
 
-  const since = Math.floor(Date.now() / 1000) - LOOKBACK_MIN * 60;
+  const lookback = Math.min(Math.max(opts.lookbackMin ?? LOOKBACK_MIN, LOOKBACK_MIN), 48 * 60);
+  const sinceMs = Date.now() - lookback * 60_000;
   let records: any[] = [];
   try {
     const r = await fetchWithTimeout(`${apiUrl}/chat/findMessages/${identifier}`, {
       timeout: 20000, method: "POST",
       headers: { apikey: sec.api_key, "Content-Type": "application/json" },
-      body: JSON.stringify({ where: {}, limit: 100, page: 1 }),
+      // A Evolution usa `offset` como tamanho da página (ignora `limit`).
+      body: JSON.stringify({ where: {}, offset: lookback > LOOKBACK_MIN ? 500 : 200, page: 1 }),
     });
     if (r.ok) records = extractList(await r.json().catch(() => ({})));
   } catch (e) { console.warn("[watchdog] findMessages falhou", inst.instance_name, String(e)); }
 
   const recent = records.filter((m) => {
-    const ts = Number(m?.messageTimestamp ?? 0);
+    // Usa a hora em que o servidor gravou: pacotes atrasados têm horário de envio antigo.
+    const at = storedAtMs(m) ?? Number(m?.messageTimestamp ?? 0) * 1000;
     const jid = m?.key?.remoteJid || "";
-    return m?.key?.id && ts >= since && !jid.endsWith("@broadcast") && !jid.includes("status@");
+    return m?.key?.id && at >= sinceMs && !jid.endsWith("@broadcast") && !jid.includes("status@");
   });
 
   let missing: any[] = [];
@@ -111,6 +115,12 @@ async function checkInstance(admin: any, inst: any, opts: { force: boolean }) {
   const lagMin = lags.length >= 3 ? Math.max(0, Math.round(lags[Math.floor(lags.length / 2)])) : null;
   const lagging = lagMin !== null && lagMin > LAG_ALERT_MIN;
 
+  // Mensagens de clientes que o servidor só recebeu em pacote atrasado (conexão não recebe ao vivo).
+  const storeLags = recent.filter((m) => !m?.key?.fromMe).map(storeLagMinutes)
+    .filter((v): v is number => v !== null).sort((a, b) => a - b);
+  const batchedLag = storeLags.length >= 3 ? Math.round(storeLags[Math.floor(storeLags.length / 2)]) : null;
+  const inboundBatched = batchedLag !== null && batchedLag > 10;
+
   // Relê o metadata: um QR Code novo pode ter zerado o aviso durante esta checagem.
   const { data: fresh } = await admin.from("whatsapp_instances").select("metadata").eq("id", inst.id).maybeSingle();
   const meta = fresh?.metadata || inst.metadata || {};
@@ -144,12 +154,13 @@ async function checkInstance(admin: any, inst: any, opts: { force: boolean }) {
       watchdog_restarts_today: restartsToday,
       // Sem amostras novas, mantém a última medição de atraso.
       ...(lagMin !== null ? { delivery_lag_minutes: lagMin, delivery_lag_checked_at: nowIso } : {}),
+      ...(batchedLag !== null ? { inbound_batched: inboundBatched, inbound_batched_lag_minutes: batchedLag, inbound_batched_checked_at: nowIso } : {}),
       watchdog_requires_qr: restartsToday > MAX_RESTARTS_PER_DAY
         || (lagMin !== null ? lagging : Number(meta.delivery_lag_minutes || 0) > LAG_ALERT_MIN),
     },
   }).eq("id", inst.id);
 
-  return { instance: inst.name, recent: recent.length, missing: missing.length, recovered, restarted, silentMin, restartsToday, lagMin };
+  return { instance: inst.name, recent: recent.length, missing: missing.length, recovered, restarted, silentMin, restartsToday, lagMin, batchedLag };
 }
 
 Deno.serve(async (req) => {
@@ -172,15 +183,18 @@ Deno.serve(async (req) => {
       }
       const { data: inst } = await admin.from("whatsapp_instances")
         .select("id, name, instance_name, provider_type, instance_id_external, status, metadata").eq("id", instanceId).single();
-      return json({ success: true, results: [await checkInstance(admin, inst, { force: true })] });
+      return json({ success: true, results: [await checkInstance(admin, inst, { force: true, lookbackMin: 24 * 60 })] });
     }
 
     // Execução agendada: só para conexões marcadas como conectadas.
     const { data: list } = await admin.from("whatsapp_instances")
-      .select("id, name, instance_name, provider_type, instance_id_external, status, metadata").eq("status", "connected");
+      .select("id, name, instance_name, provider_type, instance_id_external, status, metadata").in("status", ["connected", "connecting"]);
+    // Chamada interna (service key) pode pedir janela maior para recuperação pontual.
+    const isService = (req.headers.get("Authorization") || "") === `Bearer ${serviceKey}`;
+    const lookbackMin = isService && Number(body?.lookbackMin) > 0 ? Number(body.lookbackMin) : undefined;
     const results = [];
     for (const inst of list || []) {
-      try { results.push(await checkInstance(admin, inst, { force: false })); }
+      try { results.push(await checkInstance(admin, inst, { force: false, lookbackMin })); }
       catch (e) { results.push({ instance: inst.name, error: String(e) }); }
     }
     console.log("[watchdog] run", JSON.stringify(results));
