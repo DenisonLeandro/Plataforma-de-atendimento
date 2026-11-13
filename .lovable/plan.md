@@ -34,7 +34,7 @@
 
 - **Atualizar a Evolution** no servidor da Hostinger para a versão mais nova. As versões mais novas corrigem justamente o novo formato de contatos do WhatsApp.
 - **Verificar por que o servidor religa todas as conexões a cada 50 minutos:** memória, reinícios automáticos ou mais de uma cópia do servidor rodando ao mesmo tempo.
-- Se quiser, eu escrevo um passo a passo para quem cuida do servidor.
+- **Vou escrever um passo a passo** para quem cuida do servidor. Ele fica salvo como arquivo e eu te mando no final, junto com o resultado das correções.
 
 Com os itens 1 a 4, mesmo que o servidor continue com problema, **nenhuma mensagem fica de fora do painel**: no pior caso ela chega atrasada, e o aviso mostra isso. A entrega na hora só volta de vez com o servidor corrigido.
 
