@@ -176,7 +176,7 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
       const result = await resolveLidConversations.mutateAsync({ id: instance.id });
       const s = result?.stats ?? {};
       toast.success(
-        `Conversas @lid processadas: ${s.merged ?? 0} fundidas, ${s.renamed ?? 0} renomeadas, ${s.unresolved ?? 0} sem mapeamento (de ${s.totalOrphans ?? 0}).`,
+        `Conversas repetidas juntadas: ${s.merged ?? 0}. Números reais encontrados: ${s.renamed ?? 0}.`,
         { duration: 10000 },
       );
     } catch (error: any) {
@@ -205,17 +205,22 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
         body: { instanceId: instance.id },
       });
       if (error) {
-        let msg = 'Falha ao recuperar mensagens';
+        let msg = 'Falha ao corrigir nomes de contatos';
         try { const b = await (error as any).context?.json?.(); if (b?.error) msg = b.error; } catch { /* mantém padrão */ }
         throw new Error(msg);
       }
       const total = data?.total ?? 0;
       if (total === 0) {
         toast.info("Nenhum contato precisando de correção nesta instância.");
+      } else if (data?.background) {
+        toast.success(
+          `Correção iniciada para ${total} contatos. Os nomes vão aparecendo nos próximos minutos — pode continuar usando o app.`,
+          { duration: 10000 },
+        );
       } else {
         toast.success(
-          `Contatos processados: ${data.updated} atualizados, ${data.renamed} @lid resolvidos, ${data.skipped_duplicate} duplicados, ${data.unresolved} sem retorno da Evolution (de ${total}).`,
-          { duration: 12000 },
+          `Contatos processados: ${data.updated ?? 0} atualizados, ${data.renamed ?? 0} com número real encontrado (de ${total}).`,
+          { duration: 10000 },
         );
       }
     } catch (error: any) {
@@ -448,7 +453,7 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
             size="sm"
             onClick={handleResolveLid}
             disabled={resolveLidConversations.isPending}
-            title="Resolver conversas @lid (funde órfãs sem mensagens com a conversa real)"
+            title="Juntar conversas repetidas da mesma pessoa"
             className="h-9 w-9 p-0 shrink-0"
           >
             {resolveLidConversations.isPending ? (
