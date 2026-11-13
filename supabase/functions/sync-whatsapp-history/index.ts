@@ -387,7 +387,7 @@ async function flushBatch(supabase: any, batch: PendingMessage[]): Promise<numbe
     console.error('[sync-whatsapp-history] Upsert error:', error);
     return 0;
   }
-  return count ?? batch.length;
+  return count ?? toWrite.length;
 }
 
 Deno.serve(async (req) => {
