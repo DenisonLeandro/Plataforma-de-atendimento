@@ -179,7 +179,7 @@ serve(async (req) => {
     for (const orphan of lidConvs) {
       const orphanPhone = orphan.whatsapp_contacts.phone_number;
       // a) procura gêmea local: mesma instância, last_message_at idêntico e preview idêntico
-      let twin = realConvs.find((r) =>
+      let twin = realConvs.find((r) => !removed.has(r.id) &&
         r.last_message_at && orphan.last_message_at &&
         new Date(r.last_message_at).getTime() === new Date(orphan.last_message_at).getTime() &&
         (r.last_message_preview ?? '') === (orphan.last_message_preview ?? '') &&
@@ -209,7 +209,7 @@ serve(async (req) => {
           }
         } catch (_) { /* ignore */ }
         if (resolvedJid) {
-          twin = realConvs.find((r) => r.whatsapp_contacts.phone_number === resolvedJid);
+          twin = realConvs.find((r) => !removed.has(r.id) && r.whatsapp_contacts.phone_number === resolvedJid);
         }
       }
 
