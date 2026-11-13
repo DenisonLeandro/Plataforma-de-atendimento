@@ -9,6 +9,8 @@ const corsHeaders = {
 
 const EVENTS = [
   'MESSAGES_UPSERT',
+  // Pacotes atrasados (após QR Code) chegam como MESSAGES_SET; sem ele eram descartados.
+  'MESSAGES_SET',
   'MESSAGES_UPDATE',
   'MESSAGES_DELETE',
   'SEND_MESSAGE',
