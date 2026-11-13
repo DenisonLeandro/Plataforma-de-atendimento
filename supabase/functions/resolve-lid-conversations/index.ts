@@ -107,6 +107,7 @@ serve(async (req) => {
       else realConvs.push({ ...c, _msgs: msgs });
     }
 
+    const startedAt = Date.now();
     let merged = 0;
     let renamed = 0;
     let unresolved = 0;
@@ -153,6 +154,7 @@ serve(async (req) => {
     const byId = new Map(((convs ?? []) as any[]).map((c) => [c.id, c]));
     const removed = new Set<string>();
     for (const c of realConvs) {
+      if (Date.now() - startedAt > 70_000) break;
       if (removed.has(c.id)) continue;
       if (!looksLikeLid(c.whatsapp_contacts.phone_number) || !c._msgs) continue;
       const { data: mine } = await supabase
@@ -186,7 +188,7 @@ serve(async (req) => {
 
       // b) fallback: tenta resolver pela Evolution (best-effort, pode falhar)
       let resolvedJid: string | null = null;
-      if (!twin && baseUrl && apiKey) {
+      if (!twin && baseUrl && apiKey && Date.now() - startedAt < 110_000) {
         try {
           const r = await fetchWithTimeout(
             `${baseUrl}/chat/findContacts/${identifier}`,
