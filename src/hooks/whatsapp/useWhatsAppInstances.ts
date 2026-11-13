@@ -307,7 +307,11 @@ export const useWhatsAppInstances = () => {
         'resolve-lid-conversations',
         { body: { instanceId: id, dryRun: !!dryRun } }
       );
-      if (error) throw error;
+      if (error) {
+        let msg = 'Falha ao juntar conversas repetidas';
+        try { const b = await (error as any).context?.json?.(); if (b?.error) msg = b.error; } catch { /* mantém padrão */ }
+        throw new Error(msg);
+      }
       return data;
     },
     onSuccess: () => {
