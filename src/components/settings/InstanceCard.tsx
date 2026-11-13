@@ -343,6 +343,15 @@ export const InstanceCard = ({ instance }: InstanceCardProps) => {
               <p>Verificando a conexão nova… O aviso de atraso foi zerado e será medido de novo quando chegarem mensagens de clientes.</p>
             </div>
           )}
+          {!watchdogMeta.watchdog_requires_qr && (watchdogMeta as any).inbound_batched && (
+            <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <p>
+                <span className="font-medium">Este número não está recebendo mensagens de clientes na hora.</span>{' '}
+                Elas chegam em pacotes, com cerca de {Number((watchdogMeta as any).inbound_batched_lag_minutes || 0)} minutos de atraso. O painel recupera todas, mas atrasadas.
+              </p>
+            </div>
+          )}
           {watchdogMeta.watchdog_requires_qr && (
             <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
