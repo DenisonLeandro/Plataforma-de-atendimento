@@ -2,6 +2,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
 import {
   normalizePhoneNumber,
   resolvePhoneJid,
+  extractRealPhoneFromKey,
   isLid,
   getMessageType,
   getMessageContent,
@@ -303,11 +304,85 @@ async function findOrCreateConversationLite(
   return created.id;
 }
 
+async function rememberLid(supabase: any, contactId: string, lid: string | null) {
+  if (!lid) return;
+  const { data } = await supabase.from('whatsapp_contacts').select('metadata').eq('id', contactId).maybeSingle();
+  const metadata = data?.metadata || {};
+  if (metadata.lid === lid) return;
+  await supabase.from('whatsapp_contacts')
+    .update({ metadata: { ...metadata, lid }, updated_at: new Date().toISOString() })
+    .eq('id', contactId);
+}
+
+// Para um chat que só tem @lid: lê as mensagens mais recentes na Evolution e
+// (1) procura o número real nos campos alternativos da chave; (2) procura no
+// banco uma conversa desta instância que já tenha alguma dessas mensagens.
+async function resolveLidChat(
+  supabase: any,
+  instanceId: string,
+  url: string,
+  headers: Record<string, string>,
+  remoteJid: string,
+): Promise<{ phone: string | null; conversationId: string | null; contactId: string | null }> {
+  const out = { phone: null as string | null, conversationId: null as string | null, contactId: null as string | null };
+  try {
+    const d = await fetchWithDiagnostics(`lidPreflight:${remoteJid}`, url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ where: { key: { remoteJid } }, limit: 30, offset: 0, page: 1 }),
+    });
+    if (d.status < 200 || d.status >= 300) return out;
+    const records: any[] = extractList(d.parsed).slice(0, 30);
+    for (const rec of records) {
+      const real = extractRealPhoneFromKey(rec?.key, rec);
+      if (real) {
+        const { phone } = normalizePhoneNumber(real);
+        if (phone) { out.phone = phone; break; }
+      }
+    }
+    const ids = records.map((r) => r?.key?.id).filter((x: any) => typeof x === 'string');
+    if (ids.length > 0) {
+      const { data: rows } = await supabase
+        .from('whatsapp_messages')
+        .select('conversation_id, whatsapp_conversations!inner(id, instance_id, contact_id, created_at)')
+        .in('message_id', ids)
+        .eq('whatsapp_conversations.instance_id', instanceId)
+        .limit(50);
+      // Prefere a conversa mais antiga (a "original").
+      const convs = ((rows ?? []) as any[])
+        .map((r) => r.whatsapp_conversations)
+        .filter(Boolean)
+        .sort((a: any, b: any) => String(a.created_at).localeCompare(String(b.created_at)));
+      if (convs[0]) {
+        out.conversationId = convs[0].id;
+        out.contactId = convs[0].contact_id;
+      }
+    }
+  } catch (e) {
+    console.warn('[sync-whatsapp-history] lid preflight failed', remoteJid, (e as Error).message);
+  }
+  return out;
+}
+
 async function flushBatch(supabase: any, batch: PendingMessage[]): Promise<number> {
   if (batch.length === 0) return 0;
+  // Nunca grava de novo uma mensagem que já está em outra conversa (ex.: a
+  // mesma pessoa vista pelo @lid e pelo número real).
+  const ids = batch.map((m) => m.message_id);
+  const { data: existing } = await supabase
+    .from('whatsapp_messages')
+    .select('message_id, conversation_id')
+    .in('message_id', ids);
+  const elsewhere = new Set(
+    ((existing ?? []) as any[])
+      .filter((r) => !batch.some((m) => m.message_id === r.message_id && m.conversation_id === r.conversation_id))
+      .map((r) => r.message_id),
+  );
+  const toWrite = batch.filter((m) => !elsewhere.has(m.message_id));
+  if (toWrite.length === 0) return 0;
   const { error, count } = await supabase
     .from('whatsapp_messages')
-    .upsert(batch, { onConflict: 'conversation_id,message_id', count: 'exact' });
+    .upsert(toWrite, { onConflict: 'conversation_id,message_id', count: 'exact' });
   if (error) {
     console.error('[sync-whatsapp-history] Upsert error:', error);
     return 0;
@@ -705,23 +780,45 @@ async function runSync(supabase: any, instanceId: string, cursor: SyncCursor = {
       const isGroup = parsedGroup || remoteJid.endsWith('@g.us');
       const lidValue = isLid(remoteJid, chat.addressingMode) ? normalizePhoneNumber(remoteJid).phone : null;
 
-      const chatName = chat.pushName || chat.name || phone;
-      const contactId = await findOrCreateContactLite(
-        supabase,
-        instance.id,
-        phone,
-        chatName,
-        isGroup,
-        false,
-        chat.profilePicUrl || null,
-        lidValue,
-      );
+      // Chat identificado só pelo @lid (sem número real no chat): antes de criar
+      // um contato com o número interno, tenta descobrir o número real pelas
+      // mensagens ou reaproveitar a conversa que já tem essas mensagens. Sem isso
+      // a sincronização criava uma segunda conversa para a mesma pessoa.
+      let resolvedPhone = phone;
+      let reusedConversationId: string | null = null;
+      let reusedContactId: string | null = null;
+      if (lidValue && phone === lidValue && !isGroup) {
+        const hit = await resolveLidChat(supabase, instance.id, `${apiUrl}/chat/findMessages/${instanceIdentifier}`, headers, remoteJid);
+        if (hit.phone) resolvedPhone = hit.phone;
+        if (hit.conversationId && hit.contactId) {
+          reusedConversationId = hit.conversationId;
+          reusedContactId = hit.contactId;
+        }
+      }
+
+      const chatName = chat.pushName || chat.name || resolvedPhone;
+      let contactId: string | null = reusedContactId;
+      if (contactId) {
+        await rememberLid(supabase, contactId, lidValue);
+      } else {
+        contactId = await findOrCreateContactLite(
+          supabase,
+          instance.id,
+          resolvedPhone,
+          chatName,
+          isGroup,
+          false,
+          chat.profilePicUrl || null,
+          lidValue,
+        );
+      }
       if (!contactId) {
         errors.push({ chat: remoteJid, error: 'contact create failed' });
         continue;
       }
 
-      const conversationId = await findOrCreateConversationLite(supabase, instance.id, contactId);
+      const conversationId = reusedConversationId
+        ?? await findOrCreateConversationLite(supabase, instance.id, contactId);
       if (!conversationId) {
         errors.push({ chat: remoteJid, error: 'conversation create failed' });
         continue;
