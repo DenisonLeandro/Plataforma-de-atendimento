@@ -1,39 +1,35 @@
-# Diagnóstico: por que as mensagens continuam falhando (sem alterações)
+# Guia: investigar o servidor do WhatsApp (Hostinger)
 
-## O que encontrei (dados das últimas 6 horas)
+Objetivo: descobrir por que o servidor derruba as conexões de todos os escritórios a cada 15 a 30 minutos. Nada será alterado no app.
 
-| Escritório | Última msg de cliente (Brasília) | Atraso medido | Quedas de conexão em 6h |
-|---|---|---|---|
-| Advocacia Centro | 09:05 | ~6 horas | 22 |
-| Cinco Conjuntos | 12:42 | ~2 horas | 14 |
-| Ibiporã | 12:00 | ~1h45 | 18 |
-| Acquadu | 13:06 | ~1h10 | 16 |
-| Maringá | ontem 15:08 | — | 16 (0 msgs hoje) |
-| São Lourenço | 11:09 | 0 | 20 |
-| Desenvol 1 / 2 | 12:02 / 10:29 | 0 | 18 / 20 |
-| Escritório Virtual | 11:55 | — | 12 |
+## 1. Painel da Hostinger (sem precisar de conhecimento técnico)
+- Abra hPanel → VPS → seu servidor → **Visão geral**.
+- Veja os gráficos de **CPU, Memória (RAM) e Disco** das últimas 24 horas.
+  - Memória batendo em 90–100% ou caindo de repente = o servidor está ficando sem memória e reiniciando o WhatsApp.
+  - Disco acima de 90% = falta de espaço no servidor.
+- Tire print desses gráficos e me envie.
 
-## Conclusão
+## 2. Terminal (para quem cuida do servidor)
+Acessar pelo botão **Terminal do navegador** no hPanel e rodar, um por vez:
 
-1. **Nosso app não está perdendo nada.** Todos os avisos que o servidor do WhatsApp mandou nas últimas 6 horas foram processados, sem nenhum erro ou fila presa.
-2. **O problema está no servidor do WhatsApp (Evolution, na Hostinger).** Todos os números caem e voltam sozinhos a cada 15 a 30 minutos, o dia todo, mesmo quando estão "Conectados". Isso acontece em todos os escritórios ao mesmo tempo, então não é culpa do celular nem do QR Code.
-3. **Por causa dessas quedas, as mensagens de clientes ficam presas no servidor** e chegam horas depois (Centro com 6h de atraso). Desconectar e conectar pelo app só ajuda por um tempo, porque o servidor volta a cair.
-4. A versão da Evolution instalada (2.3.7) tem falhas conhecidas com o novo formato de contatos do WhatsApp, que causam exatamente essas quedas.
+```text
+free -h                      # memória livre
+df -h                        # espaço em disco
+docker ps                    # mostra se a Evolution reinicia (coluna STATUS "Up X minutes")
+docker stats --no-stream     # memória usada por cada parte
+dmesg -T | grep -i -E "killed process|out of memory" | tail -20
+docker logs --since 2h <nome-do-container-evolution> 2>&1 | grep -i -E "error|close|restart|lid" | tail -50
+```
 
-## O que sugiro (só depois da sua aprovação)
+O que cada resultado significa:
+- "Up 20 minutes" no `docker ps` = a Evolution está reiniciando sozinha. Confirma a causa.
+- "Killed process" ou "out of memory" = falta de memória. Solução: aumentar o plano da VPS (mais RAM) ou limitar o histórico salvo.
+- Muitos erros com "lid" ou "Connection Closed" = falha da versão 2.3.7. Solução: atualizar a Evolution.
 
-1. Quem cuida do servidor na Hostinger verificar os registros da Evolution e o uso de memória (quedas em todos os números juntos indicam reinício do servidor ou falta de memória).
-2. Atualizar a Evolution para a versão mais nova estável, com backup antes.
-3. Depois disso, ler um QR Code novo no Centro e no Cinco Conjuntos.
-4. Nenhuma mudança no app é necessária para essa causa.
+## 3. Soluções possíveis, de acordo com o que aparecer
+1. **Falta de memória**: subir a VPS para um plano com pelo menos 4 GB de RAM. Também dá para desligar o salvamento de histórico na Evolution (`DATABASE_SAVE_DATA_HISTORIC=false`, `DATABASE_SAVE_MESSAGE_UPDATE=false`).
+2. **Disco cheio**: apagar logs e mídias antigas da Evolution, ou aumentar o disco da VPS.
+3. **Problema da versão**: fazer backup e atualizar a Evolution para a versão estável mais recente. Depois, ler um QR Code novo no Centro e no Cinco Conjuntos.
 
-## Sobre armazenamento (pergunta nova)
-
-- No app: o banco ocupa cerca de 5,7 GB e os arquivos (fotos, áudios, documentos) cerca de 4,6 GB. Ainda não vi indício de que o espaço do app esteja cheio; os avisos estão chegando e sendo gravados sem erro.
-- Se o espaço cheio for no servidor do WhatsApp (Hostinger), aumentar é por lá: no painel da Hostinger, mudar a VPS para um plano com mais disco e memória, ou apagar registros antigos e mídias da Evolution.
-- Se for preciso aumentar no app, isso é feito em Configurações do projeto → Cloud → aumentar o tamanho do disco/servidor (tem custo extra).
-
-## Próximo passo sugerido
-
-1. Confirmar o uso de disco e memória da VPS da Hostinger (é o principal suspeito das quedas a cada 15–30 min).
-2. Conferir o limite de disco do app e, só se estiver perto do máximo, aumentar.
+## 4. Depois
+Me envie os prints ou o texto que aparecer. Eu confirmo qual é a causa e acompanho pelo app se as quedas pararam.
