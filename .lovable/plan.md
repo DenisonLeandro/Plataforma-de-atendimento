@@ -26,3 +26,14 @@
 2. Atualizar a Evolution para a versão mais nova estável, com backup antes.
 3. Depois disso, ler um QR Code novo no Centro e no Cinco Conjuntos.
 4. Nenhuma mudança no app é necessária para essa causa.
+
+## Sobre armazenamento (pergunta nova)
+
+- No app: o banco ocupa cerca de 5,7 GB e os arquivos (fotos, áudios, documentos) cerca de 4,6 GB. Ainda não vi indício de que o espaço do app esteja cheio; os avisos estão chegando e sendo gravados sem erro.
+- Se o espaço cheio for no servidor do WhatsApp (Hostinger), aumentar é por lá: no painel da Hostinger, mudar a VPS para um plano com mais disco e memória, ou apagar registros antigos e mídias da Evolution.
+- Se for preciso aumentar no app, isso é feito em Configurações do projeto → Cloud → aumentar o tamanho do disco/servidor (tem custo extra).
+
+## Próximo passo sugerido
+
+1. Confirmar o uso de disco e memória da VPS da Hostinger (é o principal suspeito das quedas a cada 15–30 min).
+2. Conferir o limite de disco do app e, só se estiver perto do máximo, aumentar.
